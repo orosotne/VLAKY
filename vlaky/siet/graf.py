@@ -386,18 +386,46 @@ class Network:
 
     # ------------------------------------------------------------------ výluky na trase
     def closure_edges(self, from_station: str, to_station: str) -> set:
-        """Hrany medzi dvoma dopravňami (úsek výluky) – najkratšia cesta bez ohľadu na trakciu."""
+        """Všetky koľaje úseku medzi dvoma dopravňami (úsek výluky).
+
+        Základ je najkratšia cesta medzi dopravňami (bez ohľadu na trakciu); pridajú sa k nej všetky
+        súbežné koľaje (napr. druhá koľaj dvojkoľajnej trate) a koľaje dopravní vnútri úseku, ktoré
+        ležia do ~40 m od základnej cesty. Vďaka tomu výluka zasiahne vlak na ktorejkoľvek koľaji
+        a obchádzka nevedie cez ten istý úsek.
+        """
         key = (norm(from_station), norm(to_station))
         if key in self._closure_cache:
             return self._closure_cache[key]
         a, b = self.find_station(from_station), self.find_station(to_station)
-        result: set = set()
+        base: set = set()
         if a and b and a.node != b.node:
             for gauge in ("1435", "1520"):
                 r = self.shortest(a.node, b.node, TrainSpec(traction="M", gauge=gauge, vmax_kmh=200))
                 if r:
-                    result = set(r.edges)
+                    base = set(r.edges)
                     break
+        result = set(base)
+        if base:
+            pts = [p for ei in base for p in self.edges[ei].geom]
+            la0, la1 = min(p[0] for p in pts) - 0.003, max(p[0] for p in pts) + 0.003
+            lo0, lo1 = min(p[1] for p in pts) - 0.004, max(p[1] for p in pts) + 0.004
+            for e in self.edges:
+                if e.idx in base:
+                    continue
+                g = e.geom
+                if not any(la0 <= p[0] <= la1 and lo0 <= p[1] <= lo1 for p in g):
+                    continue
+                samples = list(g)
+                for j in range(len(g) - 1):
+                    if haversine(*g[j], *g[j + 1]) > 150:
+                        samples.append(((g[j][0] + g[j + 1][0]) / 2, (g[j][1] + g[j + 1][1]) / 2))
+                near = 0
+                for la, lo in samples:
+                    m = self.match(la, lo, 40.0, prefer_edges=base)
+                    if m and m["edge"] in base:
+                        near += 1
+                if samples and near / len(samples) >= 0.7:
+                    result.add(e.idx)
         self._closure_cache[key] = result
         self._closure_cache[(key[1], key[0])] = result
         return result

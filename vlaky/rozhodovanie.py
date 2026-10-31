@@ -229,7 +229,7 @@ def _quantile(values: Sequence[float], q: float) -> float:
 # ---------------------------------------------------------------------------
 def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Params,
              normals: Optional[list] = None, stabled: bool = False,
-             needs_new_path: bool = False) -> Evaluation:
+             needs_new_path: bool = False, crew_start: Optional[float] = None) -> Evaluation:
     """Vyhodnotí odchod `depart` po trase `route` simuláciou Monte Carlo.
 
     Pravidlo výluky: vlak nesmie byť v úseku v čase
@@ -243,7 +243,9 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
     n = len(normals)
     arrivals, duties, costs = [], [], []
     on_time = holds = stucks = reliefs = 0
-    duty_start = depart - p.crew_prep_min
+    # Ak je rušňovodič už v službe (crew_start), pracovný čas beží od jeho nástupu;
+    # inak nastúpi crew_prep_min pred odchodom.
+    duty_start = crew_start if crew_start is not None else depart - p.crew_prep_min
     wait_h = max(0.0, depart - ready) / 60.0
     if stabled:
         base_cost = p.cost_stable_fixed + wait_h * p.cost_stabled_per_h
@@ -353,7 +355,8 @@ def _windows(evals: Sequence[Evaluation], step: float) -> list:
 
 def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float,
               p: Params = Params(), horizon_min: float = 24 * 60, step_min: float = 10,
-              allocated_departures: Sequence[float] = ()) -> Recommendation:
+              allocated_departures: Sequence[float] = (),
+              crew_start: Optional[float] = None) -> Recommendation:
     """Prehľadá odchody od `ready` po `ready + horizon_min` po každej trase.
 
     Pravidlá výberu:
@@ -378,8 +381,10 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
             new_path = (not route.is_primary) or _needs_new_path(depart, allocated_departures, p)
             if new_path and depart < now + p.new_path_lead_min:
                 continue  # novú trasu by ŽSR nestihla prideliť
-            options = [evaluate(route, depart, ready, deadline, p, normals, False, new_path)]
+            # POČKAŤ: ten istý rušňovodič čaká (jeho pracovný čas beží od crew_start, ak už je v službe)
+            options = [evaluate(route, depart, ready, deadline, p, normals, False, new_path, crew_start)]
             if depart > ready:
+                # ODSTAVIŤ: rušňovodič sa uvoľní, neskôr nastúpi nový (pracovný čas od depart - prep)
                 options.append(evaluate(route, depart, ready, deadline, p, normals, True, new_path))
             best = min(options, key=lambda e: e.expected_cost)
             if not route.is_primary:
@@ -388,13 +393,18 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
         windows[route.name] = _windows(per_route, step_min)
         candidates.extend(per_route)
 
+    decision, best, explanation = select_best(candidates, p)
+    return Recommendation(decision, best, explanation, windows, candidates)
+
+
+def select_best(candidates: Sequence[Evaluation], p: Params) -> tuple:
+    """Pravidlá výberu (4. a 5. krok v recommend) – samostatne, aby sa dali použiť aj po spresnení."""
     allowed = [e for e in candidates if e.status != CERVENA]
     if not allowed:
         least_bad = min(candidates, key=lambda e: e.expected_cost) if candidates else None
-        return Recommendation(
-            ESKALOVAT, least_bad,
-            ["Žiadna bezpečná varianta v horizonte. Kontaktovať ŽSR (nová trasa / iný čas) "
-             "a zákazníka (nový termín)."], windows, candidates)
+        return (ESKALOVAT, least_bad,
+                ["Žiadna bezpečná varianta v horizonte. Kontaktovať ŽSR (nová trasa / iný čas) "
+                 "a zákazníka (nový termín)."])
 
     best = min(allowed, key=lambda e: (e.expected_cost, e.depart))
     explanation = []
@@ -413,7 +423,7 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
         explanation.append("Treba objednať novú (ad hoc) trasu u ŽSR.")
     if best.status != ZELENA:
         explanation.append("ORANŽOVÁ: vyžaduje potvrdenie dispečera. Dôvody: " + "; ".join(best.reasons))
-    return Recommendation(best.kind, best, explanation, windows, candidates)
+    return best.kind, best, explanation
 
 
 # ---------------------------------------------------------------------------
