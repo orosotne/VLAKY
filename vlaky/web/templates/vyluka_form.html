@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}{{ "Upraviť výluku" if closure else "Nová výluka" }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="crumbs"><a href="/vyluky">Výluky</a></p>
+  <h1>{{ "Upraviť výluku " ~ closure.from_station ~ " – " ~ closure.to_station if closure else "Nová výluka" }}</h1>
+  <p class="muted">Úsek sa vyhľadá v modeli siete (všetky koľaje medzi dopravňami). Časy v miestnom čase ({{ tz }}).</p>
+</div>
+{% if errors %}<div class="flash flash-chyba" role="alert">Formulár obsahuje chyby – opravte označené polia.</div>{% endif %}
+<form method="post" action="{{ '/vyluky/' ~ closure.id ~ '/upravit' if closure else '/vyluky/nova' }}" class="card form-grid" novalidate>
+  {{ m.csrf() }}
+  <fieldset>
+    <legend>Úsek</legend>
+    <div class="grid-3">
+      {{ m.field("from_station", "Od dopravne", values, errors, required=True, attrs={"data-autocomplete": "stanice", "autocomplete": "off", "maxlength": 120}) }}
+      {{ m.field("to_station", "Po dopravňu", values, errors, required=True, attrs={"data-autocomplete": "stanice", "autocomplete": "off", "maxlength": 120}) }}
+      {{ m.select("kind", "Druh", CLOSURE_KIND.items(), values, errors, required=True) }}
+      {{ m.field("line_ref", "Číslo trate", values, errors, attrs={"maxlength": 40}) }}
+      {{ m.field("track", "Koľaj", values, errors, attrs={"maxlength": 40}) }}
+      {{ m.field("external_ref", "Číslo rozkazu / výluky", values, errors, attrs={"maxlength": 120}) }}
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Platnosť</legend>
+    <div class="grid-3">
+      {{ m.field("start_utc", "Začiatok", values, errors, type="datetime-local", required=True) }}
+      {{ m.field("end_utc", "Koniec", values, errors, type="datetime-local", required=True) }}
+      <div></div>
+      {{ m.field("daily_from", "Denne od (HH:MM)", values, errors, type="time", help="Pri opakovanej výluke, napr. denne 08:00–14:00.") }}
+      {{ m.field("daily_to", "Denne do (HH:MM)", values, errors, type="time") }}
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Dopad</legend>
+    <div class="grid-3">
+      {{ m.field("speed_kmh", "Rýchlosť pri pomalej jazde [km/h]", values, errors, type="number", attrs={"min": 5, "max": 160, "step": 1}) }}
+      {{ m.select("status", "Stav", [("overene", "overené (zadal dispečer)"), ("navrh", "návrh (treba overiť)")], values, errors) }}
+    </div>
+    {{ m.checkbox("electric_only", "Obmedzuje len elektrickú trakciu (vypnuté trakčné vedenie – motorový rušeň môže ísť)", values) }}
+  </fieldset>
+  {{ m.field("note", "Poznámka", values, errors, type="textarea", wide=True, attrs={"maxlength": 2000}) }}
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">Uložiť</button>
+    <a class="btn btn-ghost" href="/vyluky">Zrušiť</a>
+  </div>
+</form>
+{% endblock %}

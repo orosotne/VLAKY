@@ -1,0 +1,57 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zakaznik.example; dkim=pass (2048-bit key)
+ header.d=zakaznik.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT
+ dis=NONE) header.from=zakaznik.example
+Received: from mail.zakaznik.example (mail.zakaznik.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Tue, 03 Nov 2026 10:10:00 +0100
+From: Logistika =?utf-8?b?4oCTIHrDoWthem7DrWsgKEZJS1RJVk7DjSk=?=
+ <objednavky@zakaznik.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?RklLVElWTsONIOKAkyB1a8OhemthOiBPYmplZG7DoXZrYSBwxZllcHJh?=
+ =?utf-8?b?dnkg4oCTIGtvbnRlam5lcm92w70gdmxhayBLw7p0eSDihpIgxb1pbGluYS1UZXBs?=
+ =?utf-8?q?i=C4=8Dka?=
+Date: Tue, 03 Nov 2026 10:10:00 +0100
+Message-ID: <ukazka-13.fiktivne@zakaznik.example>
+X-Ukazka: FIKTIVNE - ukazkovy e-mail pre testy Agenta dispecera
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="=_vlaky_ukazka_13"
+
+--=_vlaky_ukazka_13
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý den,
+
+FIKTÍVNE – ukážka. V příloze zasíláme objednávku přepravy ucelené zásilky kontejnerů. Prosíme o potvrzení termínu.
+
+S pozdravem
+Odbyt a logistika (FIKTIVNÍ s.r.o.)
+
+--=_vlaky_ukazka_13
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="objednavka_2026-118.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4K
+ZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4K
+ZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAg
+MCA1OTUgODQyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAw
+IFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA1MjkgPj4Kc3RyZWFtCkJUIC9G
+MSAxMSBUZiA1MCA4MDAgVGQgMTYgVEwKKE9CSkVETkFWS0EgUFJFUFJBVlkgYy4gMjAyNi8xMTgg
+LSBGSUtUSVZOSSAtIHVrYXprYSkgVGogVCoKKE9iamVkbmF0ZWw6IEZJS1RJVk5JIExvZ2lzdGlr
+YSBzLnIuby4pIFRqIFQqCihPZGVzaWxhY2kgc3RhbmljZTogS3V0eSBcKHByZWNob2QgQ1ovU0tc
+KSkgVGogVCoKKENpbG92YSBzdGFuaWNlOiBaaWxpbmEtVGVwbGlja2EpIFRqIFQqCihaYm96aTog
+a29udGVqbmVyeSA0MCcgXChsb3plbmVcKSwgbmVqZGUgbyBuZWJlenBlY25lIHpib3ppIFwoUklE
+OiBuZVwpKSBUaiBUKgooUG9jZXQgdm96dTogMjIpIFRqIFQqCihIbW90bm9zdDogMSA0ODAgdCkg
+VGogVCoKKERlbGthIHZsYWt1OiA1OTAgbSkgVGogVCoKKFByaXN0YXZlbmk6IDIwLjExLjIwMjYg
+MDY6MDApIFRqIFQqCihUZXJtaW4gZG9kYW5pOiAyMS4xMS4yMDI2IDE0OjAwKSBUaiBUKgooUG96
+bmFta2E6IHByZXZ6ZXRpIG5hIGhyYW5pY2kgS3V0eSBvZCBwYXJ0bmVyc2tlaG8gZG9wcmF2Y2Uu
+KSBUaiBUKgpFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5
+cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhIC9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5n
+ID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAg
+biAKMDAwMDAwMDA2NCAwMDAwMCBuIAowMDAwMDAwMTIxIDAwMDAwIG4gCjAwMDAwMDAyNDcgMDAw
+MDAgbiAKMDAwMDAwMDgyNiAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIg
+Pj4Kc3RhcnR4cmVmCjkyMwolJUVPRgo=
+
+--=_vlaky_ukazka_13--

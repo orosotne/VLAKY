@@ -28,8 +28,10 @@ _MONTH_ALT = "|".join(sorted(MONTHS, key=len, reverse=True))
 
 _ISO_RE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?:[t ](\d{1,2}):(\d{2})(?::\d{2})?)?(?!\d)")
 _DAYRANGE_RE = re.compile(
-    r"(?<![\d.,/:])(\d{1,2})\.?\s?-\s?(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:.]))?")
-_DATE_RE = re.compile(r"(?<![\d.,/:])(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:.]))?")
+    r"(?<![\d.,/:])(\d{1,2})\.?\s?-\s?(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
+_DATE_RE = re.compile(r"(?<![\d.,/:])(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
+# „obsahuje čas“ – 08:00, 8.00 hod.; nie dátum 23.11.2026
+HAS_TIME = re.compile(r"(?<![\d.])\d{1,2}\s?:\s?\d{2}(?!\d)|(?<![\d.])\d{1,2}\.\d{2}(?![\d.])")
 _DATE_NAME_RE = re.compile(rf"(?<![\d.])(\d{{1,2}})\s?\.\s?({_MONTH_ALT})(?:\s+(\d{{4}}))?\b")
 _TIME_RE = re.compile(r"(?<![\d.:,])(\d{1,2})\s?[:.]\s?(\d{2})(?![\d])(?:\s?(?:hod\b\.?|h\b\.?))?")
 _HOUR_RE = re.compile(r"(?<![\d.:,])(\d{1,2})\s?(?:hod\b\.?|h\b\.?)")

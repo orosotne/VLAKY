@@ -15,8 +15,8 @@ from ..config import settings
 from ..db import session_scope
 from ..models import AgentHealth, AuditLog, Email, ExtractedEvent, ParameterSet, PositionReport, User
 from .auth import csrf_form, require
-from .common import (INT_PARAMS, PARAM_META, PROB_PARAMS, FormReader, current_param_set, current_params, iso, log,
-                     param_defaults, redirect, render)
+from .common import (INT_PARAMS, PARAM_META, PROB_PARAMS, FormReader, ago, current_param_set, current_params,
+                     fmt_full, iso, log, param_defaults, redirect, render)
 from .data import get_network
 
 router = APIRouter()
@@ -98,9 +98,11 @@ def settings_save(request: Request, user=Depends(params_perm), form=Depends(csrf
     if "p_hold_green" in new_values and "p_hold_red" in new_values \
             and new_values["p_hold_green"] > new_values["p_hold_red"]:
         reader.errors["p_hold_green"] = "Prah ZELENEJ pre P(zadržania) nesmie byť vyšší ako prah ČERVENEJ."
-    valid_from = reader.local_dt("valid_from", "Platí od") or now_utc()
-    note = reader.text("note", "Dôvod zmeny", required=True, maxlen=2000)
     now = now_utc()
+    valid_from = reader.local_dt("valid_from", "Platí od") or now
+    if valid_from <= now:
+        valid_from = now  # minulosť (aj predvyplnený čas bez sekúnd) = platí okamžite, po predchádzajúcich sadách
+    note = reader.text("note", "Dôvod zmeny", required=True, maxlen=2000)
     with session_scope() as s:
         if not reader.ok:
             values = {**current_params(s, now), **new_values}
@@ -271,8 +273,10 @@ def health_page(request: Request, user=Depends(view)):
         checks.append(("Model siete", "error", "nie je k dispozícii"))
     checks.append(("Príjem polôh", "ok" if cfg.positions_token else "warn",
                    "token nastavený" if cfg.positions_token else "VLAKY_POSITIONS_TOKEN nie je nastavený"))
-    checks.append(("Posledná prijatá poloha", "ok" if last_pos else "warn", iso(last_pos) or "zatiaľ žiadna"))
-    checks.append(("Posledný e-mail v schránke agenta", "ok" if last_mail else "warn", iso(last_mail) or "zatiaľ žiadny"))
+    checks.append(("Posledná prijatá poloha", "ok" if last_pos else "warn",
+                   f"{fmt_full(last_pos)} ({ago(last_pos)})" if last_pos else "zatiaľ žiadna"))
+    checks.append(("Posledný e-mail v schránke agenta", "ok" if last_mail else "warn",
+                   f"{fmt_full(last_mail)} ({ago(last_mail)})" if last_mail else "zatiaľ žiadny"))
     checks.append(("Fronta na potvrdenie", "warn" if queue else "ok", f"{queue} udalostí"))
     checks.append(("E-maily v karanténe (24 h)", "warn" if quarantined else "ok", str(quarantined)))
     return render(request, "zdravie.html", {"rows": rows, "checks": checks, "agent": agent_status}, user=user)

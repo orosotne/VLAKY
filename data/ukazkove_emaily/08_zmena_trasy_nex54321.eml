@@ -1,0 +1,30 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Wed, 04 Nov 2026 13:20:00 +0100
+From: =?utf-8?b?xb1TUiDigJMgcHJpZGXEvm92YW5pZSBrYXBhY2l0eSAoRklLVMONVk5FKQ==?=
+ <kapacita@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?RklLVMONVk5FIOKAkyB1a8Ohxb5rYTo=?= Zmena trasy vlaku Nex
+ 54321 (14.11.2026) =?utf-8?q?=E2=80=93_posun_odchodu_z_=C4=8Cadce?=
+Date: Wed, 04 Nov 2026 13:20:00 +0100
+Message-ID: <ukazka-08.fiktivne@zsr.example>
+X-Ukazka: FIKTIVNE - ukazkovy e-mail pre testy Agenta dispecera
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+FIKTÍVNE – ukážka.
+
+Z dôvodu výluky v stanici Žilina meníme časovú polohu trasy vlaku Nex 54321 na deň 14.11.2026 (ID trasy: KIS-2026-447812). Platí nasledujúci časový priebeh:
+
+Dopravňa              Príchod   Odchod
+Čadca                    –       07:10
+Žilina                 07:52     08:05
+Ružomberok             08:55     08:56
+Poprad-Tatry           10:05     10:15
+Košice                 11:48       –
+
+Ostatné podmienky trasy sa nemenia.

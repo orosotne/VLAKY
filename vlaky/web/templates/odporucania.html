@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Odporúčania{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Odporúčania agenta <span class="muted">({{ total }})</span></h1>
+  <form method="get" class="filters" role="search" aria-label="Filter odporúčaní">
+    <label>Stav
+      <select name="stav">
+        <option value="">aktuálne (bez zastaraných)</option>
+        {% for k, v in REC_STATE.items() %}<option value="{{ k }}"{% if stav == k %} selected{% endif %}>{{ v }}</option>{% endfor %}
+        <option value="vsetky"{% if stav == "vsetky" %} selected{% endif %}>všetky</option>
+      </select>
+    </label>
+    <label>Semafor
+      <select name="farba">
+        <option value="">všetky</option>
+        {% for c in ("ČERVENÁ", "ORANŽOVÁ", "ZELENÁ") %}<option value="{{ c }}"{% if farba == c %} selected{% endif %}>{{ c }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Vlak <input name="vlak" value="{{ vlak }}" size="8" maxlength="40" inputmode="numeric"></label>
+    <button type="submit" class="btn btn-sm">Filtrovať</button>
+  </form>
+</div>
+<section class="card">
+<div class="table-scroll">
+<table class="table">
+  <thead><tr><th scope="col">Vytvorené</th><th scope="col">Vlak</th><th scope="col">Rozhodnutie</th><th scope="col">Semafor</th><th scope="col">Priorita</th><th scope="col">Zhrnutie</th><th scope="col">Stav</th><th scope="col">Rozhodol</th></tr></thead>
+  <tbody>
+  {% for r in recs %}
+    <tr>
+      <td class="nowrap">{{ r.created_at|t }}</td>
+      <td>{% if r.train %}<a href="/vlaky/{{ r.train.id }}">{{ r.train.number }}</a>{% endif %}</td>
+      <td><a href="/odporucania/{{ r.id }}"><strong>{{ r.decision }}</strong></a></td>
+      <td>{{ m.semafor(r.color) }}</td>
+      <td>{{ m.priority(r.priority) }}</td>
+      <td class="small">{{ r.summary }}</td>
+      <td>{{ REC_STATE.get(r.state, r.state) }}</td>
+      <td class="small">{% if r.decided_by %}{{ r.decided_by }}<div class="muted">{{ r.decided_at|t }}</div>{% else %}—{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="muted">Žiadne odporúčania.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{{ m.pager(strana, pages, "stav=" ~ stav|urlencode ~ "&farba=" ~ farba|urlencode ~ "&vlak=" ~ vlak|urlencode) }}
+</section>
+{% endblock %}

@@ -1,0 +1,26 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Mon, 02 Nov 2026 05:20:00 +0100
+From: =?utf-8?q?Kontroln=C3=BD_dispe=C4=8Der_OR_Ko=C5=A1ice_=28FIKT=C3=8DVNE?=
+ =?utf-8?q?=29?= <kd.orke@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?RklLVMONVk5FIOKAkyB1a8Ohxb5rYTogVExHIMSNLiAzNy8yMDI2IA==?=
+ =?utf-8?q?=E2=80=93_POTR_30_km/h_Kysak_=E2=80=93_Ko=C5=A1ice?=
+Date: Mon, 02 Nov 2026 05:20:00 +0100
+Message-ID: <ukazka-17.fiktivne@zsr.example>
+X-Ukazka: FIKTIVNE - ukazkovy e-mail pre testy Agenta dispecera
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+TELEGRAM – FIKTÍVNE – ukážka
+Od: kontrolný dispečer OR Košice
+Pre: všetkých dopravcov
+
+TLG č. 37/2026
+Z dôvodu lomu koľajnice sa zavádza prechodné obmedzenie traťovej rýchlosti (POTR) na 30 km/h v úseku Kysak – Košice, 2. TK, km 8,450 – 8,900, od 03.11.2026 06:00 do odvolania.
+
+Kontrolný dispečer OR Košice (FIKTÍVNE)

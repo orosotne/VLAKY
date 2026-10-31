@@ -1,0 +1,39 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Mon, 02 Nov 2026 11:02:00 +0100
+From: =?utf-8?b?xb1TUiDigJMgcHJpZGXEvm92YW5pZSBrYXBhY2l0eSAoRklLVMONVk5FKQ==?=
+ <kapacita@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?RklLVMONVk5FIOKAkyB1a8Ohxb5rYTogUHJpZGVsZW5pZSB0cmFzeSBh?=
+ =?utf-8?q?d_hoc_=E2=80=93_vlak_Nex_54321_d=C5=88a?= 14.11.2026
+Date: Mon, 02 Nov 2026 11:02:00 +0100
+Message-ID: <ukazka-07.fiktivne@zsr.example>
+X-Ukazka: FIKTIVNE - ukazkovy e-mail pre testy Agenta dispecera
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+FIKTÍVNE – ukážka.
+
+Na základe žiadosti č. ZIA-2026-0815 Vám prideľujeme trasu ad hoc:
+
+Vlak: Nex 54321
+Dátum jazdy: 14.11.2026
+Relácia: Čadca – Košice
+
+Dopravňa              Príchod   Odchod
+Čadca                    –       06:10
+Žilina                 06:52     07:05
+Vrútky                 07:22     07:23
+Kraľovany              07:38     07:39
+Ružomberok             07:55     07:56
+Liptovský Mikuláš      08:20     08:22
+Poprad-Tatry           09:05     09:15
+Spišská Nová Ves       09:42     09:43
+Kysak                  10:25     10:26
+Košice                 10:48       –
+
+Trasa je pridelená v súlade s podmienkami sieťového vyhlásenia (FIKTÍVNE).

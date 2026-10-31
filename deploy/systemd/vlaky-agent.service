@@ -1,0 +1,61 @@
+# Agent dispečer – agent (schránka, plánovanie, notifikácie, heartbeat)
+# Inštalácia BEZ Dockera; pri Dockeri sa nepoužíva. Predpoklady: pozri vlaky-web.service.
+#
+#   sudo cp deploy/systemd/vlaky-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now vlaky-agent
+[Unit]
+Description=Agent dispečer – agent (schránka, plánovanie, notifikácie)
+Documentation=file:///opt/vlaky/app/docs/PREVADZKA.md
+Wants=network-online.target
+After=network-online.target postgresql.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=vlaky
+Group=vlaky
+WorkingDirectory=/opt/vlaky/app
+EnvironmentFile=/etc/vlaky/vlaky.env
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/usr/bin/mkdir -p /var/lib/vlaky/schranka /var/lib/vlaky/odoslane
+ExecStart=/opt/vlaky/venv/bin/python -m vlaky agent
+Restart=always
+RestartSec=10
+# čas na dokončenie rozpracovaného e-mailu pred zastavením
+TimeoutStopSec=60
+
+# Zapisovateľné dáta (schránka, odoslané správy)
+StateDirectory=vlaky
+StateDirectoryMode=0750
+ReadWritePaths=/var/lib/vlaky
+
+# Sprísnenie
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+
+# Zdroje (VPS 4 vCPU / 8 – 16 GB RAM)
+MemoryMax=2G
+CPUQuota=200%
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

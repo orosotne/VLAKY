@@ -1,0 +1,25 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Tue, 03 Nov 2026 09:15:00 +0100
+From: =?utf-8?b?xb1TUiBPUiDFvWlsaW5hIOKAkyB2w71sdWt5IChGSUtUw41WTkUp?=
+ <vyluky.orza@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?RklLVMONVk5FIOKAkyB1a8Ohxb5rYTogWnJ1xaFlbmllIHbDvWx1a3k=?=
+ ROV =?utf-8?q?=C4=8D=2E_1150/2026_Kra=C4=BEovany_=E2=80=93_Ru=C5=BEomberok?=
+Date: Tue, 03 Nov 2026 09:15:00 +0100
+Message-ID: <ukazka-05.fiktivne@zsr.example>
+X-Ukazka: FIKTIVNE - ukazkovy e-mail pre testy Agenta dispecera
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+FIKTÍVNE – ukážka.
+
+Na základe rozhodnutia zo dňa 2. novembra 2026 sa výluka 2. TK v úseku Kraľovany – Ružomberok podľa ROV č. 1150/2026, plánovaná v dňoch 16.11.–20.11.2026 denne 08:00 – 14:00, ruší.
+
+Vlaky pôjdu podľa GVD bez obmedzení.
+
+OR Žilina, oddelenie výluk (FIKTÍVNE)

@@ -1,0 +1,23 @@
+# Agent dispečer – kontrola servera (disk, vek zálohy, kontajnery, HTTPS, certifikát)
+# Spúšťa vlaky-check.timer. Pri chybe skončí kódom 1 (systemctl --failed) a ak je nastavené
+# CHECK_HEARTBEAT_URL, externý monitoring dostane .../fail s dôvodom.
+#
+# Ručne:  /opt/vlaky/app/deploy/monitoring/check.sh
+[Unit]
+Description=Agent dispečer – kontrola servera
+Documentation=file:///opt/vlaky/app/deploy/monitoring/README.md
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=vlaky
+Group=vlaky
+ExecStart=/opt/vlaky/app/deploy/monitoring/check.sh
+TimeoutStartSec=5min
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes

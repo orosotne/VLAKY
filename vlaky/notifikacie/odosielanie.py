@@ -73,8 +73,32 @@ def _write_outbox(n: Notification) -> str:
     return path
 
 
+def _graph_token() -> str:
+    s = settings()
+    r = httpx.post(f"https://login.microsoftonline.com/{s.graph_tenant_id}/oauth2/v2.0/token",
+                   data={"client_id": s.graph_client_id, "client_secret": s.graph_client_secret,
+                         "scope": "https://graph.microsoft.com/.default", "grant_type": "client_credentials"},
+                   timeout=30)
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+
+def _send_email_graph(recipient: str, subject: str, body: str) -> str:
+    """Odoslanie cez Microsoft Graph (sendMail) z účtu agenta – vždy jeden príjemca, bez kópií."""
+    s = settings()
+    payload = {"message": {"subject": subject, "body": {"contentType": "Text", "content": body},
+                           "toRecipients": [{"emailAddress": {"address": recipient}}]},
+               "saveToSentItems": True}
+    r = httpx.post(f"https://graph.microsoft.com/v1.0/users/{s.graph_mailbox}/sendMail", json=payload,
+                   headers={"Authorization": f"Bearer {_graph_token()}"}, timeout=30)
+    r.raise_for_status()
+    return "odoslana"
+
+
 def _send_email(recipient: str, subject: str, body: str) -> str:
     s = settings()
+    if s.notify_transport == "graph" and s.graph_mailbox and s.graph_client_id:
+        return _send_email_graph(recipient, subject, body)
     if not s.smtp_host:
         return "outbox"  # SMTP nie je nastavené – správa je len v adresári outbox
     msg = EmailMessage()
@@ -110,8 +134,14 @@ def _send_teams(subject: str, body: str) -> str:
     s = settings()
     if not s.teams_webhook_url:
         return "outbox"
-    r = httpx.post(s.teams_webhook_url, json={"text": f"**{subject}**\n\n" + body.replace("\n", "  \n")[:20000]},
-                   timeout=20)
+    # Adaptive Card (Teams Workflows / Power Automate „webhook“); text skrátený na rozumnú dĺžku
+    card = {"type": "message", "attachments": [{
+        "contentType": "application/vnd.microsoft.card.adaptive",
+        "content": {"$schema": "http://adaptivecards.io/schemas/adaptive-card.json", "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": [{"type": "TextBlock", "text": subject, "weight": "Bolder", "wrap": True},
+                             {"type": "TextBlock", "text": body[:6000], "wrap": True, "fontType": "Monospace"}]}}]}
+    r = httpx.post(s.teams_webhook_url, json=card, timeout=20)
     r.raise_for_status()
     return "odoslana"
 

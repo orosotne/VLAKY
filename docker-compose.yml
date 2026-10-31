@@ -37,8 +37,14 @@ x-app: &app
     VLAKY_DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-vlaky}:${POSTGRES_PASSWORD:?Nastav POSTGRES_PASSWORD v .env}@db:5432/${POSTGRES_DB:-vlaky}"
     VLAKY_SECRET_KEY: "${VLAKY_SECRET_KEY:?Nastav VLAKY_SECRET_KEY v .env (openssl rand -hex 32)}"
     VLAKY_PUBLIC_URL: "${VLAKY_PUBLIC_URL:-https://${VLAKY_DOMAIN}}"
+    # Webová aplikácia je dostupná len cez caddy v privátnej sieti – hlavičke X-Forwarded-For od neho veríme.
+    VLAKY_FORWARDED_ALLOW_IPS: "*"
   init: true
   restart: unless-stopped
+  # koreňový súborový systém len na čítanie; zapisovať sa dá do zväzkov a do /tmp (v pamäti)
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m
   security_opt:
     - no-new-privileges:true
   cap_drop:

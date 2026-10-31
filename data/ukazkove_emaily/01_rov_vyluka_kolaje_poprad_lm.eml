@@ -1,0 +1,36 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Mon, 02 Nov 2026 07:12:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWt5IChGSUtUw41WTkUp?=
+ <vyluky.orke@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?RklLVMONVk5FIOKAkyB1a8Ohxb5rYTogUm96a2F6IG8gdsO9bHVrZQ==?=
+ (ROV) =?utf-8?q?=C4=8D=2E_1142/2026_=E2=80=93_v=C3=BDluka_1=2E_TK_Poprad-Ta?=
+ =?utf-8?b?dHJ5IOKAkyBMaXB0b3Zza8O9IE1pa3Vsw6HFoQ==?=
+Date: Mon, 02 Nov 2026 07:12:00 +0100
+Message-ID: <ukazka-01.fiktivne@zsr.example>
+X-Ukazka: FIKTIVNE - ukazkovy e-mail pre testy Agenta dispecera
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Vážení dopravcovia,
+
+FIKTÍVNE – ukážka (nejde o skutočný rozkaz ŽSR).
+
+oznamujeme Vám, že na základe Rozkazu o výluke (ROV) č. 1142/2026 bude vykonaná výluka koľaje:
+
+Trať: 180 Žilina – Košice
+Úsek: Poprad-Tatry – Liptovský Mikuláš, 1. traťová koľaj (1. TK)
+Druh výluky: výluka koľaje, jednokoľajná prevádzka po 2. TK
+Termín: od 12.11.2026 08:00 do 12.11.2026 14:00
+Dôvod výluky: výmena podvalov a úprava geometrickej polohy koľaje
+
+Vlaky budú vedené po 2. traťovej koľaji. Rátajte s predĺžením jazdných dôb o 5 – 10 min.
+
+S pozdravom
+Oblastné riaditeľstvo Košice – prevádzka (FIKTÍVNE)
+Tel.: +421 900 000 000

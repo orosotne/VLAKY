@@ -1,0 +1,19 @@
+# Agent dispečer – denná záloha o 02:30 (miestny čas servera)
+#
+#   sudo cp deploy/systemd/vlaky-backup.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now vlaky-backup.timer
+#   systemctl list-timers vlaky-backup.timer
+#
+# Cieľ PROMPT.md (strata dát najviac 1 h) vyžaduje častejšiu zálohu databázy: zmeň OnCalendar
+# na "hourly" (napr. sudo systemctl edit vlaky-backup.timer) – pozri deploy/backup/README.md.
+[Unit]
+Description=Agent dispečer – denná záloha
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=10min
+# ak bol server v čase zálohy vypnutý, záloha sa urobí hneď po štarte
+Persistent=true
+
+[Install]
+WantedBy=timers.target

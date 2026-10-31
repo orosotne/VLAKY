@@ -698,12 +698,14 @@ def _summary(train: Train, decision: str, chosen: Optional[Evaluation], now: dat
     dep = fmt(_dt(now, chosen.depart))
     arr50, arr90 = fmt(_dt(now, chosen.arrival_p50)), fmt(_dt(now, chosen.arrival_p90))
     head = {VYPRAVIT: f"VYPRAVIŤ o {dep}", POKRACOVAT: "POKRAČOVAŤ v jazde",
-            POCKAT: f"POČKAŤ, vypraviť o {dep}", ODSTAVIT: f"ODSTAVIŤ, nová trasa na {dep}",
+            POCKAT: f"POČKAŤ, vypraviť o {dep}",
+            ODSTAVIT: f"ODSTAVIŤ (koľaj určí ŽSR, najviac 18 h), pôvodnú trasu odrieknuť, nová trasa na {dep}",
             PRESMEROVAT: f"PRESMEROVAŤ ({chosen.route}), odchod {dep}"}.get(decision, f"{decision} {dep}")
     txt = (f"Vlak {train.number} ({rel}): {head}. P(včas) {chosen.p_on_time:.0%}, príchod {arr50} "
            f"(90 % do {arr90}).")
     if chosen.needs_new_path:
-        txt += " Treba objednať trasu u ŽSR."
+        txt += (" Treba objednať ad hoc trasu v IS KIS (produkt P5 najneskôr 6 h pred odchodom; neskôr len "
+                "výnimočne cez dispečera ŽSR).")
     if crew.get("status") in (ORANZOVA, CERVENA):
         txt += f" Rušňovodič: vystriedať najneskôr o {fmt(datetime.fromisoformat(crew['relieve_by']))}."
     return txt
@@ -729,7 +731,8 @@ def _store(session: Session, train: Train, now: datetime, trigger: str, decision
     fingerprint = hashlib.sha1(fp_src.encode("utf-8")).hexdigest()
     last = session.scalar(select(Recommendation).where(Recommendation.train_id == train.id)
                           .order_by(Recommendation.id.desc()))
-    if last is not None and last.fingerprint == fingerprint and last.state in ("nove", "prijate", "upravene"):
+    if last is not None and last.fingerprint == fingerprint and \
+            last.state in ("nove", "prijate", "upravene", "zamietnute"):
         shift_min = 0.0
         if chosen.get("depart") and (last.chosen or {}).get("depart"):
             shift_min = abs((datetime.fromisoformat(chosen["depart"]) -

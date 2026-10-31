@@ -5,7 +5,7 @@ import importlib
 import json
 import re
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -18,9 +18,9 @@ from ..config import settings
 from ..db import session_scope
 from ..models import (Email, ExtractedEvent, Recommendation, ShiftHandoverReport, Train)
 from .auth import csrf_form, require
-from .common import (EVENT_KIND, FormReader, REC_STATE, TRAIN_STATUS, log, parse_iso, redirect, render)
+from .common import EVENT_KIND, FormReader, REC_STATE, TRAIN_STATUS, log, parse_iso, redirect, render
 from .data import alerts, borders_list, train_rows
-from .rusnovodic import evaluate_all_bg, evaluate_train_bg
+from .prepocet import evaluate_all_bg
 
 router = APIRouter()
 view = require("view")
@@ -50,13 +50,16 @@ FIELD_LABELS = {
     "track": "Koľaj", "start_utc": "Začiatok", "end_utc": "Koniec", "start": "Začiatok", "end": "Koniec",
     "daily_from": "Denne od", "daily_to": "Denne do", "kind": "Druh", "closure_kind": "Druh výluky",
     "electric_only": "Len elektrická trakcia (vypnuté TV)", "speed_kmh": "Rýchlosť [km/h]",
-    "border": "Hraničný priechod", "border_code": "Hraničný priechod", "eta_utc": "Predpokladaný príchod",
+    "border": "Hraničný priechod", "eta_utc": "Predpokladaný príchod",
     "arrival_utc": "Príchod", "departure_utc": "Odchod", "customer": "Zákazník", "origin": "Odkiaľ",
     "destination": "Kam", "deadline_utc": "Termín doručenia", "earliest_departure_utc": "Najskorší odchod",
     "cargo": "Tovar", "rid": "Nebezpečný tovar (RID)", "wagons": "Počet vozňov", "weight_t": "Hmotnosť [t]",
     "length_m": "Dĺžka [m]", "points": "Body trasy", "external_ref": "Číslo rozkazu / výluky",
     "reference": "Značka", "reason": "Dôvod", "description": "Popis", "note": "Poznámka", "run_date": "Dátum jazdy",
     "delay_min": "Meškanie [min]", "path_id": "Trasa", "partner": "Partner", "direction": "Smer",
+    "eta": "Predpokladaný príchod (avízo)", "earliest_departure": "Najskorší odchod", "deadline": "Termín doručenia",
+    "accept_by": "Akceptovať do", "date": "Dátum", "offer": "Ponuka trasy (treba akceptovať)",
+    "until_revoked": "Do odvolania", "via": "Cez", "border_code": "Kód priechodu",
 }
 _ISO_DT = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -182,8 +185,15 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
         if ev.status != "navrh":
             return redirect("/fronta", "Udalosť už bola spracovaná.", "info")
         data = dict(ev.data or {})
+        kind = ev.kind
     with_edits = str(form.get("akcia") or "") == "upravit"
     edits, errors = parse_event_edits(form, data) if with_edits else ({}, {})
+    new_kind = str(form.get("event_kind") or "")
+    if with_edits and new_kind and new_kind != kind:
+        if new_kind not in EVENT_KIND:
+            errors["event_kind"] = "Neznámy druh udalosti."
+        else:
+            edits["event_kind"] = new_kind
     if errors:
         return redirect(f"/fronta#udalost-{event_id}", "Opravte polia: " + "; ".join(errors.values()), "chyba")
     try:
@@ -194,8 +204,9 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
         log.warning("Modul posta.spracovanie nie je k dispozícii")
         return redirect("/fronta", "Spracovanie e-mailov (modul posta) zatiaľ nie je k dispozícii – udalosť "
                                    "zostáva vo fronte.", "chyba")
-    except (ValueError, LookupError) as exc:
-        return redirect(f"/fronta#udalost-{event_id}", f"Udalosť sa nepodarilo potvrdiť: {exc}", "chyba")
+    except Exception as exc:  # noqa: BLE001 – chyba spracovania sa ukáže dispečerovi, udalosť ostáva vo fronte
+        log.exception("Potvrdenie udalosti %s zlyhalo", event_id)
+        return redirect(f"/fronta#udalost-{event_id}", f"Udalosť sa nepodarilo potvrdiť: {str(exc)[:300]}", "chyba")
     if request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"potvrdená udalosť z e-mailu #{event_id}")
     msg = "Udalosť potvrdená" + (f" s úpravami ({', '.join(edits)})." if edits else ".")
@@ -220,8 +231,9 @@ def queue_reject(event_id: int, request: Request, background: BackgroundTasks, u
             posta.reject_event(s, event_id, user.username, reason=reason)
     except (ImportError, NotImplementedError, AttributeError):
         return redirect("/fronta", "Spracovanie e-mailov (modul posta) zatiaľ nie je k dispozícii.", "chyba")
-    except (ValueError, LookupError) as exc:
-        return redirect("/fronta", f"Udalosť sa nepodarilo zamietnuť: {exc}", "chyba")
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Zamietnutie udalosti %s zlyhalo", event_id)
+        return redirect("/fronta", f"Udalosť sa nepodarilo zamietnuť: {str(exc)[:300]}", "chyba")
     if request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"zamietnutá udalosť z e-mailu #{event_id}")
     return redirect("/fronta", "Udalosť zamietnutá.")
@@ -371,22 +383,3 @@ def handover_confirm(rep_id: int, request: Request, user=Depends(operate), form=
         rep.confirmed_at = now_utc()
         audit(s, user.username, "handover_report_confirm", "shift_handover_report", rep.id, note=note)
     return redirect(f"/odovzdavka/{rep_id}", "Odovzdávka potvrdená.")
-
-
-def evaluate_train_now(train_id: int, actor: str) -> tuple:
-    """Synchrónny prepočet (tlačidlo „Prepočítať“). Vracia (Recommendation|None, chybová správa)."""
-    try:
-        planovac = importlib.import_module("vlaky.planovanie.planovac")
-        with session_scope() as s:
-            rec = planovac.evaluate_train(s, train_id, trigger=f"ručný prepočet ({actor})")
-            if rec is None:
-                return None, ""
-            return {"id": rec.id, "summary": rec.summary, "color": rec.color, "decision": rec.decision}, ""
-    except NotImplementedError:
-        return None, "Plánovač zatiaľ nie je k dispozícii (rozhranie sa dopĺňa)."
-    except Exception as exc:  # noqa: BLE001
-        log.exception("Prepočet vlaku %s zlyhal", train_id)
-        return None, f"Prepočet zlyhal: {type(exc).__name__}: {str(exc)[:200]}"
-
-
-__all__ = ["router", "evaluate_train_now", "evaluate_train_bg", "EVENT_KIND", "Optional"]

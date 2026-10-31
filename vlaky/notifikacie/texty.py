@@ -82,6 +82,10 @@ def recommendation_body(rec: Recommendation) -> str:
             parts.append(f"schránka skontrolovaná pred {age['mailbox_min']:.0f} min")
         if parts:
             lines += ["", "Čerstvosť dát: " + ", ".join(parts)]
+    if rec.decision in ("VYPRAVIŤ", "POČKAŤ", "ODSTAVIŤ", "PRESMEROVAŤ"):
+        lines += ["", "Pred odchodom (kontrolný zoznam): vlak aktivovaný a súpis vlaku ND + správa o zostave "
+                      "zadané v KIS/PIS (inak ŽSR vlak nevypraví), pripravenosť vlaku v KIS, skúška bŕzd, "
+                      "doklady (CIM / CIM/SMGS), rušňovodič s platnou znalosťou trate."]
     lines += ["", f"Detail a potvrdenie: {s.public_url.rstrip('/')}/odporucania/{rec.id}",
               "", "Agent dispečer iba odporúča. Rozhoduje a koná dispečer. Správu nepreposielajte mimo firmy."]
     return "\n".join(lines)

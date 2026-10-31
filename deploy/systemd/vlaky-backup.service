@@ -1,0 +1,26 @@
+# Agent dispečer – záloha databázy a súborov (spúšťa vlaky-backup.timer)
+# Funguje pri Dockeri aj bez neho (režim určuje DEPLOY_MODE v /etc/vlaky/ops.env).
+#
+# Ručné spustenie:  sudo systemctl start vlaky-backup.service && journalctl -u vlaky-backup -n 50
+[Unit]
+Description=Agent dispečer – záloha (databáza, schránka, odoslané)
+Documentation=file:///opt/vlaky/app/deploy/backup/README.md
+Wants=network-online.target
+After=network-online.target docker.service postgresql.service
+
+[Service]
+Type=oneshot
+# Používateľ vlaky je v skupine docker (setup.sh) – môže volať "docker compose exec db pg_dump"
+User=vlaky
+Group=vlaky
+ExecStart=/opt/vlaky/app/deploy/backup/backup.sh
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+UMask=0077

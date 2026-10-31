@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{% if valid %}Vlak {{ train.number }}{% else %}Rušňovodič{% endif %}{% endblock %}
+{% block head %}
+<link rel="manifest" href="/rusnovodic.webmanifest">
+<meta name="theme-color" content="#0b5cad">
+<meta name="robots" content="noindex">
+{% endblock %}
+{% block body_class %}page-driver{% endblock %}
+{% block main_class %}driver{% endblock %}
+{% block content %}
+{% if valid %}
+<div id="rusnovodic" data-token="{{ token }}" data-train="{{ train.number }}">
+  <header class="driver-head">
+    <p class="muted small">Agent dispečer · rušňovodič</p>
+    <h1>Vlak {{ train.number }}</h1>
+    <p>{{ train.origin }} → {{ train.destination }}</p>
+    {% if driver_name %}<p class="muted">{{ driver_name }}{% if shift %} · nástup {{ shift.start_utc|t }}{% endif %}</p>{% endif %}
+  </header>
+  <div class="driver-status" id="driver-status" role="status" aria-live="polite"></div>
+  <div class="driver-buttons">
+    <button type="button" class="btn btn-big" data-typ="nastup">Nástup na zmenu</button>
+    <button type="button" class="btn btn-big" data-typ="pripraveny">Vlak pripravený</button>
+    <button type="button" class="btn btn-big btn-primary" data-typ="odchod">Odchod</button>
+  </div>
+  <section class="driver-problem" aria-labelledby="h-problem">
+    <h2 id="h-problem">Problém</h2>
+    <label for="problem-text" class="visually-hidden">Popis problému</label>
+    <textarea id="problem-text" rows="3" maxlength="2000" placeholder="Čo sa deje? (porucha, zdržanie, doklady…)"></textarea>
+    <button type="button" class="btn btn-big btn-danger" data-typ="problem">Odoslať problém dispečerovi</button>
+  </section>
+  <section class="driver-gps" aria-labelledby="h-poloha">
+    <h2 id="h-poloha">Poloha</h2>
+    <p class="small muted">Poloha sa posiela dispečingu každých 30 s, kým je stránka otvorená. Slúži len na sledovanie vlaku.</p>
+    <button type="button" class="btn" id="btn-gps" aria-pressed="false">Zdieľať polohu</button>
+    <label class="small"><input type="checkbox" id="chk-wake"> Nechať obrazovku zapnutú</label>
+    <p id="gps-status" class="small" role="status" aria-live="polite">Poloha sa neposiela.</p>
+  </section>
+  <p class="muted small">Odkaz platí 24 h. Pri probléme s aplikáciou volajte dispečing.</p>
+</div>
+{% else %}
+<div id="rusnovodic-neplatny" data-token="{{ token }}">
+  <h1>Odkaz je neplatný alebo vypršal</h1>
+  <p>Vyžiadajte si od dispečera nový odkaz pre svoj vlak (platí 24 h).</p>
+  <p id="ulozeny-odkaz" hidden><button type="button" class="btn btn-big" id="btn-ulozeny">Pokračovať s uloženým odkazom</button></p>
+</div>
+{% endif %}
+{% endblock %}
+{% block footer %}{% endblock %}
+{% block scripts %}<script src="/static/js/rusnovodic.js?v={{ asset_version }}"></script>{% endblock %}

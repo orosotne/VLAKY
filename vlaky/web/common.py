@@ -69,8 +69,10 @@ LOCO_SYSTEMS = ("25kV50Hz", "3kV", "15kV16.7Hz", "1.5kV")
 
 # Parametre rozhodovania (sekcia 10.1): popis, jednotka, skupina.
 PARAM_META: dict[str, tuple[str, str, str]] = {
-    "buffer_before_closure_min": ("Rezerva pred výlukou (úsek opustiť aspoň toľko pred začiatkom)", "min", "Časové rezervy"),
-    "buffer_after_closure_min": ("Rezerva po výluke (vstúpiť najskôr toľko po plánovanom konci)", "min", "Časové rezervy"),
+    "buffer_before_closure_min": (
+        "Rezerva pred výlukou (úsek opustiť aspoň toľko pred začiatkom)", "min", "Časové rezervy"),
+    "buffer_after_closure_min": (
+        "Rezerva po výluke (vstúpiť najskôr toľko po plánovanom konci)", "min", "Časové rezervy"),
     "deadline_buffer_min": ("Rezerva voči termínu zákazníka (medián príchodu)", "min", "Časové rezervy"),
     "crew_buffer_min": ("Rezerva do limitu pracovného času pri zlom priebehu (P90)", "min", "Časové rezervy"),
     "path_tolerance_min": ("Tolerancia odchýlky od pridelenej trasy", "min", "Trasy"),
@@ -79,12 +81,15 @@ PARAM_META: dict[str, tuple[str, str, str]] = {
     "p_on_time_amber": ("P(včas) – pod touto hodnotou je ČERVENÁ", "0–1", "Prahy rozhodovania"),
     "p_hold_green": ("P(zadržania pred výlukou) pre ZELENÚ – najviac", "0–1", "Prahy rozhodovania"),
     "p_hold_red": ("P(zadržania pred výlukou) – nad touto hodnotou je ČERVENÁ", "0–1", "Prahy rozhodovania"),
-    "p_crew_relief_red": ("P(prekročenia pracovného času) – nad touto hodnotou je ČERVENÁ", "0–1", "Prahy rozhodovania"),
-    "robustness_premium": ("Prémia za robustnosť (ZELENÁ smie byť drahšia najviac o tento podiel)", "0–1", "Prahy rozhodovania"),
+    "p_crew_relief_red": (
+        "P(prekročenia pracovného času) – nad touto hodnotou je ČERVENÁ", "0–1", "Prahy rozhodovania"),
+    "robustness_premium": (
+        "Prémia za robustnosť (ZELENÁ smie byť drahšia najviac o tento podiel)", "0–1", "Prahy rozhodovania"),
     "cost_wait_ready_per_h": ("Pripravený vlak čaká (rušeň, vozne, koľaj)", "€/h", "Ekonomika (VZOROVÉ hodnoty)"),
     "cost_running_per_h": ("Vlak ide alebo stojí na trati s rušňovodičom", "€/h", "Ekonomika (VZOROVÉ hodnoty)"),
     "cost_stabled_per_h": ("Odstavený vlak (vozne, koľaj) bez rušňovodiča", "€/h", "Ekonomika (VZOROVÉ hodnoty)"),
-    "cost_stable_fixed": ("Odstavenie – jednorazovo (posun, skúška bŕzd, nová trasa)", "€", "Ekonomika (VZOROVÉ hodnoty)"),
+    "cost_stable_fixed": (
+        "Odstavenie – jednorazovo (posun, skúška bŕzd, nová trasa)", "€", "Ekonomika (VZOROVÉ hodnoty)"),
     "cost_new_path": ("Poplatok za novú trasu podľa cenníka ŽSR", "€", "Ekonomika (VZOROVÉ hodnoty)"),
     "cost_late_fixed": ("Zmluvná pokuta za nedodržanie termínu", "€", "Ekonomika (VZOROVÉ hodnoty)"),
     "cost_late_per_h": ("Každá hodina meškania", "€/h", "Ekonomika (VZOROVÉ hodnoty)"),
@@ -261,6 +266,7 @@ def build_templates() -> Jinja2Templates:
         "minutes": fmt_minutes, "pct": fmt_pct, "eur": fmt_eur, "num": fmt_num, "ago": ago,
         "color_class": _color_class, "jsonpretty": _json_pretty, "iso": lambda v: iso(parse_iso(v)) or "",
         "priority_class": lambda v: PRIORITY_CLASS.get(str(v or ""), "info"),
+        "future": lambda v: bool(parse_iso(v) and parse_iso(v) > now_utc()),
     })
     env.globals.update({
         "TRAIN_STATUS": TRAIN_STATUS, "CLOSURE_KIND": CLOSURE_KIND, "CLOSURE_STATUS": CLOSURE_STATUS,
@@ -326,6 +332,22 @@ def nav_counts(user) -> dict:
         return {}
 
 
+_ASSET_VERSION: dict = {}
+
+
+def asset_version() -> str:
+    """Verzia statických súborov (cache busting) – podľa času zmeny súborov pri štarte."""
+    if "v" not in _ASSET_VERSION:
+        import hashlib
+
+        h = hashlib.sha1()
+        for f in sorted(STATIC_DIR.rglob("*")):
+            if f.is_file():
+                h.update(f"{f.relative_to(STATIC_DIR)}:{f.stat().st_mtime_ns}".encode())
+        _ASSET_VERSION["v"] = h.hexdigest()[:10]
+    return _ASSET_VERSION["v"]
+
+
 def render(request: Request, template: str, ctx: Optional[dict] = None, user=None,
            status_code: int = 200) -> HTMLResponse:
     flash = read_flash(request)
@@ -333,7 +355,7 @@ def render(request: Request, template: str, ctx: Optional[dict] = None, user=Non
     base = {
         "request": request, "user": user, "csrf_token": getattr(user, "csrf", ""), "flash": flash,
         "path": request.url.path, "carrier": cfg.carrier_name, "env": cfg.env, "shadow_mode": cfg.shadow_mode,
-        "now": now_utc(), "tz": cfg.timezone, "counts": nav_counts(user),
+        "now": now_utc(), "tz": cfg.timezone, "counts": nav_counts(user), "asset_version": asset_version(),
     }
     base.update(ctx or {})
     resp = TEMPLATES.TemplateResponse(request, template, base, status_code=status_code)

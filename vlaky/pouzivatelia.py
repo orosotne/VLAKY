@@ -25,7 +25,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def create_user(session: Session, username: str, password: str, role: str = "dispecer",
-                full_name: str = "", email: str = "", phone: str = "") -> User:
+                full_name: str = "", email: str = "", phone: str = "", actor: str = "admin") -> User:
     if role not in ROLES:
         raise ValueError(f"Neznáma rola {role}")
     user = session.scalar(select(User).where(User.username == username))
@@ -35,7 +35,7 @@ def create_user(session: Session, username: str, password: str, role: str = "dis
     user.password_hash = hash_password(password)
     user.role, user.full_name, user.email, user.phone, user.active = role, full_name, email, phone, True
     session.flush()
-    audit(session, "admin", "create_user", "user", user.id, username=username, role=role)
+    audit(session, actor, "create_user", "user", user.id, username=username, role=role)
     return user
 
 

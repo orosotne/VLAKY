@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Odporúčanie – vlak {{ train.number if train else "" }}{% endblock %}
+{% set st_types = {"station": "stanica", "yard": "zriaďovacia stanica", "border": "hraničný bod", "junction": "odbočka", "spur_junction": "odbočenie vlečky", "halt": "zastávka"} %}
+{% block content %}
+{% set chosen = rec.chosen or {} %}
+{% set crew = rec.crew or {} %}
+{% set proposal = rec.path_proposal or {} %}
+<div class="page-head">
+  <p class="crumbs"><a href="/odporucania">Odporúčania</a> › {% if train %}<a href="/vlaky/{{ train.id }}">vlak {{ train.number }}</a>{% endif %}</p>
+  <h1>Vlak {{ train.number if train else "?" }}{% if train %} <span class="muted">{{ train.origin }} → {{ train.destination }}</span>{% endif %}</h1>
+</div>
+
+{% if latest_id and latest_id != rec.id %}
+<p class="flash flash-varovanie" role="status">Toto odporúčanie nie je posledné. <a href="/odporucania/{{ latest_id }}">Zobraziť aktuálne odporúčanie</a>.</p>
+{% endif %}
+
+<section class="decision decision-{{ rec.color|color_class }}" aria-labelledby="rozhodnutie">
+  <div class="decision-main">
+    <span class="decision-word" id="rozhodnutie">{{ rec.decision }}</span>
+    {{ m.semafor(rec.color) }} {{ m.priority(rec.priority) }}
+    <span class="badge">stav: {{ REC_STATE.get(rec.state, rec.state) }}</span>
+  </div>
+  <p class="decision-summary">{{ rec.summary }}</p>
+  <p class="muted small">Vytvorené {{ rec.created_at|tfull }}{% if rec.trigger %} · podnet: {{ rec.trigger }}{% endif %}</p>
+</section>
+
+<div class="grid-2 gap">
+  <section class="card">
+    <h2>Prečo</h2>
+    {% if rec.reasons %}<ul class="reasons">{% for r in rec.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% else %}<p class="muted">Bez uvedených dôvodov.</p>{% endif %}
+    {% if steps %}
+    <h3>Čo má urobiť dispečer</h3>
+    <ul class="steps">{% for s in steps %}<li>{{ s }}</li>{% endfor %}</ul>
+    {% endif %}
+  </section>
+  <section class="card">
+    <h2>Istota a čerstvosť dát</h2>
+    {% set age = rec.data_age or {} %}
+    <dl class="meta">
+      <dt>Poloha vlaku</dt>
+      <dd>{% if age.get("position_min") is not none %}stará {{ age.get("position_min")|minutes }}{% if age.get("position_min") > stale_minutes %} <span class="badge badge-warn">neistá – staršia ako {{ stale_minutes }} min</span>{% endif %}{% else %}<span class="badge badge-warn">bez polohy</span>{% endif %}</dd>
+      {% for k, v in age.items() if k != "position_min" %}
+      <dt>{{ {"mailbox_min": "Posledná kontrola schránky", "closures_min": "Register výluk"}.get(k, k) }}</dt>
+      <dd>{% if v is number %}pred {{ v|minutes }}{% else %}{{ v }}{% endif %}</dd>
+      {% endfor %}
+      {% if chosen %}
+      <dt>P(včas)</dt><dd>{{ chosen.get("p_on_time")|pct }}</dd>
+      <dt>P(zadržania pred výlukou)</dt><dd>{{ chosen.get("p_hold")|pct }}</dd>
+      {% if chosen.get("p_crew_relief") is not none %}<dt>P(prekročenia pracovného času)</dt><dd>{{ chosen.get("p_crew_relief")|pct }}</dd>{% endif %}
+      <dt>Príchod P50 / P90</dt><dd>{{ chosen.get("arrival_p50")|t }} / {{ chosen.get("arrival_p90")|t }}</dd>
+      <dt>Očakávaný náklad</dt><dd>{{ chosen.get("expected_cost")|eur }}</dd>
+      {% endif %}
+    </dl>
+  </section>
+</div>
+
+{% if crew %}
+<section class="card crew-block crew-block-{{ crew.get('status')|color_class }}" aria-labelledby="h-crew">
+  <h2 id="h-crew">Rušňovodič – pracovný čas (limit {{ crew.get("max_duty_h", 13) }} h)</h2>
+  <dl class="meta meta-wide">
+    <dt>Rušňovodič</dt><dd>{{ crew.get("driver") or "nepriradený" }}</dd>
+    <dt>Nástup</dt><dd>{{ crew.get("start")|t }}</dd>
+    <dt>Limit</dt><dd>{{ crew.get("limit")|t }}</dd>
+    <dt>Predpokladaný koniec P50 / P90</dt><dd>{{ crew.get("end_p50")|t }} / {{ crew.get("end_p90")|t }}</dd>
+    <dt>Zostáva do limitu</dt><dd>{{ crew.get("left_min")|minutes }}</dd>
+    <dt>Stav</dt><dd>{{ m.semafor(crew.get("status")) }}</dd>
+  </dl>
+  {% if crew.get("relieve_by") %}<p class="relieve">Vystriedať najneskôr o <strong>{{ crew.get("relieve_by")|t }}</strong></p>{% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Porovnanie variantov</h2>
+  <div class="table-scroll">
+  <table class="table">
+    <thead><tr><th scope="col">Trasa</th><th scope="col">Odchod</th><th scope="col">Varianta</th><th scope="col">Semafor</th><th scope="col">P(včas)</th><th scope="col">P(zadržania)</th><th scope="col">Príchod P50</th><th scope="col">Príchod P90</th><th scope="col">Náklad</th><th scope="col">Nová trasa</th><th scope="col">Dôvody</th></tr></thead>
+    <tbody>
+    {% for v in rec.variants or [] %}
+      {% set is_chosen = chosen and v.get("route") == chosen.get("route") and v.get("depart") == chosen.get("depart") and v.get("kind") == chosen.get("kind") %}
+      <tr{% if is_chosen %} class="chosen" aria-current="true"{% endif %}>
+        <td>{{ v.get("route") }}{% if is_chosen %} <span class="badge badge-ok">odporúčaná</span>{% endif %}</td>
+        <td class="nowrap">{{ v.get("depart")|t }}</td>
+        <td>{{ v.get("kind") }}</td>
+        <td>{{ m.semafor(v.get("status")) }}</td>
+        <td>{{ v.get("p_on_time")|pct }}</td>
+        <td>{{ v.get("p_hold")|pct }}</td>
+        <td class="nowrap">{{ v.get("arrival_p50")|t }}</td>
+        <td class="nowrap">{{ v.get("arrival_p90")|t }}</td>
+        <td class="nowrap">{{ v.get("expected_cost")|eur }}</td>
+        <td>{{ "áno" if v.get("needs_new_path") else "nie" }}</td>
+        <td class="small">{{ (v.get("reasons") or [])|join("; ") }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="11" class="muted">Bez variantov.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<div class="grid-2 gap">
+  <section class="card">
+    <h2>Okná bezpečného odchodu</h2>
+    {% if rec.windows %}
+      {% for route, wins in rec.windows.items() %}
+      <h3 class="h4">{{ route }}</h3>
+      {% if wins %}
+      <ul class="windows">{% for w in wins %}<li>od <strong>{{ w[0]|t }}</strong> do <strong>{{ w[1]|t }}</strong></li>{% endfor %}</ul>
+      {% else %}<p class="muted">Žiadne zelené okno v horizonte.</p>{% endif %}
+      {% endfor %}
+    {% else %}<p class="muted">Bez okien (žiadna ZELENÁ varianta).</p>{% endif %}
+  </section>
+  <section class="card">
+    <h2>Návrh trasy</h2>
+    {% if proposal %}
+    <dl class="meta">
+      <dt>Trasa</dt><dd>{{ proposal.get("route") }}{% if proposal.get("km") %} ({{ proposal.get("km")|num(1) }} km){% endif %}</dd>
+      <dt>Nová (ad hoc) trasa</dt><dd>{{ "áno – objednať u ŽSR" if proposal.get("needs_new_path") else "nie (pridelená trasa)" }}</dd>
+      {% if proposal.get("request_window") %}<dt>Okno na objednanie odchodu</dt><dd>od {{ proposal.get("request_window")[0]|t }} do {{ proposal.get("request_window")[1]|t }}</dd>{% endif %}
+    </dl>
+    {% endif %}
+  </section>
+</div>
+
+{% if proposal.get("stations") %}
+<section class="card">
+  <h2>Postupnosť dopravní (návrh časov)</h2>
+  <div class="table-scroll">
+  <table class="table table-compact">
+    <thead><tr><th scope="col">Dopravňa</th><th scope="col">Typ</th><th scope="col">km</th><th scope="col">Príchod</th><th scope="col">Odchod</th></tr></thead>
+    <tbody>
+    {% for st in proposal.get("stations") %}
+      <tr><td>{{ st.get("name") }}</td><td class="small">{{ st_types.get(st.get("type"), st.get("type")) }}</td><td>{{ st.get("km")|num(1) }}</td><td class="nowrap">{{ st.get("arr")|t }}</td><td class="nowrap">{{ st.get("dep")|t }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small">Časy sú návrh agenta (jazdné doby z modelu siete a rezerv), nie pridelená trasa ŽSR.</p>
+</section>
+{% endif %}
+
+<section class="card" aria-labelledby="h-rozhodnutie">
+  <h2 id="h-rozhodnutie">Rozhodnutie dispečera</h2>
+  {% if rec.decided_by %}
+  <p>{{ REC_STATE.get(rec.state, rec.state)|capitalize }} – {{ rec.decided_by }}, {{ rec.decided_at|tfull }}{% if rec.dispatcher_note %}: „{{ rec.dispatcher_note }}“{% endif %}</p>
+  {% endif %}
+  {% if user.can("operate") and rec.state != "zastarane" %}
+  <div class="decide-forms">
+    <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
+      {{ m.csrf() }}<input type="hidden" name="akcia" value="prijat">
+      <label for="pozn-prijat">Poznámka (nepovinná)</label>
+      <input id="pozn-prijat" name="poznamka" maxlength="2000">
+      <button type="submit" class="btn btn-primary">Prijať</button>
+    </form>
+    <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
+      {{ m.csrf() }}<input type="hidden" name="akcia" value="upravit">
+      <label for="pozn-upravit">Úprava (čo meníte)</label>
+      <input id="pozn-upravit" name="poznamka" required maxlength="2000" placeholder="napr. odchod o 30 min neskôr">
+      <button type="submit" class="btn">Upraviť</button>
+    </form>
+    <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
+      {{ m.csrf() }}<input type="hidden" name="akcia" value="zamietnut">
+      <label for="pozn-zamietnut">Dôvod zamietnutia</label>
+      <input id="pozn-zamietnut" name="poznamka" required maxlength="2000">
+      <button type="submit" class="btn btn-danger">Zamietnuť</button>
+    </form>
+  </div>
+  {% elif rec.state == "zastarane" %}
+  <p class="muted">Zastarané odporúčanie – rozhoduje sa o aktuálnom.</p>
+  {% endif %}
+</section>
+
+{% if history|length > 1 %}
+<section class="card">
+  <h2>História odporúčaní pre vlak</h2>
+  <ul class="history">
+  {% for h in history %}
+    <li>{% if h.id == rec.id %}<strong>{% endif %}<a href="/odporucania/{{ h.id }}">{{ h.created_at|t }} – {{ h.decision }}</a> {{ m.semafor(h.color) }} <span class="muted small">{{ REC_STATE.get(h.state, h.state) }}</span>{% if h.id == rec.id %}</strong>{% endif %}</li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

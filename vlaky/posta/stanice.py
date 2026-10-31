@@ -57,11 +57,18 @@ def tokens(text: str, offset: int = 0) -> list[Tok]:
     return [Tok(m.group(0), m.start() + offset, m.end() + offset) for m in re.finditer(r"\S+", text)]
 
 
-def _span_text(text: str, a: Tok, b: Tok) -> str:
-    s = text[a.start:b.end].strip().strip(",;:()[]{}\"'<>!?*")
-    if s.endswith(".") and not s.lower().endswith(_ABBREV):
-        s = s.rstrip(".")
+def clean_name(s: str) -> str:
+    """Odstráni interpunkciu na okrajoch názvu (bodku ponechá pri skratke „hl. st.“)."""
+    s = s.strip().lstrip(",;:([{\"'<>!?*")
+    while s and s[-1] in ",;:)]}\"'>!?*. ":
+        if s[-1] == "." and s.lower().endswith(_ABBREV):
+            break
+        s = s[:-1]
     return s.strip()
+
+
+def _span_text(text: str, a: Tok, b: Tok) -> str:
+    return clean_name(text[a.start:b.end])
 
 
 class Stations:
@@ -158,9 +165,7 @@ class Stations:
         """Celý text ako názov dopravne (bunka tabuľky, hodnota poľa, výstup LLM)."""
         if not text or not str(text).strip():
             return None
-        t = str(text).strip().strip(",;:()[]")
-        if t.endswith(".") and not t.lower().endswith(_ABBREV):
-            t = t.rstrip(".")
+        t = clean_name(str(text))
         st = self.exact(t)
         if st:
             return StationMatch(t, st.name, st.railway_ref, "presne")
@@ -282,8 +287,11 @@ def _variant_pattern(variant: str) -> re.Pattern:
     for w in words:
         if len(w) >= 5:
             parts.append(re.escape(w[: max(4, len(w) - 2)]) + r"\w{0,5}")
+        elif len(words) == 1 and w[-1] in "aeiouy":
+            # krátky názov so skloňovaním: Kúty → do Kút, v Kútoch, Kútami
+            parts.append(re.escape(w[:-1]) + r"(?:a|e|i|o|u|y|om|ou|och|ov|ach|ami|iach)?")
         elif len(words) == 1:
-            parts.append(re.escape(w) + r"(?:y|e|u|och|ov|ach|ami)?")
+            parts.append(re.escape(w) + r"(?:a|e|u|y|om|ou|och|ov|ach|ami)?")
         else:
             parts.append(re.escape(w))
     return re.compile(r"\b" + r"[\s-]+".join(parts) + r"\b")

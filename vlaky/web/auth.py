@@ -12,7 +12,6 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from sqlalchemy import select
 
 from ..audit import audit
 from ..config import settings
@@ -255,7 +254,3 @@ async def logout(request: Request, form=Depends(csrf_form)):
     clear_session(resp)
     return resp
 
-
-def get_user_row(username: str) -> Optional[User]:
-    with session_scope() as s:
-        return s.scalar(select(User).where(User.username == username))

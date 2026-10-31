@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     secret_key: str = "zmen-ma-v-produkcii"            # podpisovanie session cookies
     public_url: str = "http://localhost:8000"          # odkazy v správach pre dispečera
     carrier_name: str = "[NÁZOV DOPRAVCU]"
+    forwarded_allow_ips: str = "127.0.0.1"             # IP reverse proxy, ktorej sa verí X-Forwarded-For
+    # mapový podklad (v prevádzke vlastné dlaždice alebo komerčný poskytovateľ – verejné OSM dlaždice
+    # nie sú určené na nepretržitú prevádzku); {z}/{x}/{y} šablóna rastrových dlaždíc
+    map_tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    map_tile_attribution: str = "© prispievatelia OpenStreetMap"
 
     # --- schránka agenta ---
     mail_source: str = "directory"                     # directory | imap | graph
@@ -40,6 +45,7 @@ class Settings(BaseSettings):
     require_dmarc_pass: bool = True                    # vyžadovať SPF/DKIM/DMARC pass v Authentication-Results
     trusted_authserv_ids: str = ""                     # authserv-id vášho poštového servera (čiarkou); prázdne = akceptovať prvú hlavičku
     max_attachment_mb: int = 15
+    attachment_sandbox: bool = True                    # prílohy v izolovanom podprocese (limity pamäte/CPU)
 
     # --- extrakcia (LLM) ---
     llm_provider: str = "none"                         # none | anthropic | openai
@@ -56,6 +62,7 @@ class Settings(BaseSettings):
     notify_phones: str = ""                            # SMS, čiarkou oddelené (+421...)
     shadow_mode: bool = True                           # tieňová prevádzka: odporúčania len na shadow_emails
     shadow_emails: str = ""
+    notify_transport: str = "smtp"                     # smtp | graph (Microsoft Graph sendMail z účtu agenta)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

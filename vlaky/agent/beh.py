@@ -56,6 +56,8 @@ def run_cycle(now: datetime | None = None, force_evaluate: bool = False) -> dict
         if not acquire_lock(s):
             summary["errors"].append("Beží iná inštancia agenta – tento cyklus sa preskočil.")
             return summary
+        # odporúčania vzniknuté v tomto cykle (aj pri prepočte po e-maile) sa na konci pošlú dispečerom
+        start_rec_id = s.scalar(select(Recommendation.id).order_by(Recommendation.id.desc())) or 0
 
     # 1) schránka
     applied = False
@@ -78,21 +80,25 @@ def run_cycle(now: datetime | None = None, force_evaluate: bool = False) -> dict
     try:
         with session_scope() as s:
             last = get_kv(s, "last_evaluate")
-            due = force_evaluate or applied or not last or \
+            mail_planned = bool(((summary.get("mail") or {}).get("planning") or {}).get("ok"))
+            due = force_evaluate or (applied and not mail_planned) or not last or \
                 (now - datetime.fromisoformat(last["ts"])).total_seconds() >= cfg.reevaluate_minutes * 60
             if due:
                 from ..planovanie.planovac import evaluate_all
-                from ..notifikacie.odosielanie import notify_recommendation
 
                 trigger = "nové údaje z e-mailu" if applied else "pravidelný prepočet"
-                before = s.scalar(select(Recommendation.id).order_by(Recommendation.id.desc())) or 0
                 recs = evaluate_all(s, now, trigger)
                 summary["evaluated"] = len(recs)
-                for rec in recs:
-                    if rec.id > before:  # len nové (zmenené) odporúčania
-                        summary["notified"] += len(notify_recommendation(s, rec))
                 set_kv(s, "last_evaluate", {"ts": now.isoformat(), "count": len(recs)})
                 record(s, "planovanie", "ok", vlaky=len(recs))
+        # upozornenia: všetky nové (zmenené) odporúčania z tohto cyklu – z prepočtu po e-maile aj pravidelného
+        from ..notifikacie.odosielanie import notify_recommendation
+
+        with session_scope() as s:
+            for rec in s.scalars(select(Recommendation).where(Recommendation.id > start_rec_id,
+                                                              Recommendation.state == "nove")
+                                 .order_by(Recommendation.id)):
+                summary["notified"] += len(notify_recommendation(s, rec))
     except Exception as exc:  # noqa: BLE001
         summary["errors"].append(f"plánovanie: {exc!r}")
         with session_scope() as s:

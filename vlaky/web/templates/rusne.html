@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Rušne{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Rušne ({{ locos|length }})</h1>
+  <p class="muted">Trakcia a napájacie systémy sa používajú vo filtri uskutočniteľnosti trasy (elektrický rušeň len po elektrifikovaných tratiach so systémom, ktorý podporuje).</p>
+</div>
+<section class="card">
+<div class="table-scroll">
+<table class="table">
+  <thead><tr><th scope="col">Číslo</th><th scope="col">Typ / rad</th><th scope="col">Trakcia</th><th scope="col">Napájacie systémy</th><th scope="col">Vlastník</th><th scope="col">Telematika</th>{% if user.can("crew") %}<th scope="col">Upraviť</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for l in locos %}
+    <tr>
+      <td><strong>{{ l.number }}</strong></td>
+      <td>{{ l.type or "—" }}</td>
+      <td>{{ "elektrická" if l.traction == "E" else "motorová" }}</td>
+      <td>{{ (l.systems or [])|join(", ") or "—" }}</td>
+      <td>{{ l.owner or "—" }}</td>
+      <td class="small">{{ l.telematics_id or "—" }}</td>
+      {% if user.can("crew") %}
+      <td>
+        <details class="mini">
+          <summary>Upraviť</summary>
+          <form method="post" action="/rusne/{{ l.id }}/upravit" class="mini-form">{{ m.csrf() }}
+            <label for="l-cislo-{{ l.id }}">Číslo</label><input id="l-cislo-{{ l.id }}" name="number" value="{{ l.number }}" required maxlength="40">
+            <label for="l-typ-{{ l.id }}">Typ / rad</label><input id="l-typ-{{ l.id }}" name="type" value="{{ l.type }}" maxlength="80">
+            <label for="l-trak-{{ l.id }}">Trakcia</label>
+            <select id="l-trak-{{ l.id }}" name="traction"><option value="E"{% if l.traction == "E" %} selected{% endif %}>elektrická</option><option value="M"{% if l.traction == "M" %} selected{% endif %}>motorová</option></select>
+            <fieldset class="checks"><legend>Napájacie systémy</legend>
+            {% for sys in systems %}<label><input type="checkbox" name="sys_{{ sys }}" value="1"{% if sys in (l.systems or []) %} checked{% endif %}> {{ sys }}</label>{% endfor %}
+            </fieldset>
+            <label for="l-vl-{{ l.id }}">Vlastník</label><input id="l-vl-{{ l.id }}" name="owner" value="{{ l.owner }}" maxlength="120">
+            <label for="l-tel-{{ l.id }}">ID telematiky</label><input id="l-tel-{{ l.id }}" name="telematics_id" value="{{ l.telematics_id }}" maxlength="120">
+            <button type="submit" class="btn btn-sm">Uložiť</button>
+          </form>
+        </details>
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">Zatiaľ žiadne rušne.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if user.can("crew") %}
+<details class="new-form">
+  <summary class="btn btn-sm">Pridať rušeň</summary>
+  <form method="post" action="/rusne/novy" class="grid-4">
+    {{ m.csrf() }}
+    <div class="field"><label for="nl-cislo">Číslo rušňa</label><input id="nl-cislo" name="number" required maxlength="40"></div>
+    <div class="field"><label for="nl-typ">Typ / rad</label><input id="nl-typ" name="type" maxlength="80"></div>
+    <div class="field"><label for="nl-trak">Trakcia</label><select id="nl-trak" name="traction"><option value="E">elektrická</option><option value="M">motorová</option></select></div>
+    <fieldset class="checks field"><legend>Napájacie systémy</legend>
+      {% for sys in systems %}<label><input type="checkbox" name="sys_{{ sys }}" value="1"> {{ sys }}</label>{% endfor %}
+    </fieldset>
+    <div class="field"><label for="nl-vl">Vlastník</label><input id="nl-vl" name="owner" maxlength="120"></div>
+    <div class="field"><label for="nl-tel">ID telematiky (GPS)</label><input id="nl-tel" name="telematics_id" maxlength="120"></div>
+    <div class="actions"><button type="submit" class="btn btn-primary">Pridať</button></div>
+  </form>
+</details>
+{% endif %}
+</section>
+{% endblock %}

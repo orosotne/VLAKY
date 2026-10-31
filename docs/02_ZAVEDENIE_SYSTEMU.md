@@ -81,12 +81,16 @@ Podrobný postup je v `docs/PREVADZKA.md`. Hlavné body:
 
 **Odporúčanie:** dohodnúť sa vo firme, že **všetko podstatné z telefónu a WhatsAppu sa krátko prepošle e-mailom** do schránky agenta (alebo zadá na stránke Výluky). Agent inak o zmene nevie.
 
+**Pred každým odchodom** musí byť vlak aktivovaný a v KIS/PIS zadaný súpis vlaku ND a správa o zostave vlaku – bez nich ŽSR vlak nevypraví (Z 1). Agent to pripomína v každom odporúčaní.
+
+**Odstavenie** podľa PPŽS: len v nácestnej dopravni, koľaj určí ŽSR, najviac 18 h. Pôvodnú trasu treba odrieknuť (poplatok U1, ak menej ako 20 pracovných dní vopred).
+
 ## 5. Poloha vlakov – porovnanie zdrojov
 
 | Zdroj | Presnosť a frekvencia | Cena | Kedy |
 |---|---|---|---|
 | **ŽSR KIS „Poloha vlaku“** | Body hlásenia (stanice), nie GPS | V rámci prístupu (bez osobitného poplatku) | Hneď po pridelení prístupu – zatiaľ ručne v portáli KIS. Strojovo cez DP 2 a Common Interface. |
-| **RNE TIS** | Body hlásenia pri medzinárodných vlakoch. ŽSR v roku 2024 dodalo 83 % správ TRI. K dispozícii je aj ETA siete. | Web zadarmo. API (Data Flow) platené: v cenníku 2023 od 8 000 € na zriadenie + 300 €/mesiac, pre stredného dopravcu ~18 – 31 tis. €/rok. | Hneď (web), neskôr API |
+| **RNE TIS** | Body hlásenia pri medzinárodných vlakoch. ŽSR v roku 2024 dodalo 83 % správ TRI. K dispozícii je aj ETA siete. | Web zadarmo. API (Data Flow) platené podľa objemu: v cenníku RNE 2023 najmenší balík (do 1 000 vlakov mesačne) 8 000 € zriadenie + 300 €/mesiac + poplatky za správy; pri veľkom dopravcovi (~18 000 vlakov mesačne) rádovo 18 – 31 tis. €/rok. Vyžiadať aktuálnu ponuku. | Hneď (web), neskôr API |
 | **Telematika rušňov** | GPS každých ~10 – 60 s. Na úrovni trate 10 – 20 m, súbežné koľaje sa rozlíšiť nedajú. | Podľa dodávateľa | Najprv zistiť, čo rušne už majú (Vectron: Remote Data Access/Railigent X; TRAXX: Railnova; CZ LOKO: GPS/GSM) |
 | **Aplikácia rušňovodiča** (súčasť systému) | GPS mobilu každých 30 s, hlásenia nástupu, pripravenosti a odchodu | Bez hardvéru | **Hneď** |
 | **ČD Cargo Eroza / ČDCgo** | Poloha a ETA pre zákazníkov. Mimo ČR podľa FAQ môžu chýbať. | – | Na porovnanie |

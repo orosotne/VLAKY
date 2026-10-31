@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Rušňovodiči a pracovný čas{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Rušňovodiči a pracovný čas</h1>
+  <p class="muted">Limit pracovného času {{ params.crew_max_duty_min|minutes }} od nástupu (vrátane prípravy {{ params.crew_prep_min|minutes }} a ukončenia {{ params.crew_post_min|minutes }}).
+    Zelená = viac ako {{ params.crew_buffer_min|minutes }} do limitu, oranžová = menej, červená = menej ako {{ (params.crew_buffer_min / 2)|minutes }} alebo hrozí prekročenie.</p>
+</div>
+
+<section class="card" id="zmeny" aria-labelledby="h-zmeny">
+  <h2 id="h-zmeny">Zmeny</h2>
+  <div class="table-scroll">
+  <table class="table">
+    <thead><tr><th scope="col">Rušňovodič</th><th scope="col">Vlak</th><th scope="col">Nástup</th><th scope="col">Limit</th><th scope="col">Zostáva</th><th scope="col">Vystriedať najneskôr</th><th scope="col">Stav</th>{% if user.can("crew") %}<th scope="col">Akcie</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for r in rows %}
+      {% set sh = r.sh %}
+      <tr class="crew-row crew-row-{{ r.color }}">
+        <td><strong>{{ sh.driver.name if sh.driver else "?" }}</strong></td>
+        <td>{% if r.train %}<a href="/vlaky/{{ r.train.id }}">{{ r.train.number }}</a>{% else %}—{% endif %}</td>
+        <td class="nowrap">{{ sh.start_utc|t }}</td>
+        <td class="nowrap">{{ r.limit|t }}</td>
+        <td>{% if sh.status == "prebieha" %}<span class="crew crew-{{ r.color }}" data-countdown="{{ sh.start_utc|iso }}" data-limit-min="{{ params.crew_max_duty_min }}" data-buffer-min="{{ params.crew_buffer_min }}">{{ r.left|minutes }}</span>{% if r.crew.get("end_p90") %}<div class="small muted">koniec P90 {{ r.crew.get("end_p90")|t }}</div>{% endif %}{% elif sh.status == "planovana" %}<span class="muted">plánovaná</span>{% else %}<span class="muted">ukončená {{ sh.actual_end_utc|t }}</span>{% endif %}</td>
+        <td class="nowrap">{% if sh.status != "ukoncena" %}<strong>{{ (r.crew.get("relieve_by") or r.relieve_by)|t }}</strong>{% else %}—{% endif %}</td>
+        <td>{{ SHIFT_STATUS.get(sh.status, sh.status) }}</td>
+        {% if user.can("crew") %}
+        <td class="actions-cell">
+          {% if sh.status == "planovana" %}<form method="post" action="/zmeny/{{ sh.id }}/nastup" class="inline">{{ m.csrf() }}<button type="submit" class="btn btn-sm btn-primary">Nástup teraz</button></form>{% endif %}
+          {% if sh.status == "prebieha" %}<form method="post" action="/zmeny/{{ sh.id }}/ukoncit" class="inline" data-confirm="Ukončiť zmenu rušňovodiča?">{{ m.csrf() }}<button type="submit" class="btn btn-sm">Ukončiť</button></form>{% endif %}
+          <details class="mini">
+            <summary>Upraviť</summary>
+            <form method="post" action="/zmeny/{{ sh.id }}/upravit" class="mini-form">{{ m.csrf() }}
+              <input type="hidden" name="driver_id" value="{{ sh.driver_id }}">
+              <label for="z-vlak-{{ sh.id }}">Vlak</label>
+              <select id="z-vlak-{{ sh.id }}" name="train_id"><option value="">—</option>{% for t in active_trains %}<option value="{{ t.id }}"{% if t.id == sh.train_id %} selected{% endif %}>{{ t.number }}</option>{% endfor %}</select>
+              <label for="z-start-{{ sh.id }}">Nástup</label><input id="z-start-{{ sh.id }}" type="datetime-local" name="start_utc" value="{{ sh.start_utc|dtinput }}" required>
+              <label for="z-koniec-{{ sh.id }}">Plánovaný koniec</label><input id="z-koniec-{{ sh.id }}" type="datetime-local" name="planned_end_utc" value="{{ sh.planned_end_utc|dtinput }}">
+              <label for="z-stav-{{ sh.id }}">Stav</label>
+              <select id="z-stav-{{ sh.id }}" name="status">{% for k, v in SHIFT_STATUS.items() %}<option value="{{ k }}"{% if k == sh.status %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+              <button type="submit" class="btn btn-sm">Uložiť</button>
+            </form>
+          </details>
+        </td>
+        {% endif %}
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">Žiadne zmeny.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if user.can("crew") %}
+  <details class="new-form">
+    <summary class="btn btn-sm">Naplánovať zmenu</summary>
+    <form method="post" action="/zmeny/nova" class="grid-4">
+      {{ m.csrf() }}
+      <div class="field"><label for="nz-rus">Rušňovodič</label>
+        <select id="nz-rus" name="driver_id" required><option value="">—</option>{% for d in drivers if d.active %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="nz-vlak">Vlak</label>
+        <select id="nz-vlak" name="train_id"><option value="">—</option>{% for t in active_trains %}<option value="{{ t.id }}">{{ t.number }} ({{ t.origin }} → {{ t.destination }})</option>{% endfor %}</select></div>
+      <div class="field"><label for="nz-start">Nástup (miestny čas)</label><input id="nz-start" type="datetime-local" name="start_utc" required value="{{ now|dtinput }}"></div>
+      <div class="field"><label for="nz-koniec">Plánovaný koniec</label><input id="nz-koniec" type="datetime-local" name="planned_end_utc"></div>
+      <div class="field"><label for="nz-stav">Stav</label><select id="nz-stav" name="status"><option value="planovana">plánovaná</option><option value="prebieha">prebieha (už nastúpil)</option></select></div>
+      <div class="actions"><button type="submit" class="btn btn-primary">Uložiť zmenu</button></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+<section class="card" aria-labelledby="h-rusnovodici">
+  <h2 id="h-rusnovodici">Rušňovodiči ({{ drivers|length }})</h2>
+  <div class="table-scroll">
+  <table class="table table-compact">
+    <thead><tr><th scope="col">Meno</th>{% if show_contacts %}<th scope="col">Telefón</th>{% endif %}<th scope="col">Domovská stanica</th><th scope="col">Znalosť tratí</th><th scope="col">Jazyky</th><th scope="col">Aktívny</th>{% if user.can("crew") %}<th scope="col">Upraviť</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for d in drivers %}
+      <tr{% if not d.active %} class="muted"{% endif %}>
+        <td>{{ d.name }}</td>
+        {% if show_contacts %}<td>{{ d.phone or "—" }}</td>{% endif %}
+        <td>{{ d.home_station or "—" }}</td>
+        <td class="small">{{ (d.route_knowledge or [])|join(", ") or "—" }}</td>
+        <td class="small">{{ (d.languages or [])|join(", ") or "—" }}</td>
+        <td>{{ "áno" if d.active else "nie" }}</td>
+        {% if user.can("crew") %}
+        <td>
+          <details class="mini">
+            <summary>Upraviť</summary>
+            <form method="post" action="/rusnovodici/{{ d.id }}/upravit" class="mini-form">{{ m.csrf() }}
+              <label for="d-meno-{{ d.id }}">Meno</label><input id="d-meno-{{ d.id }}" name="name" value="{{ d.name }}" required maxlength="160">
+              <label for="d-tel-{{ d.id }}">Telefón</label><input id="d-tel-{{ d.id }}" name="phone" value="{{ d.phone }}" maxlength="40">
+              <label for="d-dom-{{ d.id }}">Domovská stanica</label><input id="d-dom-{{ d.id }}" name="home_station" value="{{ d.home_station }}" maxlength="120">
+              <label for="d-trate-{{ d.id }}">Znalosť tratí (čiarkou)</label><input id="d-trate-{{ d.id }}" name="route_knowledge" value="{{ (d.route_knowledge or [])|join(', ') }}">
+              <label for="d-jaz-{{ d.id }}">Jazyky (čiarkou)</label><input id="d-jaz-{{ d.id }}" name="languages" value="{{ (d.languages or [])|join(', ') }}">
+              <label><input type="checkbox" name="active" value="1"{% if d.active %} checked{% endif %}> aktívny</label>
+              <button type="submit" class="btn btn-sm">Uložiť</button>
+            </form>
+          </details>
+        </td>
+        {% endif %}
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">Zatiaľ žiadni rušňovodiči.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if user.can("crew") %}
+  <details class="new-form">
+    <summary class="btn btn-sm">Pridať rušňovodiča</summary>
+    <form method="post" action="/rusnovodici/novy" class="grid-4">
+      {{ m.csrf() }}
+      <div class="field"><label for="nr-meno">Meno a priezvisko</label><input id="nr-meno" name="name" required maxlength="160"></div>
+      <div class="field"><label for="nr-tel">Telefón</label><input id="nr-tel" name="phone" maxlength="40" inputmode="tel"></div>
+      <div class="field"><label for="nr-dom">Domovská stanica</label><input id="nr-dom" name="home_station" maxlength="120" data-autocomplete="stanice" autocomplete="off"></div>
+      <div class="field"><label for="nr-trate">Znalosť tratí (čísla, čiarkou)</label><input id="nr-trate" name="route_knowledge"></div>
+      <div class="field"><label for="nr-jaz">Jazyky (čiarkou)</label><input id="nr-jaz" name="languages" placeholder="sk, cs, hu"></div>
+      <div class="actions"><button type="submit" class="btn btn-primary">Pridať</button></div>
+    </form>
+  </details>
+  <p class="muted small">GDPR: evidujú sa len údaje potrebné na plánovanie a kontrolu pracovného času.</p>
+  {% endif %}
+</section>
+{% endblock %}

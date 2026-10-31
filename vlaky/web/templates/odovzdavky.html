@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Odovzdávka služby{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Odovzdávka služby</h1>
+  <p class="muted">Prehľad pre ďalšieho dispečera: vlaky v jazde, ČERVENÉ a ORANŽOVÉ vlaky, rušňovodiči blízko limitu, výluky, nepotvrdené e-maily. Agent ho vytvára pri zmene služby; dispečer ho doplní a potvrdí.</p>
+  {% if user.can("operate") %}
+  <form method="post" action="/odovzdavka/nova" class="inline">{{ m.csrf() }}<button type="submit" class="btn btn-primary">Vytvoriť teraz</button></form>
+  {% endif %}
+</div>
+<section class="card">
+<div class="table-scroll">
+<table class="table">
+  <thead><tr><th scope="col">Vytvorená</th><th scope="col">Súhrn</th><th scope="col">Potvrdil</th></tr></thead>
+  <tbody>
+  {% for r in reports %}
+    <tr>
+      <td class="nowrap"><a href="/odovzdavka/{{ r.id }}">{{ r.created_at|tfull }}</a></td>
+      <td class="small">{{ (r.content or "").splitlines()[2:3]|join(" ") }}</td>
+      <td>{% if r.confirmed_by %}{{ r.confirmed_by }} <span class="muted small">{{ r.confirmed_at|t }}</span>{% else %}<span class="badge badge-warn">nepotvrdená</span>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="3" class="muted">Zatiaľ žiadne odovzdávky.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+</section>
+{% endblock %}

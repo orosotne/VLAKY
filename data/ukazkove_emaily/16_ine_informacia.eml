@@ -1,0 +1,21 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=dopravca.example; dkim=pass (2048-bit key)
+ header.d=dopravca.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT
+ dis=NONE) header.from=dopravca.example
+Received: from mail.dopravca.example (mail.dopravca.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Wed, 04 Nov 2026 08:00:00 +0100
+From:
+ =?utf-8?q?Dispe=C4=8Ding_=28FIKT=C3=8DVNE=29?= <dispecing@dopravca.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?RklLVMONVk5FIOKAkyB1a8Ohxb5rYTogWm1lbmEgdGVsZWbDs25ueWNo?=
+ kontaktov =?utf-8?q?dispe=C4=8Dingu?= od 1. 12. 2026
+Date: Wed, 04 Nov 2026 08:00:00 +0100
+Message-ID: <ukazka-16.fiktivne@dopravca.example>
+X-Ukazka: FIKTIVNE - ukazkovy e-mail pre testy Agenta dispecera
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+FIKTÍVNE – ukážka.
+
+Dobrý deň, od 1. decembra 2026 sa menia telefónne čísla dispečingu. Nové číslo: +421 900 000 111. Ďakujeme.

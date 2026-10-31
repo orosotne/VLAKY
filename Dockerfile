@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # Agent dispečer – obraz aplikácie (webová aplikácia aj agent používajú ten istý obraz).
 #
 #   docker build -t vlaky-app:latest .                          # produkčný obraz (cieľ "runtime")
@@ -24,8 +22,8 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Neprivilegovaný používateľ – rovnaké UID/GID vytvorí aj deploy/vps/setup.sh na serveri.
-RUN groupadd --system --gid 10001 vlaky \
- && useradd --system --uid 10001 --gid vlaky --home-dir /app --no-create-home \
+RUN groupadd --gid 10001 vlaky \
+ && useradd --uid 10001 --gid vlaky --home-dir /app --no-create-home \
             --shell /usr/sbin/nologin vlaky
 
 # Závislosti zvlášť od kódu (zmena kódu nevyvolá novú inštaláciu balíkov)
@@ -59,6 +57,10 @@ CMD ["python", "-m", "vlaky", "web", "--host", "0.0.0.0", "--port", "8000"]
 # Spúšťa sa len na požiadanie:  docker compose --profile tools run --rm osm-import
 FROM base AS osm-tools
 USER root
+# binárny balík osmium potrebuje za behu knižnicu expat (nie kompilátor); len v tejto etape
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libexpat1 \
+ && rm -rf /var/lib/apt/lists/*
 COPY requirements-dev.txt ./
 RUN pip install --no-cache-dir "$(grep -E '^osmium' requirements-dev.txt)"
 USER vlaky

@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base, utcnow
@@ -284,6 +284,7 @@ class Handover(Base):
 
 class PositionReport(Base):
     __tablename__ = "position_reports"
+    __table_args__ = (Index("ix_position_reports_train_ts", "train_id", "ts_utc"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     train_id: Mapped[Optional[int]] = mapped_column(ForeignKey("trains.id"), nullable=True, index=True)
     train_number: Mapped[str] = mapped_column(String(40), default="")

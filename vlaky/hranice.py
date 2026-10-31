@@ -37,8 +37,10 @@ def seed_borders(session: Session) -> int:
             bc.dwell_p50_min, bc.dwell_p90_min = p50, p90
             session.add(bc)
         for key in ("name", "country", "sk_station", "foreign_station", "handover_station", "handover_side",
-                    "gauge", "traction", "freight", "notes", "source"):
+                    "gauge", "traction", "freight", "source"):
             setattr(bc, key, item.get(key, ""))
+        if new:  # poznámky a kontakty upravuje dispečing – pri ďalšom init-db sa neprepíšu
+            bc.notes = item.get("notes", "")
         bc.active = item.get("freight") != "ziadny" or True
         if net is not None:
             st = net.find_station(item["sk_station"])

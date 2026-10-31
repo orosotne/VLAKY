@@ -301,8 +301,12 @@ def _driver_dict(sh: Optional[DriverShift], rec: Optional[Recommendation], param
         out["status"] = crew.get("status")
         out["end_p90"] = crew.get("end_p90")
         if sh is None:
-            out.update(start=crew.get("start"), limit=crew.get("limit"), left_min=crew.get("left_min"),
-                       relieve_by=crew.get("relieve_by"))
+            crew_limit = parse_iso(crew.get("limit"))
+            left = (crew_limit - now).total_seconds() / 60.0 if crew_limit else crew.get("left_min")
+            out.update(start=crew.get("start"), limit=crew.get("limit"),
+                       left_min=round(left) if isinstance(left, (int, float)) else None,
+                       relieve_by=crew.get("relieve_by"),
+                       color=crew_color(left if isinstance(left, (int, float)) else None, params["crew_buffer_min"]))
         worse = {"ČERVENÁ": "cervena", "ORANŽOVÁ": "oranzova"}.get(crew.get("status"))
         rank = {"cervena": 0, "oranzova": 1, "zelena": 2, "seda": 3}
         if worse and rank[worse] < rank.get(out["color"], 3):
@@ -488,14 +492,14 @@ def alerts(s: Session, now: Optional[datetime] = None, limit: int = 30) -> list:
 
     for sh in s.scalars(select(DriverShift).options(selectinload(DriverShift.driver))
                         .where(DriverShift.status == "prebieha")):
-        limit = ensure_utc(sh.start_utc) + timedelta(minutes=params["crew_max_duty_min"])
-        left = (limit - now).total_seconds() / 60.0
+        duty_end = ensure_utc(sh.start_utc) + timedelta(minutes=params["crew_max_duty_min"])
+        left = (duty_end - now).total_seconds() / 60.0
         if left <= 90:
             name = sh.driver.name if sh.driver else "?"
             pr = "KRITICKÉ" if left <= 30 else "DÔLEŽITÉ"
             txt = (f"Rušňovodič {name}: limit pracovného času prekročený o {int(-left)} min!" if left < 0 else
                    f"Rušňovodič {name}: do limitu pracovného času zostáva {int(left)} min "
-                   f"(limit o {fmt(limit, False)}).")
+                   f"(limit o {fmt(duty_end, False)}).")
             out.append({"priority": pr, "ts": iso(now), "text": txt, "href": "/rusnovodici", "kind": "rusnovodic"})
 
     hb = s.scalar(select(func.max(AgentHealth.ts)))

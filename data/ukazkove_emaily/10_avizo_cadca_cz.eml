@@ -1,0 +1,28 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=partner.example; dkim=pass (2048-bit key)
+ header.d=partner.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT
+ dis=NONE) header.from=partner.example
+Received: from mail.partner.example (mail.partner.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Mon, 02 Nov 2026 09:55:00 +0100
+From: =?utf-8?q?Dispe=C4=8Dink_=E2=80=93_Partner_CZ_=28FIKTIVN=C3=8D=29?=
+ <dispecink@partner.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?RklLVElWTsONIOKAkyB1a8OhemthOiBBdsOtem8gdmxha3UgTmV4IDQ3?=
+ =?utf-8?q?250_=E2=80=93_=C4=8Cadca?=
+Date: Mon, 02 Nov 2026 09:55:00 +0100
+Message-ID: <ukazka-10.fiktivne@partner.example>
+X-Ukazka: FIKTIVNE - ukazkovy e-mail pre testy Agenta dispecera
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Dobrý den,
+
+FIKTIVNÍ – ukázka (FIKTÍVNE – ukážka). Avizujeme vlak Nex 47250 (ložené kontejnery, 24 vozů, 1 520 t, délka 560 m).
+Vlak odjel z Ostravy v 08:40.
+Předpokládaný příjezd do Čadce (PPS): 03.11.2026 v 13:35 hod.
+
+Prosíme o zajištění převzetí.
+
+S pozdravem
+Dispečink partnera (FIKTIVNÍ)

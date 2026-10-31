@@ -26,6 +26,9 @@ Repozitár zatiaľ obsahuje **zadanie (prompt), podklady na zavedenie a spustite
 | [`docs/03_REZERVY_A_ROZHODOVANIE.md`](docs/03_REZERVY_A_ROZHODOVANIE.md) | Bezpečné časové rezervy, semafor a pravidlá vypraviť / počkať / odstaviť / presmerovať, s príkladom. |
 | [`docs/04_ALGORITMY.md`](docs/04_ALGORITMY.md) | Aké algoritmy použiť a prečo, vrátane otázky „nových algoritmov od OpenAI“. |
 | [`docs/05_ZDROJE.md`](docs/05_ZDROJE.md) | Zdroje a odkazy (ŽSR, EÚ predpisy, dáta, technológie). |
+| [`docs/PREVADZKA.md`](docs/PREVADZKA.md) | **Prevádzka na VPS** – inštalácia, schránka agenta, zálohy a test obnovy, monitoring, postup pri incidentoch. |
+| [`docs/ARCHITEKTURA.md`](docs/ARCHITEKTURA.md) | Architektúra hotového systému: komponenty, dátový tok, rozhodnutia. |
+| [`docs/PREDPOKLADY.md`](docs/PREDPOKLADY.md) | Predpoklady použité pri stavbe (odpovede na úvodné otázky promptu). |
 | [`referencia/`](referencia/) | Spustiteľná referenčná implementácia rozhodovania a jej testy (Python, bez externých knižníc). |
 
 ## Ako postupovať

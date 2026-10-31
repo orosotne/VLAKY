@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Používatelia{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Používatelia a roly</h1>
+  <p class="muted">Dispečer: všetko operatívne · Vedúci dispečingu: + parametre, používatelia, audit · Plánovač: rušňovodiči, zmeny, rušne · Obchod: len čítanie · Administrátor: používatelia.</p>
+</div>
+<section class="card">
+<div class="table-scroll">
+<table class="table">
+  <thead><tr><th scope="col">Meno</th><th scope="col">Celé meno</th><th scope="col">Rola</th><th scope="col">E-mail</th><th scope="col">Aktívny</th><th scope="col">Vytvorený</th><th scope="col">Upraviť</th></tr></thead>
+  <tbody>
+  {% for u in users %}
+    <tr{% if not u.active %} class="muted"{% endif %}>
+      <td><strong>{{ u.username }}</strong></td>
+      <td>{{ u.full_name or "—" }}</td>
+      <td>{{ ROLE_LABEL.get(u.role, u.role) }}</td>
+      <td>{{ u.email or "—" }}</td>
+      <td>{{ "áno" if u.active else "nie" }}</td>
+      <td class="nowrap">{{ u.created_at|t }}</td>
+      <td>
+        <details class="mini">
+          <summary>Upraviť</summary>
+          <form method="post" action="/pouzivatelia/{{ u.id }}/upravit" class="mini-form">{{ m.csrf() }}
+            <label for="u-rola-{{ u.id }}">Rola</label>
+            <select id="u-rola-{{ u.id }}" name="role">{% for r in roles %}<option value="{{ r }}"{% if r == u.role %} selected{% endif %}>{{ ROLE_LABEL.get(r, r) }}</option>{% endfor %}</select>
+            <label><input type="checkbox" name="active" value="1"{% if u.active %} checked{% endif %}> aktívny</label>
+            <label for="u-heslo-{{ u.id }}">Nové heslo (nepovinné, min. 10 znakov)</label>
+            <input id="u-heslo-{{ u.id }}" type="password" name="password" autocomplete="new-password" minlength="10" maxlength="200">
+            <button type="submit" class="btn btn-sm">Uložiť</button>
+          </form>
+        </details>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<details class="new-form">
+  <summary class="btn btn-sm">Nový používateľ</summary>
+  <form method="post" action="/pouzivatelia/novy" class="grid-4">
+    {{ m.csrf() }}
+    <div class="field"><label for="nu-meno">Prihlasovacie meno</label><input id="nu-meno" name="username" required maxlength="80" pattern="[a-z0-9][a-z0-9._\-]{2,79}" autocomplete="off"></div>
+    <div class="field"><label for="nu-cele">Meno a priezvisko</label><input id="nu-cele" name="full_name" maxlength="160"></div>
+    <div class="field"><label for="nu-rola">Rola</label><select id="nu-rola" name="role">{% for r in roles %}<option value="{{ r }}">{{ ROLE_LABEL.get(r, r) }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="nu-email">E-mail</label><input id="nu-email" name="email" type="email" maxlength="200"></div>
+    <div class="field"><label for="nu-tel">Telefón</label><input id="nu-tel" name="phone" maxlength="40"></div>
+    <div class="field"><label for="nu-heslo">Heslo (min. 10 znakov)</label><input id="nu-heslo" name="password" type="password" required minlength="10" maxlength="200" autocomplete="new-password"></div>
+    <div class="actions"><button type="submit" class="btn btn-primary">Vytvoriť</button></div>
+  </form>
+</details>
+</section>
+{% endblock %}

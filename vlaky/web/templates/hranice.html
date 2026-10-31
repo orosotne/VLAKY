@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Hraničné priechody a preberanie{% endblock %}
+{% set freight_text = {"hlavny": "hlavný", "pravidelny": "pravidelný", "obcasny": "občasný", "ziadny": "bez nákladnej dopravy"} %}
+{% block content %}
+<div class="page-head">
+  <h1>Hraničné priechody a preberanie vlakov</h1>
+  <p class="muted">Vlaky sa preberajú na vstupných hraničných priechodoch SR. PPS = pohraničná prechodová stanica (miesto preberania).</p>
+</div>
+
+<section class="card" id="preberania" aria-labelledby="h-preberania">
+  <h2 id="h-preberania">Očakávané a prebiehajúce preberania</h2>
+  <div class="table-scroll">
+  <table class="table">
+    <thead><tr><th scope="col">Vlak</th><th scope="col">Priechod</th><th scope="col">Smer</th><th scope="col">Avízo (príchod)</th><th scope="col">Prišiel</th><th scope="col">Prevzatý</th><th scope="col">Stav</th><th scope="col">Zistenia</th>{% if user.can("operate") %}<th scope="col">Akcie</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for h in handovers %}
+      {% set t = trains.get(h.train_id) %}
+      <tr id="preberanie-{{ h.id }}">
+        <td>{% if t %}<a href="/vlaky/{{ t.id }}"><strong>{{ t.number }}</strong></a><div class="small muted">{{ t.origin }} → {{ t.destination }}</div>{% else %}#{{ h.train_id }}{% endif %}</td>
+        <td>{{ h.border.name if h.border else "—" }}{% if h.border %}<div class="small muted">PPS: {{ h.border.handover_station }} · P50/P90 {{ h.border.dwell_p50_min|num }}/{{ h.border.dwell_p90_min|num }} min</div>{% endif %}</td>
+        <td>{{ "vstup" if h.direction == "vstup" else "výstup" }}</td>
+        <td class="nowrap">{{ h.avizo_eta_utc|t }}</td>
+        <td class="nowrap">{{ h.arrived_utc|t }}</td>
+        <td class="nowrap">{{ h.taken_over_utc|t }}</td>
+        <td><span class="badge status-{{ h.status }}">{{ HANDOVER_STATUS.get(h.status, h.status) }}</span></td>
+        <td class="small">{{ h.findings or "—" }}</td>
+        {% if user.can("operate") %}
+        <td class="actions-cell">
+          {% if h.status == "ocakavany" %}
+          <form method="post" action="/hranice/preberanie/{{ h.id }}/prisiel" class="mini-form">{{ m.csrf() }}
+            <label class="visually-hidden" for="cas-p-{{ h.id }}">Čas príchodu</label>
+            <input id="cas-p-{{ h.id }}" type="datetime-local" name="cas" title="Prázdne = teraz">
+            <button type="submit" class="btn btn-sm">Prišiel na hranicu</button>
+          </form>
+          {% endif %}
+          {% if h.status in ("ocakavany", "prisiel") %}
+          <form method="post" action="/hranice/preberanie/{{ h.id }}/prevzaty" class="mini-form">{{ m.csrf() }}
+            <label class="visually-hidden" for="cas-v-{{ h.id }}">Čas prevzatia</label>
+            <input id="cas-v-{{ h.id }}" type="datetime-local" name="cas" title="Prázdne = teraz">
+            <label class="visually-hidden" for="zist-{{ h.id }}">Zistenia</label>
+            <input id="zist-{{ h.id }}" name="findings" placeholder="zistenia (závady, doklady…)" maxlength="4000">
+            <button type="submit" class="btn btn-sm btn-primary">{{ "Prevzatý" if h.direction == "vstup" else "Odovzdaný" }}</button>
+          </form>
+          <details class="mini">
+            <summary>Upraviť avízo</summary>
+            <form method="post" action="/hranice/preberanie/{{ h.id }}/upravit" class="mini-form">{{ m.csrf() }}
+              <label for="avizo-{{ h.id }}">Avízo – príchod</label>
+              <input id="avizo-{{ h.id }}" type="datetime-local" name="avizo_eta_utc" value="{{ h.avizo_eta_utc|dtinput }}">
+              <label for="zist2-{{ h.id }}">Zistenia</label>
+              <input id="zist2-{{ h.id }}" name="findings" value="{{ h.findings }}" maxlength="4000">
+              <button type="submit" class="btn btn-sm">Uložiť</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="muted">Žiadne očakávané preberania.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if user.can("operate") %}
+  <details class="new-form">
+    <summary class="btn btn-sm">Zaevidovať preberanie / avízo</summary>
+    <form method="post" action="/hranice/preberanie/nove" class="grid-4">
+      {{ m.csrf() }}
+      <div class="field"><label for="ho-vlak">Vlak</label>
+        <select id="ho-vlak" name="train_id" required><option value="">—</option>{% for t in active_trains %}<option value="{{ t.id }}">{{ t.number }} ({{ t.origin }} → {{ t.destination }})</option>{% endfor %}</select></div>
+      <div class="field"><label for="ho-hranica">Hraničný priechod</label>
+        <select id="ho-hranica" name="border_id" required><option value="">—</option>{% for b in borders %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="ho-smer">Smer</label>
+        <select id="ho-smer" name="direction"><option value="vstup">vstup (preberáme)</option><option value="vystup">výstup (odovzdávame)</option></select></div>
+      <div class="field"><label for="ho-eta">Avízo – predpokladaný príchod</label><input id="ho-eta" type="datetime-local" name="avizo_eta_utc"></div>
+      <div class="actions"><button type="submit" class="btn btn-primary">Uložiť</button></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+<section class="card" aria-labelledby="h-priechody">
+  <h2 id="h-priechody">Register hraničných priechodov ({{ borders|length }})</h2>
+  <div class="table-scroll">
+  <table class="table table-compact">
+    <thead><tr><th scope="col">Priechod</th><th scope="col">Štát</th><th scope="col">Stanica SR / susedná</th><th scope="col">PPS (preberanie)</th><th scope="col">Rozchod</th><th scope="col">Trakcia</th><th scope="col">Nákladná doprava</th><th scope="col">Preberanie P50 / P90</th><th scope="col">Kontakt a poznámky</th></tr></thead>
+    <tbody>
+    {% for b in borders %}
+      <tr id="hranica-{{ b.id }}">
+        <td><strong>{{ b.name }}</strong><div class="small muted">{{ b.code }}</div></td>
+        <td>{{ b.country }}</td>
+        <td>{{ b.sk_station }} / {{ b.foreign_station }}</td>
+        <td>{{ b.handover_station }} <span class="muted small">({{ "strana SR" if b.handover_side == "SK" else "susedná strana" }})</span></td>
+        <td>{{ b.gauge }}</td>
+        <td class="small">{{ b.traction }}</td>
+        <td>{{ freight_text.get(b.freight, b.freight) }}</td>
+        <td class="nowrap">{{ b.dwell_p50_min|num }} / {{ b.dwell_p90_min|num }} min</td>
+        <td class="small">
+          {% if b.contact %}<div>{{ b.contact }}</div>{% endif %}
+          {% if b.notes %}<div class="muted">{{ b.notes }}</div>{% endif %}
+          {% if user.can("borders") %}
+          <details class="mini">
+            <summary>Upraviť</summary>
+            <form method="post" action="/hranice/{{ b.id }}" class="mini-form">{{ m.csrf() }}
+              <label for="p50-{{ b.id }}">P50 [min]</label><input id="p50-{{ b.id }}" type="number" name="dwell_p50_min" value="{{ b.dwell_p50_min|int }}" min="1" max="2880" required>
+              <label for="p90-{{ b.id }}">P90 [min]</label><input id="p90-{{ b.id }}" type="number" name="dwell_p90_min" value="{{ b.dwell_p90_min|int }}" min="1" max="2880" required>
+              <label for="kontakt-{{ b.id }}">Kontakt</label><input id="kontakt-{{ b.id }}" name="contact" value="{{ b.contact }}" maxlength="1000">
+              <label for="pozn-{{ b.id }}">Poznámky</label><textarea id="pozn-{{ b.id }}" name="notes" rows="2" maxlength="4000">{{ b.notes }}</textarea>
+              <button type="submit" class="btn btn-sm btn-primary">Uložiť</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small">Doby preberania sú počiatočné odhady – kalibrujú sa z vlastnej histórie. Zdroj: {{ borders[0].source if borders else "" }}</p>
+</section>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Výluky{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Register výluk a obmedzení</h1>
+  <div class="head-actions">{% if user.can("operate") %}<a class="btn btn-primary" href="/vyluky/nova">Nová výluka</a>{% endif %}</div>
+  <nav class="tabs" aria-label="Filter výluk">
+    {% for key, text in (("platne", "Platné a plánované"), ("aktivne", "Platia teraz"), ("planovane", "Plánované"), ("zrusene", "Zrušené"), ("vsetky", "Všetky")) %}
+    <a href="?filter={{ key }}"{% if filter == key %} aria-current="page"{% endif %}>{{ text }}</a>
+    {% endfor %}
+  </nav>
+</div>
+<section class="card">
+<div class="table-scroll">
+<table class="table">
+  <thead><tr><th scope="col">Úsek</th><th scope="col">Druh</th><th scope="col">Platnosť (miestny čas)</th><th scope="col">Denne</th><th scope="col">Dopad</th><th scope="col">Stav</th><th scope="col">Zdroj</th><th scope="col">Akcie</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+    {% set c = row.c %}
+    <tr id="vyluka-{{ c.id }}"{% if row.active %} class="row-active"{% endif %}>
+      <td><strong>{{ c.from_station }} – {{ c.to_station }}</strong>{% if c.line_ref %}<div class="small muted">trať {{ c.line_ref }}{% if c.track %}, koľaj {{ c.track }}{% endif %}</div>{% endif %}{% if c.external_ref %}<div class="small muted">č. {{ c.external_ref }}</div>{% endif %}</td>
+      <td>{{ CLOSURE_KIND.get(c.kind, c.kind) }}</td>
+      <td class="nowrap">{{ c.start_utc|t }} – {{ c.end_utc|t }}{% if row.active %} <span class="badge badge-bad">platí teraz</span>{% elif row.next %}<div class="small muted">najbližšie {{ row.next|t }}</div>{% endif %}</td>
+      <td>{% if c.daily_from %}{{ c.daily_from }}–{{ c.daily_to }}{% else %}—{% endif %}</td>
+      <td class="small">{% if c.electric_only or c.kind == "trakcne_vedenie" %}len elektrická trakcia{% elif c.kind == "pomala_jazda" %}max {{ c.speed_kmh|num }} km/h{% else %}všetky vlaky{% endif %}</td>
+      <td><span class="badge status-{{ c.status }}">{{ CLOSURE_STATUS.get(c.status, c.status) }}</span>{% if c.version and c.version > 1 %} <span class="muted small">v{{ c.version }}</span>{% endif %}</td>
+      <td class="small">{{ c.source }}{% if c.source_event_id %} <a href="/fronta">#{{ c.source_event_id }}</a>{% endif %}</td>
+      <td class="actions-cell">
+        {% if user.can("operate") and c.status != "zrusene" %}
+        <a class="btn btn-sm" href="/vyluky/{{ c.id }}/upravit">Upraviť</a>
+        {% if c.status == "navrh" %}<form method="post" action="/vyluky/{{ c.id }}/overit" class="inline">{{ m.csrf() }}<button type="submit" class="btn btn-sm btn-primary">Overiť</button></form>{% endif %}
+        <form method="post" action="/vyluky/{{ c.id }}/zrusit" class="inline" data-confirm="Naozaj zrušiť výluku {{ c.from_station }} – {{ c.to_station }}?">{{ m.csrf() }}<input type="hidden" name="dovod" value=""><button type="submit" class="btn btn-sm btn-danger">Zrušiť</button></form>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="muted">Žiadne výluky v tomto výbere.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="muted small">Výluky v stave „návrh“ agent pri plánovaní zohľadňuje konzervatívne (ako keby platili), kým ich dispečer neoverí alebo nezruší.</p>
+</section>
+{% endblock %}

@@ -1,0 +1,16 @@
+{
+  "name": "Agent dispečer – rušňovodič",
+  "short_name": "Rušňovodič",
+  "description": "Hlásenia rušňovodiča (nástup, pripravený, odchod, problém) a zdieľanie polohy vlaku pre dispečing.",
+  "lang": "sk",
+  "start_url": "/rusnovodic",
+  "scope": "/rusnovodic",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1419",
+  "theme_color": "#0b5cad",
+  "icons": [
+    {"src": "/static/img/ikona.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
+    {"src": "/static/img/ikona.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable"}
+  ]
+}

@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Živá mapa{% endblock %}
+{% block body_class %}page-dashboard{% if wall %} wall{% endif %}{% endblock %}
+{% block main_class %}dash-main{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ MAPLIBRE_CSS }}" integrity="{{ MAPLIBRE_CSS_SRI }}" crossorigin="anonymous">
+{% endblock %}
+{% block content %}
+<h1 class="visually-hidden">Živá mapa Slovenska a prehľad vlakov</h1>
+<div class="dash" id="dash">
+  <section class="dash-map" aria-label="Mapa">
+    <div class="map-toolbar" role="toolbar" aria-label="Nástroje mapy">
+      <div class="tb-group">
+        <label for="f-hladat" class="visually-hidden">Hľadať vlak podľa čísla</label>
+        <input id="f-hladat" type="search" placeholder="Číslo vlaku… ( / )" autocomplete="off" inputmode="numeric" maxlength="40">
+        <label for="f-stav" class="visually-hidden">Stav vlaku</label>
+        <select id="f-stav">
+          <option value="">Všetky stavy</option>
+          {% for key, text in TRAIN_STATUS.items() if key not in ("ukonceny", "zruseny", "odovzdany") %}
+          <option value="{{ key }}">{{ text }}</option>
+          {% endfor %}
+        </select>
+        <label for="f-farba" class="visually-hidden">Semafor</label>
+        <select id="f-farba">
+          <option value="">Všetky semafory</option>
+          <option value="ČERVENÁ">ČERVENÁ</option>
+          <option value="ORANŽOVÁ">ORANŽOVÁ</option>
+          <option value="ZELENÁ">ZELENÁ</option>
+          <option value="SIVÁ">bez čerstvých dát</option>
+        </select>
+        <label for="f-hranica" class="visually-hidden">Hraničný priechod</label>
+        <select id="f-hranica">
+          <option value="">Všetky priechody</option>
+          {% for b in borders %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="tb-group tb-slider">
+        <label for="f-cas">Výluky:</label>
+        <input id="f-cas" type="range" min="0" max="3" step="1" value="0" aria-valuetext="teraz">
+        <output id="f-cas-out" for="f-cas">teraz</output>
+      </div>
+      <div class="tb-group">
+        <button type="button" class="btn btn-sm" id="btn-noc" aria-pressed="false" title="Nočný režim (N)">Nočný režim</button>
+        <button type="button" class="btn btn-sm" id="btn-nastenka" title="Celá obrazovka pre nástenný monitor (F)">Celá obrazovka</button>
+        <span class="live" id="live" role="status"><span class="live-dot" aria-hidden="true"></span><span class="live-text">pripájam…</span></span>
+      </div>
+    </div>
+    <div class="map-wrap">
+      <div id="mapa" class="map" role="region" aria-label="Živá mapa Slovenska: železničná sieť, vlaky, výluky a hraničné priechody"></div>
+      <div id="map-status" class="map-status" role="status" aria-live="polite" hidden></div>
+      <div id="follow-banner" class="follow-banner" hidden>Sledujem vlak <strong id="follow-num"></strong> <button type="button" class="btn btn-sm" id="follow-stop">Zrušiť (Esc)</button></div>
+      <div class="wall-clock" id="wall-clock" aria-hidden="true"></div>
+      <details class="map-legend">
+        <summary>Legenda</summary>
+        <ul>
+          <li><span class="lg-line lg-ac"></span> elektrifikovaná 25 kV 50 Hz</li>
+          <li><span class="lg-line lg-dc"></span> elektrifikovaná 3 kV =</li>
+          <li><span class="lg-line lg-none"></span> neelektrifikovaná</li>
+          <li><span class="lg-line lg-broad"></span> široký rozchod 1520 mm</li>
+          <li><span class="lg-line lg-closure"></span> výluka (plná = platí teraz, prerušovaná = neskôr)</li>
+          <li><span class="lg-line lg-slow"></span> pomalá jazda</li>
+          <li><span class="lg-dot dot-zelena"></span> ZELENÁ <span class="lg-dot dot-oranzova"></span> ORANŽOVÁ <span class="lg-dot dot-cervena"></span> ČERVENÁ</li>
+          <li><span class="lg-dot dot-seda"></span> poloha stará ({{ config.staleMinutes }}+ min) alebo chýba – ETA neistá</li>
+          <li><span class="lg-border"></span> hraničný priechod (PPS = pohraničná prechodová stanica)</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <aside class="dash-side" aria-label="Prehľad">
+    <section class="panel" aria-labelledby="h-vlaky">
+      <div class="panel-head">
+        <h2 id="h-vlaky">Vlaky <span class="muted small" id="vlaky-pocet">({{ trains|length }})</span></h2>
+        <span class="muted small" id="vlaky-cas">aktualizované {{ now|tt }}</span>
+      </div>
+      <div class="table-scroll">
+      <table class="table table-compact" id="tabulka-vlakov">
+        <caption class="visually-hidden">Vlaky zoradené podľa naliehavosti (ČERVENÁ prvá)</caption>
+        <thead><tr><th scope="col">Vlak / semafor</th><th scope="col">Poloha</th><th scope="col">ETA P50 (P90) · rezerva</th><th scope="col">Rušňovodič (do 13 h)</th><th scope="col">Najbližšie riziko</th></tr></thead>
+        <tbody>
+        {% for t in trains %}
+          {% set cls = t.display_color|color_class %}
+          <tr data-id="{{ t.id }}" class="vlak-row{% if t.stale %} is-stale{% endif %}">
+            <td><div class="vlak-cell"><span class="dot dot-{{ cls }}{% if t.stale and t.color %} ring-{{ t.color|color_class }}{% endif %}" aria-hidden="true"></span><div><button type="button" class="linkbtn vlak-btn" data-id="{{ t.id }}">{{ t.number }}</button> <span class="sem sem-{{ t.color|color_class }}">{{ t.color or "—" }}</span><div class="small muted">{{ t.relation }}</div></div></div></td>
+            <td class="small">{% if t.position %}{{ t.position.nearest_station or "na trati" }}<div class="muted">{{ t.position.ts|tt }} · {{ t.position.source_text }}</div>{% else %}<span class="muted">bez polohy</span>{% endif %}</td>
+            <td class="small">{{ t.eta_p50|t }}{% if t.eta_p90 %} <span class="muted">({{ t.eta_p90|tt }})</span>{% endif %}<div>{% if t.slack_min is not none %}<span class="{{ 'neg' if t.slack_min < 0 else '' }}">{{ "meškanie " ~ (-t.slack_min)|minutes if t.slack_min < 0 else "rezerva " ~ t.slack_min|minutes }}</span>{% endif %}</div></td>
+            <td class="small">{% if t.driver %}{{ t.driver.name or "—" }}<div class="crew crew-{{ t.driver.color }}">{{ t.driver.left_min|minutes }}</div>{% else %}—{% endif %}</td>
+            <td class="small risk">{{ t.risk or "—" }}</td>
+          </tr>
+        {% else %}
+          <tr class="empty"><td colspan="5">Žiadne aktívne vlaky. <a href="/vlaky/novy">Zadať vlak</a></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-upozornenia">
+      <div class="panel-head"><h2 id="h-upozornenia">Upozornenia</h2></div>
+      <ul class="alerts" id="upozornenia" aria-live="polite">
+        {% for a in alerts %}
+        <li class="alert alert-{{ a.priority|priority_class }}">{{ m.priority(a.priority) }} {% if a.href %}<a href="{{ a.href }}">{{ a.text }}</a>{% else %}{{ a.text }}{% endif %} <span class="muted small">{{ a.ts|tt }}</span></li>
+        {% else %}
+        <li class="muted">Žiadne upozornenia.</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="panel" aria-labelledby="h-casova-os">
+      <div class="panel-head"><h2 id="h-casova-os">Časová os – najbližších 24 h</h2></div>
+      <div id="casova-os" class="gantt" role="img" aria-label="Časová os: plánovaný odchod a príchod vlakov a výluky na ich trase v najbližších 24 hodinách">
+        <p class="muted small">Načítavam…</p>
+      </div>
+      <p class="muted small">Pruh = odchod → príchod (P50), svetlejšie predĺženie do P90. Červené = výluky na trase vlaku. Rámik = konflikt.</p>
+    </section>
+  </aside>
+</div>
+<script type="application/json" id="dash-config">{{ config|tojson }}</script>
+{% endblock %}
+{% block footer %}{% endblock %}
+{% block scripts %}
+<script src="{{ MAPLIBRE_JS }}" integrity="{{ MAPLIBRE_JS_SRI }}" crossorigin="anonymous"></script>
+<script src="/static/js/mapa.js?v={{ asset_version }}"></script>
+{% endblock %}

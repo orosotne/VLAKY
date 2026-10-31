@@ -99,7 +99,7 @@ def api_lines(request: Request, user=Depends(view)):
     try:
         data, etag = _lines_blob()
     except OSError:
-        raise HTTPException(503, "Geometria tratí nie je k dispozícii (data/siet/trate.geojson.gz).")
+        raise HTTPException(503, "Geometria tratí nie je k dispozícii (data/siet/trate.geojson.gz).") from None
     headers = {"ETag": etag, "Cache-Control": "private, max-age=86400", "Vary": "Accept-Encoding"}
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
@@ -267,5 +267,5 @@ def api_running_events(body: RunningEventIn):
         with session_scope() as s:
             result = ingest_running_event(s, body)
     except UnknownStation as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
     return {"ok": True, **result}

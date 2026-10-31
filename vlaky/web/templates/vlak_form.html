@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}{{ "Upraviť vlak " ~ train.number if train else "Nový vlak" }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="crumbs"><a href="/vlaky">Vlaky</a>{% if train %} › <a href="/vlaky/{{ train.id }}">{{ train.number }}</a>{% endif %}</p>
+  <h1>{{ "Upraviť vlak " ~ train.number if train else "Nový vlak" }}</h1>
+  <p class="muted">Časy zadávajte v miestnom čase ({{ tz }}); ukladajú sa v UTC. Dopravne sa overujú proti registru siete.</p>
+</div>
+{% if errors %}<div class="flash flash-chyba" role="alert">Formulár obsahuje chyby – opravte označené polia.</div>{% endif %}
+<form method="post" action="{{ '/vlaky/' ~ train.id ~ '/upravit' if train else '/vlaky/novy' }}" class="card form-grid" novalidate>
+  {{ m.csrf() }}
+  <fieldset>
+    <legend>Vlak</legend>
+    <div class="grid-3">
+      {{ m.field("number", "Číslo vlaku", values, errors, required=True, attrs={"maxlength": 40, "inputmode": "numeric"}) }}
+      {{ m.field("run_date", "Dátum jazdy", values, errors, type="date") }}
+      {{ m.field("customer", "Zákazník", values, errors, attrs={"maxlength": 200}) }}
+      {{ m.select("status", "Stav", statuses.items(), values, errors, required=True) }}
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Relácia</legend>
+    <div class="grid-3">
+      {{ m.field("origin", "Východisková dopravňa", values, errors, required=True, attrs={"data-autocomplete": "stanice", "autocomplete": "off", "maxlength": 120}) }}
+      {{ m.field("destination", "Cieľová dopravňa", values, errors, required=True, attrs={"data-autocomplete": "stanice", "autocomplete": "off", "maxlength": 120}) }}
+      {{ m.field("via", "Cez (povinné body, čiarkou)", values, errors, attrs={"maxlength": 500}) }}
+      {% set border_opts = [] %}{% for b in borders %}{% set _ = border_opts.append((b.id, b.name ~ " (PPS: " ~ b.handover_station ~ ")")) %}{% endfor %}
+      {{ m.select("entry_border_id", "Vstupný hraničný priechod", border_opts, values, errors, empty="— bez prechodu hranice —") }}
+      {{ m.select("exit_border_id", "Výstupný hraničný priechod", border_opts, values, errors, empty="— končí v SR —") }}
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Zostava a trakcia</legend>
+    <div class="grid-3">
+      {{ m.field("length_m", "Dĺžka [m]", values, errors, type="number", attrs={"min": 1, "max": 2000, "step": "any"}) }}
+      {{ m.field("weight_t", "Hmotnosť [t]", values, errors, type="number", attrs={"min": 1, "max": 10000, "step": "any"}) }}
+      {{ m.select("gauge", "Rozchod", [("1435", "1435 mm (normálny)"), ("1520", "1520 mm (široký)")], values, errors) }}
+      {{ m.select("traction", "Trakcia", [("E", "E – elektrická"), ("M", "M – motorová")], values, errors) }}
+      {{ m.field("vmax_kmh", "Najvyššia rýchlosť [km/h]", values, errors, type="number", attrs={"min": 10, "max": 160, "step": 1}) }}
+      {% set loco_opts = [] %}{% for l in locos %}{% set _ = loco_opts.append((l.id, l.number ~ " – " ~ (l.type or "") ~ " (" ~ l.traction ~ ")")) %}{% endfor %}
+      {{ m.select("locomotive_id", "Rušeň", loco_opts, values, errors, empty="— nepriradený —") }}
+    </div>
+    {{ m.checkbox("rid", "Nebezpečný tovar (RID)", values) }}
+  </fieldset>
+  <fieldset>
+    <legend>Časy (miestny čas)</legend>
+    <div class="grid-3">
+      {{ m.field("ready_utc", "Pripravený na odchod", values, errors, type="datetime-local") }}
+      {{ m.field("planned_departure_utc", "Plánovaný odchod", values, errors, type="datetime-local") }}
+      {{ m.field("deadline_utc", "Termín doručenia (zákazník)", values, errors, type="datetime-local") }}
+    </div>
+  </fieldset>
+  {{ m.field("notes", "Poznámka", values, errors, type="textarea", wide=True, attrs={"maxlength": 2000}) }}
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">Uložiť</button>
+    <a class="btn btn-ghost" href="{{ '/vlaky/' ~ train.id if train else '/vlaky' }}">Zrušiť</a>
+  </div>
+</form>
+{% endblock %}

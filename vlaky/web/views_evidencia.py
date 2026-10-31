@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.orm import selectinload
 
 from ..audit import audit
@@ -20,8 +20,8 @@ from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, LOCO_SYSTE
                      crew_color, current_params, input_dt, iso, redirect, render, resolve_station,
                      station_or_error)
 from .data import closure_edges, closure_spans, latest_recommendations
-from .rusnovodic import driver_link, evaluate_all_bg, evaluate_train_bg
-from .views_prehlad import evaluate_train_now
+from .prepocet import evaluate_all_bg, evaluate_train_bg, evaluate_train_now
+from .rusnovodic import driver_link
 
 router = APIRouter()
 view = require("view")
@@ -67,8 +67,8 @@ def _read_train_form(reader: FormReader, s, train_id: Optional[int] = None) -> d
         else:
             resolved.append(canonical)
     v["via"] = resolved
-    for key, label in (("entry_border_id", "Vstupný hraničný priechod"), ("exit_border_id", "Výstupný hraničný priechod"),
-                       ("locomotive_id", "Rušeň")):
+    for key, label in (("entry_border_id", "Vstupný hraničný priechod"),
+                       ("exit_border_id", "Výstupný hraničný priechod"), ("locomotive_id", "Rušeň")):
         num = reader.number(key, label, integer=True, minimum=1)
         v[key] = int(num) if num else None
     v["length_m"] = reader.number("length_m", "Dĺžka vlaku [m]", minimum=1, maximum=2000)
@@ -570,7 +570,9 @@ def drivers_page(request: Request, user=Depends(view)):
         shifts = list(s.scalars(select(DriverShift).options(selectinload(DriverShift.driver))
                                 .where(or_(DriverShift.status != "ukoncena",
                                            DriverShift.start_utc >= now - timedelta(hours=36)))
-                                .order_by(DriverShift.status.desc(), DriverShift.start_utc)))
+                                .order_by(case((DriverShift.status == "prebieha", 0),
+                                               (DriverShift.status == "planovana", 1), else_=2),
+                                          DriverShift.start_utc)))
         trains = {t.id: t for t in s.scalars(select(Train).where(Train.id.in_({sh.train_id for sh in shifts
                                                                                if sh.train_id})))}
         recs = latest_recommendations(s, list(trains)) if trains else {}

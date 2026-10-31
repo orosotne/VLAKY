@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Nastavenia{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Nastavenia rozhodovania</h1>
+  <p class="muted">Parametre rezerv, prahov, limitov pracovného času a nákladov (sekcia 10). Každá zmena vytvorí novú sadu parametrov s dátumom platnosti a zapíše sa do auditu. Hodnoty sú návrh na začiatok – kalibrujú sa z histórie.</p>
+  {% if current %}<p class="small">Platná sada #{{ current.id }} od {{ current.valid_from|tfull }} ({{ current.created_by }}){% if current.note %}: „{{ current.note }}“{% endif %}</p>{% else %}<p class="small">Platia predvolené hodnoty (zatiaľ žiadna uložená sada).</p>{% endif %}
+</div>
+{% if errors %}<div class="flash flash-chyba" role="alert">Formulár obsahuje chyby: {{ errors.values()|join(" ") }}</div>{% endif %}
+<form method="post" action="/nastavenia" class="card form-grid" novalidate>
+  {{ m.csrf() }}
+  {% for g in groups %}
+  <fieldset>
+    <legend>{{ g.name }}</legend>
+    <div class="param-grid">
+    {% for p in g["items"] %}
+      {% set shown = form_values.get(p.key, p.value) %}
+      <div class="field{% if errors.get(p.key) %} has-error{% endif %}">
+        <label for="par-{{ p.key }}">{{ p.label }}{% if p.unit %} <span class="muted">[{{ p.unit }}]</span>{% endif %}</label>
+        <input id="par-{{ p.key }}" name="{{ p.key }}" type="number" value="{{ shown }}" step="{{ '1' if p.integer else ('0.01' if p.prob else 'any') }}" min="0"{% if p.prob %} max="1"{% endif %} required{% if errors.get(p.key) %} aria-invalid="true"{% endif %}>
+        <small class="help"><code>{{ p.key }}</code> · predvolené {{ p.default }}</small>
+        {% if errors.get(p.key) %}<small class="error">{{ errors.get(p.key) }}</small>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  </fieldset>
+  {% endfor %}
+  <fieldset>
+    <legend>Platnosť a dôvod</legend>
+    <div class="grid-3">
+      <div class="field"><label for="par-valid">Platí od (miestny čas)</label><input id="par-valid" type="datetime-local" name="valid_from" value="{{ form_values.get('valid_from', now|dtinput) }}"><small class="help">Prázdne alebo minulosť = okamžite.</small></div>
+      <div class="field field-wide{% if errors.get('note') %} has-error{% endif %}"><label for="par-note">Dôvod zmeny <span class="req" aria-hidden="true">*</span></label><input id="par-note" name="note" value="{{ note }}" required maxlength="2000" placeholder="napr. kalibrácia podľa 30 jázd na úseku Žilina – Košice">{% if errors.get('note') %}<small class="error">{{ errors.get('note') }}</small>{% endif %}</div>
+    </div>
+  </fieldset>
+  <div class="actions"><button type="submit" class="btn btn-primary">Uložiť novú sadu parametrov</button></div>
+</form>
+
+<div class="grid-2 gap">
+  <section class="card">
+    <h2>História sád parametrov</h2>
+    <ul class="history">
+    {% for ps in history %}
+      <li><strong>#{{ ps.id }}</strong> od {{ ps.valid_from|tfull }} – {{ ps.created_by }}{% if ps.valid_from|future %} <span class="badge badge-warn">plánovaná</span>{% endif %}{% if current and ps.id == current.id %} <span class="badge badge-ok">platná</span>{% endif %}<div class="small muted">{{ ps.note }}</div></li>
+    {% else %}
+      <li class="muted">Zatiaľ žiadne uložené sady.</li>
+    {% endfor %}
+    </ul>
+  </section>
+  <section class="card">
+    <h2>Komunikácia a príjem (len na čítanie)</h2>
+    <p class="muted small">Nastavuje sa v konfigurácii servera (premenné prostredia VLAKY_…). Agent posiela správy iba na tieto interné zoznamy.</p>
+    <dl class="meta">
+      {% for k, v in overview %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}
+    </dl>
+  </section>
+</div>
+{% endblock %}

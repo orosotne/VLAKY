@@ -29,6 +29,8 @@ def engine(url: str | None = None) -> Engine:
         kwargs: dict = {"future": True}
         if url.startswith("sqlite"):
             kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
+        else:
+            kwargs["pool_pre_ping"] = True  # po reštarte DB (napr. aktualizácia) nepadne prvý dotaz
         eng = create_engine(url, **kwargs)
         if url.startswith("sqlite"):
             @event.listens_for(eng, "connect")

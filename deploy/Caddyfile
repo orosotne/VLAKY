@@ -1,0 +1,77 @@
+# =============================================================================
+# Caddy – reverse proxy s automatickým HTTPS pre Agenta dispečera
+#
+#   - doména: premenná VLAKY_DOMAIN (.env); certifikát Let's Encrypt sa získa a obnovuje sám
+#     (porty 80 a 443 musia byť dostupné z internetu),
+#   - cieľ:   VLAKY_UPSTREAM (Docker: web:8000; inštalácia bez Dockera: 127.0.0.1:8000),
+#   - HTTP -> HTTPS presmerovanie, HSTS, bezpečnostné hlavičky, kompresia zstd/gzip,
+#   - prístupový log /var/log/caddy/access.log (JSON, rotácia, 30 dní – obsahuje IP adresy).
+#
+# Kontrola:   docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile
+# Načítanie:  docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+# =============================================================================
+
+# Voliteľne kontaktný e-mail pre Let's Encrypt – odkomentuj blok a doplň adresu:
+# {
+# 	email spravca@dopravca.example
+# }
+
+{$VLAKY_DOMAIN:localhost} {
+	encode {
+		zstd
+		gzip
+		# komprimujú sa len bežné textové odpovede; živé prúdy (text/event-stream) nie
+		match {
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type text/plain*
+			header Content-Type text/csv*
+			header Content-Type text/javascript*
+			header Content-Type application/javascript*
+			header Content-Type application/json*
+			header Content-Type application/geo+json*
+			header Content-Type application/xml*
+			header Content-Type image/svg+xml*
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), usb=()"
+		# minimálna CSP – použije sa, len ak si aplikácia nenastaví vlastnú
+		?Content-Security-Policy "frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
+		-Server
+		-X-Powered-By
+	}
+
+	request_body {
+		max_size 25MB
+	}
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 20MiB
+			roll_keep 10
+			roll_keep_for 720h
+		}
+		format json
+	}
+
+	# Príklad sprísnenia: príjem polôh (POST /api/pozicie) len z IP adries GPS brány
+	# @pozicie_cudzie {
+	# 	path /api/pozicie*
+	# 	not remote_ip 198.51.100.0/24
+	# }
+	# respond @pozicie_cudzie 403
+
+	reverse_proxy {$VLAKY_UPSTREAM:web:8000}
+
+	# Keď webová aplikácia nebeží, dispečer dostane zrozumiteľnú správu namiesto prázdnej chyby
+	handle_errors {
+		@nedostupne expression `{err.status_code} >= 502 && {err.status_code} <= 504`
+		respond @nedostupne "Agent dispečer: webová aplikácia je dočasne nedostupná. Pracujte podľa e-mailov ako doteraz; správca bol upozornený monitoringom. Skúste to o chvíľu znova." 503
+	}
+}

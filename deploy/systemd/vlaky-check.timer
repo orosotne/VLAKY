@@ -1,0 +1,14 @@
+# Agent dispečer – kontrola servera každých 15 minút
+#
+#   sudo cp deploy/systemd/vlaky-check.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now vlaky-check.timer
+[Unit]
+Description=Agent dispečer – kontrola servera každých 15 min
+
+[Timer]
+OnBootSec=5min
+OnCalendar=*:0/15
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

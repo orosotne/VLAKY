@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Vlak {{ t.number }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="crumbs"><a href="/vlaky">Vlaky</a> › {{ t.number }}</p>
+  <h1>Vlak {{ t.number }} <span class="muted">{{ t.origin }} → {{ t.destination }}</span></h1>
+  <div class="head-actions">
+    {% if user.can("operate") %}
+    <a class="btn" href="/vlaky/{{ t.id }}/upravit">Upraviť</a>
+    <form method="post" action="/vlaky/{{ t.id }}/prepocitat" class="inline">{{ m.csrf() }}<button type="submit" class="btn btn-primary">Prepočítať</button></form>
+    <form method="post" action="/vlaky/{{ t.id }}/odkaz" class="inline">{{ m.csrf() }}<button type="submit" class="btn">Odkaz pre rušňovodiča</button></form>
+    {% endif %}
+    <a class="btn btn-ghost" href="/?vlak={{ t.id }}">Na mape</a>
+  </div>
+</div>
+
+{% if driver_link %}
+<section class="card link-card" aria-labelledby="h-odkaz">
+  <h2 id="h-odkaz">Odkaz pre rušňovodiča (platí 24 h)</h2>
+  <p>Pošlite odkaz rušňovodičovi sami (napr. SMS). Agent rušňovodičom nič neposiela. Na stránke zaznamená nástup, pripravenosť, odchod a problém a môže zdieľať polohu.</p>
+  <div class="inline-fields">
+    <label for="odkaz" class="visually-hidden">Odkaz</label>
+    <input id="odkaz" type="text" readonly value="{{ driver_link }}" class="mono">
+    <button type="button" class="btn" data-copy="#odkaz">Kopírovať</button>
+  </div>
+</section>
+{% endif %}
+
+<div class="grid-2 gap">
+  <section class="card">
+    <h2>Údaje vlaku</h2>
+    <dl class="meta">
+      <dt>Stav</dt><dd>{{ TRAIN_STATUS.get(t.status, t.status) }}</dd>
+      <dt>Dátum jazdy</dt><dd>{{ t.run_date or "—" }}</dd>
+      <dt>Zákazník</dt><dd>{{ t.customer or "—" }}</dd>
+      <dt>Vstupný priechod</dt><dd>{% if t.entry_border %}{{ t.entry_border.name }} <span class="muted small">PPS: {{ t.entry_border.handover_station }}</span>{% else %}—{% endif %}</dd>
+      <dt>Výstupný priechod</dt><dd>{% if t.exit_border %}{{ t.exit_border.name }} <span class="muted small">PPS: {{ t.exit_border.handover_station }}</span>{% else %}—{% endif %}</dd>
+      <dt>Cez</dt><dd>{{ (t.via or [])|join(", ") or "—" }}</dd>
+      <dt>Zostava</dt><dd>{{ t.length_m|num }} m · {{ t.weight_t|num }} t · rozchod {{ t.gauge }} mm{% if t.rid %} · <span class="badge badge-warn">RID</span>{% endif %}</dd>
+      <dt>Trakcia, rušeň</dt><dd>{{ t.traction }} · {{ t.locomotive.number ~ " (" ~ (t.locomotive.type or "") ~ ")" if t.locomotive else "rušeň nepriradený" }} · max {{ t.vmax_kmh|num }} km/h</dd>
+      <dt>Pripravený</dt><dd>{{ t.ready_utc|tfull }}</dd>
+      <dt>Plánovaný odchod</dt><dd>{{ t.planned_departure_utc|tfull }}</dd>
+      <dt>Termín doručenia</dt><dd>{{ t.deadline_utc|tfull }}</dd>
+      {% if t.notes %}<dt>Poznámka</dt><dd>{{ t.notes }}</dd>{% endif %}
+    </dl>
+  </section>
+  <section class="card">
+    <h2>Aktuálne odporúčanie</h2>
+    {% if rec %}
+    <p><a href="/odporucania/{{ rec.id }}" class="decision-link"><strong>{{ rec.decision }}</strong></a> {{ m.semafor(rec.color) }} {{ m.priority(rec.priority) }}</p>
+    <p>{{ rec.summary }}</p>
+    <p class="muted small">{{ rec.created_at|tfull }} · {{ REC_STATE.get(rec.state, rec.state) }}</p>
+    {% else %}
+    <p class="muted">Zatiaľ bez odporúčania. {% if user.can("operate") %}Použite „Prepočítať“.{% endif %}</p>
+    {% endif %}
+    <h3>Rušňovodič</h3>
+    {% for sh in shifts %}
+      <p>{{ sh.driver.name if sh.driver else "?" }} – {{ SHIFT_STATUS.get(sh.status, sh.status) }}, nástup {{ sh.start_utc|t }}{% if sh.status == "prebieha" %}, limit <span data-countdown="{{ sh.start_utc|iso }}" data-limit-min="{{ params.crew_max_duty_min }}" data-buffer-min="{{ params.crew_buffer_min }}">{{ sh.start_utc|t }}</span>{% endif %}</p>
+    {% else %}
+      <p class="muted">Bez naplánovanej zmeny. <a href="/rusnovodici#zmeny">Naplánovať zmenu</a></p>
+    {% endfor %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Posledné polohy</h2>
+  <div class="table-scroll">
+  <table class="table table-compact">
+    <thead><tr><th scope="col">Čas</th><th scope="col">Zdroj</th><th scope="col">Najbližšia dopravňa</th><th scope="col">Na trati</th><th scope="col">Rýchlosť</th><th scope="col">Súradnice</th></tr></thead>
+    <tbody>
+    {% for p in positions %}
+      <tr>
+        <td class="nowrap">{{ p.ts_utc|tfull }} <span class="muted small">({{ p.ts_utc|ago }})</span></td>
+        <td>{{ POSITION_SOURCE.get(p.source, p.source) }}</td>
+        <td>{{ p.nearest_station or "—" }}</td>
+        <td>{% if p.snapped_lat is not none %}áno ({{ p.off_track_m|num }} m){% else %}<span class="badge badge-warn">mimo trate{% if p.off_track_m is not none %} {{ p.off_track_m|num }} m{% endif %}</span>{% endif %}</td>
+        <td>{{ (p.speed_kmh|num) ~ " km/h" if p.speed_kmh is not none else "—" }}</td>
+        <td class="mono small">{{ "%.5f"|format(p.lat) }}, {{ "%.5f"|format(p.lon) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Žiadne polohy.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<div class="grid-2 gap">
+  <section class="card">
+    <h2>Preberanie na hraniciach</h2>
+    {% for h in handovers %}
+      <p>{{ "Vstup" if h.direction == "vstup" else "Výstup" }} – {{ h.border.name if h.border else "?" }}: {{ HANDOVER_STATUS.get(h.status, h.status) }}; avízo {{ h.avizo_eta_utc|t }}, príchod {{ h.arrived_utc|t }}, prevzatie {{ h.taken_over_utc|t }}{% if h.findings %} – {{ h.findings }}{% endif %}</p>
+    {% else %}
+      <p class="muted">Bez záznamov. <a href="/hranice#preberania">Zaevidovať preberanie</a></p>
+    {% endfor %}
+  </section>
+  <section class="card">
+    <h2>Trasy</h2>
+    {% for p in paths %}
+      <p>{{ p.kind }} – {{ p.status }}, odchod {{ p.departure_utc|t }}{% if p.note %} – {{ p.note }}{% endif %}</p>
+    {% else %}
+      <p class="muted">Žiadne pridelené ani žiadané trasy.</p>
+    {% endfor %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>História zmien (audit)</h2>
+  <ul class="history">
+  {% for a in history %}
+    <li><span class="nowrap">{{ a.ts|tfull }}</span> – <strong>{{ a.actor }}</strong>: {{ a.action }}{% if a.detail %} <details class="inline-details"><summary>detail</summary><pre class="mono small">{{ a.detail|jsonpretty }}</pre></details>{% endif %}</li>
+  {% else %}
+    <li class="muted">Bez záznamov.</li>
+  {% endfor %}
+  </ul>
+</section>
+{% endblock %}

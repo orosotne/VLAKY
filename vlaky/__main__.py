@@ -72,8 +72,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "web":
         import uvicorn
 
+        from .config import settings
+
         uvicorn.run("vlaky.web.app:create_app", factory=True, host=args.host, port=args.port,
-                    proxy_headers=True, forwarded_allow_ips="*")
+                    proxy_headers=True, forwarded_allow_ips=settings().forwarded_allow_ips,
+                    timeout_graceful_shutdown=10)
         return 0
     if args.cmd == "agent":
         from .agent.beh import run_agent

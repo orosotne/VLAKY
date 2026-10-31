@@ -4,7 +4,6 @@ Spustenie: `python -m vlaky web` (uvicorn, factory `vlaky.web.app:create_app`).
 """
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 from urllib.parse import quote
 
@@ -187,5 +186,3 @@ def create_app(auto_evaluate: bool = True) -> FastAPI:
 
     return app
 
-
-logging.getLogger("vlaky.web").setLevel(logging.INFO)

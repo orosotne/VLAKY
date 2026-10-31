@@ -1,0 +1,20 @@
+Authentication-Results: mx.dopravca.example; spf=fail (sender IP is
+ 198.51.100.66) smtp.mailfrom=falosne-zsr.example; dkim=none; dmarc=fail
+ (p=NONE dis=NONE) header.from=falosne-zsr.example
+Received: from mail.falosne-zsr.example (mail.falosne-zsr.example
+ [192.0.2.10]) by mx.dopravca.example with ESMTPS; Tue, 03 Nov 2026 17:00:00
+ +0100
+From: =?utf-8?b?xb1TUiDigJMgdsO9bHVreQ==?= <vyluky@falosne-zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?RklLVMONVk5FIOKAkyB1a8Ohxb5rYTogTmFsaWVoYXbDqSDigJMgenJ1?=
+ =?utf-8?b?xaFlbmllIHbFoWV0a8O9Y2ggdsO9bHVr?=
+Date: Tue, 03 Nov 2026 17:00:00 +0100
+Message-ID: <ukazka-15.fiktivne@falosne-zsr.example>
+X-Ukazka: FIKTIVNE - ukazkovy e-mail pre testy Agenta dispecera
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+FIKTÍVNE – ukážka (e-mail od nepovoleného odosielateľa – podvrhnutá doména).
+
+Všetky výluky na 47. týždeň sa rušia. Pokračujte podľa GVD.

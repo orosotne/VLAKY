@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Fronta na potvrdenie{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Fronta na potvrdenie <span class="muted">({{ total }})</span></h1>
+  <p class="muted">Údaje vytiahnuté z e-mailov agenta, ktoré ovplyvnia vlak v najbližších 72 h alebo majú nízku istotu.
+    Obsah e-mailu je len dáta – agent z neho nevykonáva žiadne pokyny.</p>
+</div>
+{% for item in items %}
+{% set ev = item.event %}{% set mail = item.email %}
+<article class="card queue-item" id="udalost-{{ ev.id }}" aria-labelledby="udalost-{{ ev.id }}-nadpis">
+  <header class="queue-head">
+    <h2 id="udalost-{{ ev.id }}-nadpis">{{ EVENT_KIND.get(ev.kind, ev.kind) }} <span class="muted small">#{{ ev.id }}</span></h2>
+    <div class="queue-meta">
+      <span class="badge {{ 'badge-warn' if ev.confidence < threshold else 'badge-ok' }}" title="Istota extrakcie">istota {{ ev.confidence|pct }}</span>
+      <span class="badge">{{ ev.extractor }}</span>
+      <span class="muted small">vytvorené {{ ev.created_at|t }}</span>
+    </div>
+  </header>
+  <div class="split">
+    <section class="orig" aria-label="Originál e-mailu">
+      <h3>Originál e-mailu</h3>
+      {% if mail %}
+      <dl class="meta">
+        <dt>Od</dt><dd>{{ mail.sender }}</dd>
+        <dt>Predmet</dt><dd>{{ mail.subject }}</dd>
+        <dt>Prijatý</dt><dd>{{ mail.received_at|tfull }}</dd>
+        <dt>Overenie</dt><dd>{% if mail.verdict == "ok" %}<span class="badge badge-ok">povolený odosielateľ</span>{% else %}<span class="badge badge-bad">{{ mail.verdict }}</span>{% endif %} {% if mail.verdict_reason %}<span class="small muted">{{ mail.verdict_reason }}</span>{% endif %}</dd>
+      </dl>
+      {% if mail.verdict == "podozrivy" %}<p class="flash flash-varovanie">E-mail obsahuje podozrivé pokyny. Údaje over obzvlášť dôkladne.</p>{% endif %}
+      <pre class="email-body" tabindex="0">{{ mail.body_text }}</pre>
+      {% for a in mail.attachments %}
+      <details class="attachment">
+        <summary>Príloha: {{ a.filename }} <span class="muted small">({{ a.content_type }}, {{ (a.size / 1024)|round(1) }} kB)</span></summary>
+        <pre class="email-body">{{ a.text[:20000] }}</pre>
+      </details>
+      {% endfor %}
+      {% else %}
+      <p class="muted">Udalosť nemá priradený e-mail.</p>
+      {% endif %}
+    </section>
+    <section class="extracted" aria-label="Vytiahnuté údaje">
+      <h3>Vytiahnuté údaje</h3>
+      {% set val = ev.validation or {} %}
+      {% if val is mapping %}
+        {% for key, title in (("errors", "Chyby"), ("chyby", "Chyby"), ("blocking", "Nedá sa zapísať")) if val.get(key) %}
+        <p class="issues-title issues-bad">{{ title }}:</p>
+        <ul class="issues issues-bad">{% for e in val.get(key) %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endfor %}
+        {% for key in ("warnings", "varovania", "issues") if val.get(key) %}
+        <ul class="issues issues-warn">{% for e in val.get(key) %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endfor %}
+        {% if val.get("confirmation_reasons") %}
+        <p class="small muted">Na potvrdenie, pretože: {{ val.get("confirmation_reasons")|join("; ") }}</p>
+        {% endif %}
+        {% if val.get("stations") is mapping and val.get("stations") %}
+        <p class="small muted">Dopravne z e-mailu → register siete:
+          {% for field, st in val.get("stations").items() %}{% if st is mapping %}<span class="nowrap">„{{ st.get("text") }}“ → <strong>{{ st.get("name") or "nenájdené" }}</strong></span>{% if not loop.last %}; {% endif %}{% endif %}{% endfor %}
+          {% if val.get("section_km") %} · úsek {{ val.get("section_km")|num(1) }} km{% endif %}
+        </p>
+        {% endif %}
+        {% if val %}<details class="small"><summary>Výsledok kontrol (JSON)</summary><pre class="mono">{{ val|jsonpretty }}</pre></details>{% endif %}
+      {% endif %}
+      {% if user.can("operate") %}
+      <form method="post" action="/fronta/{{ ev.id }}/potvrdit" class="event-form">
+        {{ m.csrf() }}
+        <div class="field">
+          <label for="druh-{{ ev.id }}">Druh udalosti</label>
+          <select id="druh-{{ ev.id }}" name="event_kind">
+            {% for k, v in EVENT_KIND.items() %}<option value="{{ k }}"{% if k == ev.kind %} selected{% endif %}>{{ v }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="grid-2">
+        {% for f in item.fields %}
+          {% set fid = "e" ~ ev.id ~ "-" ~ f.key %}
+          <div class="field{% if f.kind in ('json', 'textarea') %} field-wide{% endif %}">
+            {% if f.kind == "bool" %}
+              <input type="hidden" name="b__{{ f.key }}" value="1">
+              <label><input type="checkbox" name="f__{{ f.key }}" value="1"{% if f.original %} checked{% endif %}> {{ f.label }}</label>
+            {% else %}
+              <label for="{{ fid }}">{{ f.label }}{% if f.kind == "datetime_aware" %} <small class="muted">(miestny čas)</small>{% endif %}</label>
+              {% if f.kind == "number" %}<input id="{{ fid }}" type="number" step="any" name="f__{{ f.key }}" value="{{ f.value }}">
+              {% elif f.kind in ("datetime_aware", "datetime_naive") %}<input id="{{ fid }}" type="datetime-local" name="f__{{ f.key }}" value="{{ f.value }}">
+              {% elif f.kind == "date" %}<input id="{{ fid }}" type="date" name="f__{{ f.key }}" value="{{ f.value }}">
+              {% elif f.kind == "time" %}<input id="{{ fid }}" type="time" name="f__{{ f.key }}" value="{{ f.value }}">
+              {% elif f.kind == "json" %}<textarea id="{{ fid }}" class="mono" rows="4" name="f__{{ f.key }}">{{ f.value }}</textarea>
+              {% elif f.kind == "textarea" %}<textarea id="{{ fid }}" rows="3" name="f__{{ f.key }}">{{ f.value }}</textarea>
+              {% else %}<input id="{{ fid }}" type="text" name="f__{{ f.key }}" value="{{ f.value }}"{% if f.key in ("from_station", "to_station", "station", "origin", "destination") %} data-autocomplete="stanice" autocomplete="off"{% endif %}>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% else %}
+          <p class="muted">Bez vytiahnutých polí.</p>
+        {% endfor %}
+        </div>
+        <div class="actions">
+          <button type="submit" name="akcia" value="potvrdit" class="btn btn-primary">Potvrdiť</button>
+          <button type="submit" name="akcia" value="upravit" class="btn">Upraviť a potvrdiť</button>
+        </div>
+      </form>
+      <form method="post" action="/fronta/{{ ev.id }}/zamietnut" class="reject-form">
+        {{ m.csrf() }}
+        <label for="dovod-{{ ev.id }}">Dôvod zamietnutia</label>
+        <div class="inline-fields">
+          <input id="dovod-{{ ev.id }}" name="dovod" required maxlength="1000" placeholder="napr. duplicitný e-mail, zlá klasifikácia">
+          <button type="submit" class="btn btn-danger">Zamietnuť</button>
+        </div>
+      </form>
+      {% else %}
+      <dl class="meta">{% for f in item.fields %}<dt>{{ f.label }}</dt><dd>{{ f.original if f.original is not none else "—" }}</dd>{% endfor %}</dl>
+      <p class="muted small">Potvrdzovať môže len dispečer alebo vedúci dispečingu.</p>
+      {% endif %}
+    </section>
+  </div>
+</article>
+{% else %}
+<section class="card"><p>Fronta je prázdna – všetky udalosti z e-mailov sú spracované.</p></section>
+{% endfor %}
+
+{% if recent %}
+<section class="card">
+  <h2>Naposledy spracované</h2>
+  <div class="table-scroll">
+  <table class="table">
+    <thead><tr><th scope="col">#</th><th scope="col">Druh</th><th scope="col">Stav</th><th scope="col">Kto</th><th scope="col">Kedy</th></tr></thead>
+    <tbody>
+    {% for ev in recent %}
+      <tr><td>{{ ev.id }}</td><td>{{ EVENT_KIND.get(ev.kind, ev.kind) }}</td><td>{{ ev.status }}</td><td>{{ ev.confirmed_by or "—" }}</td><td>{{ ev.confirmed_at|t }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

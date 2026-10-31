@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Odovzdávka služby {{ rep.created_at|t }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="crumbs"><a href="/odovzdavka">Odovzdávka služby</a></p>
+  <h1>Odovzdávka služby – {{ rep.created_at|tfull }}</h1>
+</div>
+<section class="card">
+  <pre class="report">{{ rep.content }}</pre>
+  {% if rep.data %}
+  <details><summary>Údaje (JSON)</summary><pre class="mono small">{{ rep.data|jsonpretty }}</pre></details>
+  {% endif %}
+</section>
+<section class="card">
+  <h2>Doplnenie a potvrdenie</h2>
+  {% if rep.confirmed_by %}<p>Potvrdil {{ rep.confirmed_by }}, {{ rep.confirmed_at|tfull }}.</p>{% endif %}
+  {% if rep.note and not user.can("operate") %}<pre class="report">{{ rep.note }}</pre>{% endif %}
+  {% if user.can("operate") %}
+  <form method="post" action="/odovzdavka/{{ rep.id }}/potvrdit" class="stack">
+    {{ m.csrf() }}
+    <label for="pozn">Otvorené úlohy a poznámky odovzdávajúceho dispečera</label>
+    <textarea id="pozn" name="poznamka" rows="6" maxlength="5000">{{ rep.note }}</textarea>
+    <div class="actions"><button type="submit" class="btn btn-primary">{{ "Uložiť a potvrdiť znova" if rep.confirmed_by else "Potvrdiť odovzdávku" }}</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

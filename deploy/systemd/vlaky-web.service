@@ -1,0 +1,64 @@
+# Agent dispečer – webová aplikácia (inštalácia BEZ Dockera; pri Dockeri sa nepoužíva)
+#
+# Predpoklady (docs/PREVADZKA.md, kapitola 15):
+#   kód v /opt/vlaky/app, Python venv v /opt/vlaky/venv, konfigurácia /etc/vlaky/vlaky.env
+#   (VLAKY_DATABASE_URL na PostgreSQL, VLAKY_MAIL_DIR=/var/lib/vlaky/schranka,
+#    VLAKY_OUTBOX_DIR=/var/lib/vlaky/odoslane), Caddy pred aplikáciou (VLAKY_UPSTREAM=127.0.0.1:8000)
+#
+#   sudo cp deploy/systemd/vlaky-web.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now vlaky-web
+[Unit]
+Description=Agent dispečer – webová aplikácia
+Documentation=file:///opt/vlaky/app/docs/PREVADZKA.md
+Wants=network-online.target
+After=network-online.target postgresql.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=vlaky
+Group=vlaky
+WorkingDirectory=/opt/vlaky/app
+EnvironmentFile=/etc/vlaky/vlaky.env
+Environment=PYTHONUNBUFFERED=1
+# Počúva len lokálne – zvonku je dostupná iba cez Caddy (HTTPS)
+ExecStart=/opt/vlaky/venv/bin/python -m vlaky web --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+# Zapisovateľné dáta (schránka, odoslané správy)
+StateDirectory=vlaky
+StateDirectoryMode=0750
+ReadWritePaths=/var/lib/vlaky
+
+# Sprísnenie
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+
+# Zdroje (VPS 4 vCPU / 8 – 16 GB RAM)
+MemoryMax=1536M
+CPUQuota=150%
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

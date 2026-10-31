@@ -20,6 +20,7 @@ from ..db import session_scope
 from ..models import DriverShift, Train
 from .common import DONE_TRAIN_STATES, STATIC_DIR, log, render
 from .pozicie import DriverPositionIn, ingest_position
+from .prepocet import evaluate_train_bg
 
 TOKEN_MAX_AGE = 24 * 3600
 router = APIRouter()
@@ -148,33 +149,6 @@ def _notify_problem(number: str, relation: str, text: str) -> None:
         log.warning("Odosielanie upozornení zatiaľ nie je k dispozícii")
     except Exception:  # noqa: BLE001 – hlásenie je uložené v audite aj tak
         log.exception("Upozornenie o probléme sa nepodarilo odoslať")
-
-
-def evaluate_train_bg(train_id: int, trigger: str) -> None:
-    """Prepočet vlaku na pozadí (po hlásení, úprave vlaku, preberaní…). Chyby sa len zalogujú."""
-    import importlib
-
-    try:
-        planovac = importlib.import_module("vlaky.planovanie.planovac")
-        with session_scope() as s:
-            planovac.evaluate_train(s, train_id, trigger=trigger)
-    except NotImplementedError:
-        log.info("Plánovač zatiaľ nie je k dispozícii")
-    except Exception:  # noqa: BLE001
-        log.exception("Prepočet vlaku %s zlyhal", train_id)
-
-
-def evaluate_all_bg(trigger: str) -> None:
-    import importlib
-
-    try:
-        planovac = importlib.import_module("vlaky.planovanie.planovac")
-        with session_scope() as s:
-            planovac.evaluate_all(s, trigger=trigger)
-    except NotImplementedError:
-        log.info("Plánovač zatiaľ nie je k dispozícii")
-    except Exception:  # noqa: BLE001
-        log.exception("Prepočet všetkých vlakov zlyhal")
 
 
 @router.post("/api/pozicie/rusnovodic")

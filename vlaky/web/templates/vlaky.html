@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Vlaky{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Vlaky</h1>
+  <div class="head-actions">
+    {% if user.can("operate") %}<a class="btn btn-primary" href="/vlaky/novy">Nový vlak</a>{% endif %}
+  </div>
+  <form method="get" class="filters" role="search" aria-label="Filter vlakov">
+    <label>Zobraziť
+      <select name="filter">
+        <option value="aktivne"{% if filter == "aktivne" %} selected{% endif %}>aktívne</option>
+        <option value="ukoncene"{% if filter == "ukoncene" %} selected{% endif %}>ukončené / zrušené</option>
+        <option value="vsetky"{% if filter == "vsetky" %} selected{% endif %}>všetky</option>
+      </select>
+    </label>
+    <label>Hľadať <input name="q" value="{{ q }}" maxlength="60" placeholder="číslo, zákazník, stanica"></label>
+    <button type="submit" class="btn btn-sm">Filtrovať</button>
+  </form>
+</div>
+<section class="card">
+<div class="table-scroll">
+<table class="table">
+  <thead><tr><th scope="col">Číslo</th><th scope="col">Dátum</th><th scope="col">Relácia</th><th scope="col">Zákazník</th><th scope="col">Vstup / výstup</th><th scope="col">Rušeň</th><th scope="col">Pripravený</th><th scope="col">Termín</th><th scope="col">Stav</th><th scope="col">Odporúčanie</th></tr></thead>
+  <tbody>
+  {% for t in trains %}
+    {% set r = recs.get(t.id) %}
+    <tr>
+      <td><a href="/vlaky/{{ t.id }}"><strong>{{ t.number }}</strong></a>{% if t.rid %} <span class="badge badge-warn" title="Nebezpečný tovar">RID</span>{% endif %}</td>
+      <td class="nowrap">{{ t.run_date or "—" }}</td>
+      <td>{{ t.origin }} → {{ t.destination }}</td>
+      <td>{{ t.customer or "—" }}</td>
+      <td class="small">{{ t.entry_border.name if t.entry_border else "—" }}<br>{{ t.exit_border.name if t.exit_border else "—" }}</td>
+      <td>{{ t.locomotive.number if t.locomotive else "—" }} <span class="muted small">{{ t.traction }}</span></td>
+      <td class="nowrap">{{ t.ready_utc|t }}</td>
+      <td class="nowrap">{{ t.deadline_utc|t }}</td>
+      <td>{{ TRAIN_STATUS.get(t.status, t.status) }}</td>
+      <td>{% if r %}<a href="/odporucania/{{ r.id }}">{{ r.decision }}</a> {{ m.semafor(r.color) }}{% else %}<span class="muted">—</span>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="10" class="muted">Žiadne vlaky.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+</section>
+{% endblock %}
