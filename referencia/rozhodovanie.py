@@ -1,0 +1,447 @@
+"""Referenčná implementácia rozhodovania dispečera nákladného vlaku.
+
+Čo rieši: pre vlak, ktorý je (alebo bude) pripravený na odchod, porovná možnosti
+  * VYPRAVIŤ teraz,
+  * POČKAŤ (posunúť odchod, vlak stojí pripravený),
+  * ODSTAVIŤ (vlak sa odstaví, uvoľní sa čata, neskôr sa ide na novú trasu),
+  * PRESMEROVAŤ (iná trasa),
+a vyberie najlepšiu podľa pravidiel z docs/REZERVY_A_ROZHODOVANIE.md:
+  1. tvrdé pravidlá (výluky s časovými rezervami, limit smeny čaty, lehota na novú trasu),
+  2. pravdepodobnosť príchodu včas (simulácia Monte Carlo z historických zdržaní),
+  3. očakávané náklady (čakanie, jazda, odstavenie, pokuty, mimoriadna výmena čaty).
+
+Toto NIE JE produkčný kód. Je to spustiteľná špecifikácia: presne ukazuje, čo má
+aplikácia počítať, a overuje čísla v príkladoch v dokumentácii.
+Nenahrádza pokyny ŽSR, predpisy ani rozhodnutie dispečera.
+
+Spustenie príkladu:  python3 referencia/rozhodovanie.py
+Testy:               python3 -m unittest discover -s referencia -v
+
+Časy sú v minútach od začiatku dňa (t0 = 00:00). Nevyžaduje externé knižnice.
+"""
+from __future__ import annotations
+
+import math
+import random
+from dataclasses import dataclass, field
+from typing import Optional, Sequence
+
+Z90 = 1.2815515655446004  # 90 % kvantil normovaného normálneho rozdelenia
+
+ZELENA, ORANZOVA, CERVENA = "ZELENÁ", "ORANŽOVÁ", "ČERVENÁ"
+VYPRAVIT, POCKAT, ODSTAVIT, PRESMEROVAT, ESKALOVAT = (
+    "VYPRAVIŤ", "POČKAŤ", "ODSTAVIŤ", "PRESMEROVAŤ", "ESKALOVAŤ")
+
+
+# ---------------------------------------------------------------------------
+# Vstupné dáta
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Closure:
+    """Výluka alebo iné obmedzenie úseku. Časy v minútach od t0."""
+
+    start: float
+    end: float
+    electric_only: bool = False  # True = napr. vypnuté trakčné vedenie: motorová trakcia môže ísť
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class Segment:
+    """Úsek trasy medzi dvoma dopravňami."""
+
+    name: str
+    run_min: float                 # plánovaná jazdná doba vrátane plánovaných pobytov [min]
+    delay_p50: float = 2.0         # medián náhodného zdržania na úseku [min] (z histórie)
+    delay_p90: float = 10.0        # 90. percentil zdržania na úseku [min] (z histórie)
+    closures: tuple = ()           # n-tica Closure
+    can_wait_before: bool = True   # je pred úsekom dopravňa s dosť dlhou koľajou na čakanie?
+
+
+@dataclass(frozen=True)
+class Route:
+    """Trasa vlaku (poradie úsekov) a jej vlastnosti."""
+
+    name: str
+    segments: tuple
+    electric: bool = True          # vlak vedie elektrický rušeň
+    extra_fixed_cost: float = 0.0  # napr. vyšší poplatok za dlhšiu trasu, nová trasa pri presmerovaní
+    is_primary: bool = True        # False = alternatívna trasa (presmerovanie)
+
+
+@dataclass(frozen=True)
+class Params:
+    """Predvolené parametre. Hodnoty sú NÁVRH na začiatok, treba ich kalibrovať.
+
+    Tie isté kľúče a hodnoty sú v YAML bloku v PROMPT.md (test to kontroluje).
+    """
+
+    # Časové rezervy [min]
+    buffer_before_closure_min: float = 30.0
+    buffer_after_closure_min: float = 30.0
+    deadline_buffer_min: float = 60.0
+    crew_buffer_min: float = 60.0
+    # Trasy (objednávky trás) [min]
+    path_tolerance_min: float = 15.0
+    new_path_lead_min: float = 180.0
+    # Prahy rozhodovania [pravdepodobnosti 0-1]
+    p_on_time_green: float = 0.90
+    p_on_time_amber: float = 0.70
+    p_hold_green: float = 0.02
+    p_hold_red: float = 0.10
+    p_crew_relief_red: float = 0.10
+    robustness_premium: float = 0.10
+    # Ekonomika [EUR] - VZOROVÉ hodnoty, nahradiť vlastnými
+    cost_wait_ready_per_h: float = 180.0
+    cost_running_per_h: float = 300.0
+    cost_stabled_per_h: float = 60.0
+    cost_stable_fixed: float = 600.0
+    cost_new_path: float = 0.0
+    cost_late_fixed: float = 1500.0
+    cost_late_per_h: float = 200.0
+    cost_unplanned_hold: float = 800.0
+    cost_stuck: float = 3000.0
+    cost_crew_relief: float = 1200.0
+    # Čata [min]
+    crew_max_duty_min: float = 720.0
+    crew_prep_min: float = 60.0
+    crew_relief_delay_min: float = 120.0
+    # Výpočet
+    samples: int = 4000
+    seed: int = 42
+
+
+@dataclass
+class Evaluation:
+    """Výsledok vyhodnotenia jedného odchodu po jednej trase."""
+
+    route: str
+    depart: float
+    kind: str
+    p_on_time: float
+    p_hold: float
+    p_stuck: float
+    p_crew_relief: float
+    arrival_p50: float
+    arrival_p90: float
+    duty_p90: float
+    expected_cost: float
+    status: str = ""
+    reasons: list = field(default_factory=list)
+    needs_new_path: bool = False
+
+
+@dataclass
+class Recommendation:
+    decision: str
+    chosen: Optional[Evaluation]
+    explanation: list
+    green_windows: dict           # názov trasy -> zoznam (od, do) zelených okien odchodu
+    candidates: list
+
+
+# ---------------------------------------------------------------------------
+# Pomocné funkcie
+# ---------------------------------------------------------------------------
+def hhmm(minutes: float) -> str:
+    """Minúty od t0 -> 'HH:MM' (prípadne '+1d HH:MM')."""
+    m = int(round(minutes))
+    day, rem = divmod(m, 24 * 60)
+    text = f"{rem // 60:02d}:{rem % 60:02d}"
+    return f"+{day}d {text}" if day else text
+
+
+def break_even_wait_hours(p: Params) -> float:
+    """Po koľkých hodinách čakania sa oplatí radšej odstaviť.
+
+    Čakanie stojí cost_wait_ready_per_h za hodinu. Odstavenie stojí jednorazovo
+    cost_stable_fixed a potom cost_stabled_per_h za hodinu. Rovnosť nastane pri
+    T = cost_stable_fixed / (cost_wait_ready_per_h - cost_stabled_per_h).
+    """
+    diff = p.cost_wait_ready_per_h - p.cost_stabled_per_h
+    return math.inf if diff <= 0 else p.cost_stable_fixed / diff
+
+
+def _lognormal(seg: Segment, z: float) -> float:
+    """Zdržanie na úseku: lognormálne rozdelenie s mediánom p50 a 90. percentilom p90."""
+    p50 = max(seg.delay_p50, 0.01)
+    p90 = max(seg.delay_p90, p50 * 1.0001)
+    sigma = math.log(p90 / p50) / Z90
+    return p50 * math.exp(sigma * z)
+
+
+def _normals(n: int, k: int, seed: int) -> list:
+    """Spoločné náhodné čísla pre všetky porovnávané varianty (férové porovnanie)."""
+    rng = random.Random(seed)
+    return [[rng.gauss(0.0, 1.0) for _ in range(k)] for _ in range(n)]
+
+
+def _quantile(values: Sequence[float], q: float) -> float:
+    s = sorted(values)
+    idx = min(len(s) - 1, max(0, int(math.ceil(q * len(s))) - 1))
+    return s[idx]
+
+
+# ---------------------------------------------------------------------------
+# Jadro: simulácia jednej varianty
+# ---------------------------------------------------------------------------
+def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Params,
+             normals: Optional[list] = None, stabled: bool = False,
+             needs_new_path: bool = False) -> Evaluation:
+    """Vyhodnotí odchod `depart` po trase `route` simuláciou Monte Carlo.
+
+    Pravidlo výluky: vlak nesmie byť v úseku v čase
+    [začiatok výluky - buffer_before_closure_min, koniec + buffer_after_closure_min].
+    Ak by tam bol, čaká pred úsekom do konca tohto okna (neplánované zadržanie).
+    Ak pred úsekom nie je kde čakať (can_wait_before=False), ide o zablokovanie.
+    """
+    segs = route.segments
+    if normals is None:
+        normals = _normals(p.samples, len(segs), p.seed)
+    n = len(normals)
+    arrivals, duties, costs = [], [], []
+    on_time = holds = stucks = reliefs = 0
+    duty_start = depart - p.crew_prep_min
+    wait_h = max(0.0, depart - ready) / 60.0
+    if stabled:
+        base_cost = p.cost_stable_fixed + wait_h * p.cost_stabled_per_h
+    else:
+        base_cost = wait_h * p.cost_wait_ready_per_h
+    base_cost += route.extra_fixed_cost + (p.cost_new_path if needs_new_path else 0.0)
+
+    for i in range(n):
+        t = depart
+        hold = stuck = False
+        for k, seg in enumerate(segs):
+            travel = seg.run_min + _lognormal(seg, normals[i][k])
+            moved = True
+            while moved:  # po čakaní znova skontrolovať všetky výluky na úseku
+                moved = False
+                for c in seg.closures:
+                    if c.electric_only and not route.electric:
+                        continue
+                    w_start = c.start - p.buffer_before_closure_min
+                    w_end = c.end + p.buffer_after_closure_min
+                    if t < w_end and t + travel > w_start:
+                        hold = True
+                        stuck = stuck or not seg.can_wait_before
+                        t = w_end
+                        moved = True
+            t += travel
+        duty = t - duty_start
+        relief = duty > p.crew_max_duty_min
+        if relief:
+            t += p.crew_relief_delay_min
+        late = max(0.0, t - deadline)
+        cost = base_cost + (t - depart) / 60.0 * p.cost_running_per_h
+        if hold:
+            cost += p.cost_unplanned_hold
+        if stuck:
+            cost += p.cost_stuck
+        if relief:
+            cost += p.cost_crew_relief
+        if late > 0:
+            cost += p.cost_late_fixed + late / 60.0 * p.cost_late_per_h
+        arrivals.append(t)
+        duties.append(duty)
+        costs.append(cost)
+        on_time += late <= 0
+        holds += hold
+        stucks += stuck
+        reliefs += relief
+
+    ev = Evaluation(
+        route=route.name, depart=depart,
+        kind=VYPRAVIT if depart <= ready + 1e-9 else (ODSTAVIT if stabled else POCKAT),
+        p_on_time=on_time / n, p_hold=holds / n, p_stuck=stucks / n,
+        p_crew_relief=reliefs / n,
+        arrival_p50=_quantile(arrivals, 0.5), arrival_p90=_quantile(arrivals, 0.9),
+        duty_p90=_quantile(duties, 0.9), expected_cost=sum(costs) / n,
+        needs_new_path=needs_new_path)
+    _classify(ev, deadline, p)
+    return ev
+
+
+def _classify(ev: Evaluation, deadline: float, p: Params) -> None:
+    """Semafor: ČERVENÁ = nevypravovať, ORANŽOVÁ = len s potvrdením, ZELENÁ = odporúčané."""
+    red, amber = [], []
+    if ev.p_stuck > 0:
+        red.append(f"riziko zablokovania trate pred výlukou ({ev.p_stuck:.0%})")
+    if ev.p_on_time < p.p_on_time_amber:
+        red.append(f"P(včas) {ev.p_on_time:.0%} < {p.p_on_time_amber:.0%}")
+    elif ev.p_on_time < p.p_on_time_green:
+        amber.append(f"P(včas) {ev.p_on_time:.0%} < {p.p_on_time_green:.0%}")
+    if ev.p_hold > p.p_hold_red:
+        red.append(f"P(zadržania pred výlukou) {ev.p_hold:.0%} > {p.p_hold_red:.0%}")
+    elif ev.p_hold > p.p_hold_green:
+        amber.append(f"P(zadržania pred výlukou) {ev.p_hold:.0%}")
+    if ev.p_crew_relief > p.p_crew_relief_red:
+        red.append(f"P(prekročenia smeny čaty) {ev.p_crew_relief:.0%}")
+    elif ev.duty_p90 > p.crew_max_duty_min - p.crew_buffer_min:
+        amber.append("malá rezerva v smene čaty")
+    if deadline - ev.arrival_p50 < p.deadline_buffer_min:
+        amber.append(f"rezerva voči termínu (medián) {deadline - ev.arrival_p50:.0f} min "
+                     f"< {p.deadline_buffer_min:.0f} min")
+    ev.status = CERVENA if red else (ORANZOVA if amber else ZELENA)
+    ev.reasons = red + amber
+
+
+# ---------------------------------------------------------------------------
+# Odporúčanie: prehľadá odchody v horizonte a vyberie najlepšiu variantu
+# ---------------------------------------------------------------------------
+def _needs_new_path(depart: float, allocated: Sequence[float], p: Params) -> bool:
+    if not allocated:
+        return False
+    return all(abs(depart - a) > p.path_tolerance_min for a in allocated)
+
+
+def _windows(evals: Sequence[Evaluation], step: float) -> list:
+    """Súvislé intervaly odchodov so ZELENOU (od, do)."""
+    out = []
+    for ev in sorted(evals, key=lambda e: e.depart):
+        if ev.status != ZELENA:
+            continue
+        if out and ev.depart - out[-1][1] <= step + 1e-9:
+            out[-1] = (out[-1][0], ev.depart)
+        else:
+            out.append((ev.depart, ev.depart))
+    return out
+
+
+def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float,
+              p: Params = Params(), horizon_min: float = 24 * 60, step_min: float = 10,
+              allocated_departures: Sequence[float] = ()) -> Recommendation:
+    """Prehľadá odchody od `ready` po `ready + horizon_min` po každej trase.
+
+    Pravidlá výberu:
+      1. ČERVENÉ varianty sa vylúčia.
+      2. Odchod mimo pridelenej trasy (± path_tolerance_min) vyžaduje novú trasu:
+         možný najskôr now + new_path_lead_min a stojí cost_new_path.
+      3. Pri čakaní sa porovná "stáť pripravený" vs. "odstaviť" (bod zlomu
+         break_even_wait_hours) a použije sa lacnejšie.
+      4. Vyberie sa najnižší očakávaný náklad. Ak je víťaz ORANŽOVÝ a existuje
+         ZELENÁ varianta drahšia najviac o robustness_premium, vyberie sa ZELENÁ.
+      5. Ak nič neostane, rozhodnutie je ESKALOVAŤ (ŽSR + zákazník).
+    """
+    candidates, windows = [], {}
+    k = int(horizon_min // step_min)
+    for route in routes:
+        normals = _normals(p.samples, len(route.segments), p.seed)
+        per_route = []
+        for j in range(k + 1):
+            depart = ready + j * step_min
+            # Alternatívna trasa vždy znamená novú trasu; pri hlavnej trase len odchod
+            # mimo pridelenej trasy (± path_tolerance_min).
+            new_path = (not route.is_primary) or _needs_new_path(depart, allocated_departures, p)
+            if new_path and depart < now + p.new_path_lead_min:
+                continue  # novú trasu by ŽSR nestihla prideliť
+            options = [evaluate(route, depart, ready, deadline, p, normals, False, new_path)]
+            if depart > ready:
+                options.append(evaluate(route, depart, ready, deadline, p, normals, True, new_path))
+            best = min(options, key=lambda e: e.expected_cost)
+            if not route.is_primary:
+                best.kind = PRESMEROVAT
+            per_route.append(best)
+        windows[route.name] = _windows(per_route, step_min)
+        candidates.extend(per_route)
+
+    allowed = [e for e in candidates if e.status != CERVENA]
+    if not allowed:
+        least_bad = min(candidates, key=lambda e: e.expected_cost) if candidates else None
+        return Recommendation(
+            ESKALOVAT, least_bad,
+            ["Žiadna bezpečná varianta v horizonte. Kontaktovať ŽSR (nová trasa / iný čas) "
+             "a zákazníka (nový termín)."], windows, candidates)
+
+    best = min(allowed, key=lambda e: (e.expected_cost, e.depart))
+    explanation = []
+    if best.status == ORANZOVA:
+        greens = [e for e in allowed if e.status == ZELENA
+                  and e.expected_cost <= best.expected_cost * (1 + p.robustness_premium)]
+        if greens:
+            best = min(greens, key=lambda e: (e.expected_cost, e.depart))
+            explanation.append("Uprednostnená ZELENÁ varianta (spoľahlivosť za max. "
+                               f"{p.robustness_premium:.0%} vyšší náklad).")
+    explanation.append(
+        f"{best.kind} po trase '{best.route}' s odchodom {hhmm(best.depart)}: "
+        f"P(včas) {best.p_on_time:.0%}, príchod medián {hhmm(best.arrival_p50)}, "
+        f"90 % do {hhmm(best.arrival_p90)}, očakávaný náklad {best.expected_cost:,.0f} EUR.")
+    if best.needs_new_path:
+        explanation.append("Treba objednať novú (ad hoc) trasu u ŽSR.")
+    if best.status != ZELENA:
+        explanation.append("ORANŽOVÁ: vyžaduje potvrdenie dispečera. Dôvody: " + "; ".join(best.reasons))
+    return Recommendation(best.kind, best, explanation, windows, candidates)
+
+
+# ---------------------------------------------------------------------------
+# Fiktívny príklad (výluka, časy aj náklady sú vymyslené - len ilustrácia výpočtu)
+# ---------------------------------------------------------------------------
+def example() -> tuple:
+    h = 60
+    closure = Closure(start=10 * h, end=14 * h, label="výluka 10:00-14:00 (fiktívna)")
+    primary = Route("Košice - Žilina", (
+        Segment("Košice - Spišská Nová Ves", 80, 3, 12),
+        Segment("Spišská Nová Ves - Poprad-Tatry", 40, 2, 8),
+        Segment("Poprad-Tatry - Liptovský Mikuláš", 60, 2, 10, (closure,)),
+        Segment("Liptovský Mikuláš - Žilina", 95, 4, 15),
+    ))
+    detour = Route("Košice - Žilina obchádzka (fiktívna)", (
+        Segment("obchádzka časť 1", 150, 5, 20),
+        Segment("obchádzka časť 2", 170, 5, 25),
+    ), extra_fixed_cost=400.0, is_primary=False)
+    return primary, detour
+
+
+def _print(title: str, rec: Recommendation, shown: set) -> None:
+    print("=" * 100)
+    print(title)
+    print(f"{'trasa':38} {'odchod':>6} {'variant':>11} {'stav':>9} {'P(včas)':>7} "
+          f"{'P(zadrž.)':>9} {'príchod50':>9} {'príchod90':>9} {'náklad €':>9}")
+    for ev in rec.candidates:
+        if ev.depart in shown:
+            print(f"{ev.route[:38]:38} {hhmm(ev.depart):>6} {ev.kind:>11} {ev.status:>9} "
+                  f"{ev.p_on_time:>7.0%} {ev.p_hold:>9.0%} {hhmm(ev.arrival_p50):>9} "
+                  f"{hhmm(ev.arrival_p90):>9} {ev.expected_cost:>9,.0f}")
+    print("Zelené okná odchodu:")
+    for name, wins in rec.green_windows.items():
+        txt = ", ".join(f"{hhmm(a)}-{hhmm(b)}" for a, b in wins) or "žiadne"
+        print(f"  {name}: {txt}")
+    print("ODPORÚČANIE:", rec.decision)
+    for line in rec.explanation:
+        print("  -", line)
+
+
+def main() -> None:
+    p = Params()
+    primary, detour = example()
+    h = 60
+    deadline = 18 * h
+    print("FIKTÍVNY PRÍKLAD: vlak Košice -> Žilina, termín u zákazníka 18:00,")
+    print("výluka Poprad-Tatry - Liptovský Mikuláš 10:00-14:00 (rezervy 30/30 min).")
+    print(f"Bod zlomu čakať/odstaviť: {break_even_wait_hours(p):.1f} h")
+
+    # 1) Vlak je pripravený načas (05:30) na pridelenej trase 05:30.
+    rec1 = recommend([primary], now=5 * h, ready=5 * h + 30, deadline=deadline, p=p,
+                     horizon_min=12 * h, step_min=10, allocated_departures=[5 * h + 30])
+    _print("SCENÁR 1: pripravený o 05:30 (trasa 05:30)", rec1, {5 * h + 30, 5 * h + 40})
+    # Okno bezpečného odchodu bez ohľadu na trasy (koľko času je "v zálohe"):
+    free = recommend([primary], now=5 * h, ready=5 * h + 30, deadline=deadline, p=p,
+                     horizon_min=2 * h, step_min=5)
+    win = free.green_windows[primary.name]
+    if win:
+        print(f"  - Najneskorší bezpečný odchod pred výlukou: {hhmm(win[0][1])}")
+
+    # 2) Vlak je pripravený o hodinu neskôr (06:30), obchádzka nie je možná.
+    shown = {9 * h, 12 * h, 12 * h + 30, 12 * h + 40, 13 * h}
+    rec2 = recommend([primary], now=6 * h, ready=6 * h + 30, deadline=deadline, p=p,
+                     horizon_min=12 * h, step_min=10, allocated_departures=[5 * h + 30])
+    _print("SCENÁR 2: pripravený až o 06:30, bez obchádzky", rec2, shown)
+
+    # 3) Ako 2, ale existuje obchádzka (fiktívna).
+    rec3 = recommend([primary, detour], now=6 * h, ready=6 * h + 30, deadline=deadline, p=p,
+                     horizon_min=12 * h, step_min=10, allocated_departures=[5 * h + 30])
+    _print("SCENÁR 3: pripravený až o 06:30, obchádzka je možná", rec3, shown)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,49 @@
+# VLAKY – návrh dispečerského systému pre nákladné vlaky na sieti ŽSR
+
+Návrh aplikácie pre dispečera nákladného železničného dopravcu. Aplikácia má:
+
+- v reálnom čase ukazovať, kde sú vlaky na Slovensku,
+- priebežne čítať e-maily (výluky, trasy, zmeny) a viesť z nich register,
+- navrhovať najvhodnejší spôsob prepravy z A do B s ohľadom na výluky a meškania,
+- vyhodnocovať, či vlak stihne termín,
+- odporúčať, kedy vlak **vypraviť**, kedy **počkať**, **odstaviť** alebo **presmerovať**.
+
+Repozitár zatiaľ obsahuje **zadanie (prompt), podklady na zavedenie a spustiteľnú referenciu rozhodovacích pravidiel**, nie hotovú aplikáciu.
+
+## Obsah
+
+| Súbor | Na čo slúži |
+|---|---|
+| [`PROMPT.md`](PROMPT.md) | **Hlavný prompt** pre AI nástroj na vývoj softvéru alebo pre dodávateľa: kompletné zadanie aplikácie. |
+| [`PROMPT_ASISTENT.md`](PROMPT_ASISTENT.md) | Kratší prompt pre AI asistenta na každodennú prácu hneď teraz (e-maily → výluky → semafor vlakov). |
+| [`docs/01_CO_POTREBUJEM.md`](docs/01_CO_POTREBUJEM.md) | Kontrolný zoznam podkladov, prístupov a rozhodnutí. |
+| [`docs/02_ZAVEDENIE_SYSTEMU.md`](docs/02_ZAVEDENIE_SYSTEMU.md) | Čo treba na zavedenie: mapa siete, výluky, poloha vlakov (GPS), e-mail, IT, právo, fázy, riziká. |
+| [`docs/03_REZERVY_A_ROZHODOVANIE.md`](docs/03_REZERVY_A_ROZHODOVANIE.md) | Bezpečné časové rezervy, semafor a pravidlá vypraviť / počkať / odstaviť / presmerovať, s príkladom. |
+| [`docs/04_ALGORITMY.md`](docs/04_ALGORITMY.md) | Aké algoritmy použiť a prečo, vrátane otázky „nových algoritmov od OpenAI“. |
+| [`docs/05_ZDROJE.md`](docs/05_ZDROJE.md) | Zdroje a odkazy (ŽSR, EÚ predpisy, dáta, technológie). |
+| [`referencia/`](referencia/) | Spustiteľná referenčná implementácia rozhodovania a jej testy (Python, bez externých knižníc). |
+
+## Ako postupovať
+
+1. **Podklady:** prejdi [`docs/01_CO_POTREBUJEM.md`](docs/01_CO_POTREBUJEM.md) a priprav, čo sa dá (najdôležitejšie sú vzorové e-maily).
+2. **Vývoj:** vlož [`PROMPT.md`](PROMPT.md) do AI nástroja na vývoj (napr. Claude Code) alebo ho odovzdaj IT či dodávateľovi. Postupuje sa po fázach F0 – F4.
+3. **Hneď teraz:** na dennú prácu použi [`PROMPT_ASISTENT.md`](PROMPT_ASISTENT.md) v schválenom AI nástroji.
+4. **Pravidlá rozhodovania:** pozri si príklad v [`docs/03_REZERVY_A_ROZHODOVANIE.md`](docs/03_REZERVY_A_ROZHODOVANIE.md) a odsúhlas alebo uprav predvolené rezervy.
+
+## Spustenie referenčnej implementácie
+
+Fiktívny príklad (vlak Košice → Žilina s výlukou):
+
+```bash
+python3 referencia/rozhodovanie.py
+```
+
+Testy (kontrolujú aj to, že parametre v `PROMPT.md` sedia s referenciou):
+
+```bash
+python3 -m unittest discover -s referencia -v
+```
+
+## Dôležité upozornenie
+
+Aplikácia aj prompty slúžia na **podporu rozhodovania dispečera dopravcu**. Neriadia železničnú dopravu a nenahrádzajú pokyny ŽSR, predpisy ani rozhodnutie dispečera. Všetky číselné hodnoty (rezervy, náklady) sú návrh na začiatok a treba ich nastaviť podľa skutočných dát.
