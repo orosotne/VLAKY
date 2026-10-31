@@ -38,6 +38,13 @@ def cfg(tmp_path, monkeypatch):
     os.makedirs(s.mail_dir, exist_ok=True)
     os.makedirs(s.outbox_dir, exist_ok=True)
     init_db(db_url)
+    # Plánovač bez úspešnej kontroly schránky nikdy nedá ZELENÚ (10.3). V testoch sa schránka považuje za
+    # čerstvo skontrolovanú (čas ďaleko v budúcnosti); testy výpadku schránky tento záznam zmažú.
+    from vlaky.agent.zdravie import set_kv
+    from vlaky.db import session_scope
+
+    with session_scope(db_url) as sess:
+        set_kv(sess, "mail_last_ok", {"ts": "2100-01-01T00:00:00+00:00", "fetched": 0, "test": True})
     yield s
     dispose_all()
     config_mod._OVERRIDE.clear()

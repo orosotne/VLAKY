@@ -66,6 +66,21 @@ def _bearing(a: tuple, b: tuple) -> float:
     return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
 
 
+def _densify(geom: list, step_m: float) -> list:
+    """Body geometrie doplnené tak, aby boli od seba najviac ~step_m (dlhé priame hrany majú len 2 body)."""
+    if len(geom) < 2:
+        return list(geom)
+    out = [tuple(geom[0])]
+    for p, q in zip(geom, geom[1:]):
+        d = haversine(p[0], p[1], q[0], q[1])
+        n = int(d // step_m)
+        for k in range(1, n + 1):
+            f = k / (n + 1)
+            out.append((p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])))
+        out.append(tuple(q))
+    return out
+
+
 @dataclass(frozen=True)
 class TrainSpec:
     """Parametre vlaku pre filter uskutočniteľnosti (sekcia 9.1 v PROMPT.md)."""
@@ -144,11 +159,15 @@ class Network:
                                          s.get("uic_ref", ""), s.get("railway_ref", ""),
                                          bool(s.get("main_component", True))))
         self.by_norm: dict[str, list] = defaultdict(list)
+        # kľúče s rozvinutými skratkami („vyh. paludza“ → „vyhybna paludza“), aby sa našli aj názvy,
+        # ktoré e-mailová časť uložila v skrátenom kanonickom tvare (napr. „Výh. Paludza“, „Odb. Letisko“)
+        self.by_alias: dict[str, list] = defaultdict(list)
         self.by_node: dict[int, list] = defaultdict(list)
         self.by_ref: dict[str, Station] = {}
         for st in self.stations:
             if st.name:
                 self.by_norm[norm(st.name)].append(st)
+                self.by_alias[expand_aliases(norm(st.name))].append(st)
             self.by_node[st.node].append(st)
             for ref in (st.uic_ref, st.railway_ref):
                 if ref:
@@ -186,12 +205,13 @@ class Network:
         if q.lower() in self.by_ref:
             return self.by_ref[q.lower()]
         n = expand_aliases(norm(q))
-        cands = list(self.by_norm.get(n, []))
+        cands = list(self.by_norm.get(n, [])) or list(self.by_alias.get(n, []))
         if not cands:
-            cands = [s for k, lst in self.by_norm.items() if k.startswith(n + " ") or k == n for s in lst]
+            cands = [s for k, lst in self.by_alias.items() if k.startswith(n + " ") or k == n for s in lst]
         if not cands:
-            close = difflib.get_close_matches(n, list(self.by_norm.keys()), n=3, cutoff=0.88)
-            cands = [s for k in close for s in self.by_norm[k]]
+            close = difflib.get_close_matches(n, list(self.by_alias.keys()), n=3, cutoff=0.88)
+            cands = [s for k in close for s in self.by_alias[k]]
+        cands = list({id(s): s for s in cands}.values())
         if not cands:
             return None
         rank = {"station": 0, "yard": 1, "border": 2, "junction": 3, "spur_junction": 4, "halt": 5}
@@ -489,47 +509,123 @@ class Network:
     def closure_edges(self, from_station: str, to_station: str) -> set:
         """Všetky koľaje úseku medzi dvoma dopravňami (úsek výluky).
 
-        Základ je najkratšia cesta medzi dopravňami (bez ohľadu na trakciu); pridajú sa k nej všetky
-        súbežné koľaje (napr. druhá koľaj dvojkoľajnej trate) a koľaje dopravní vnútri úseku, ktoré
-        ležia do ~40 m od základnej cesty. Vďaka tomu výluka zasiahne vlak na ktorejkoľvek koľaji
-        a obchádzka nevedie cez ten istý úsek.
+        Základ je najkratšia cesta medzi dopravňami (bez ohľadu na trakciu, pre oba rozchody) – medzi
+        obvodmi staníc aj medzi ich hlavnými uzlami. Koľaje v obvode koncových dopravní sa z úseku vynechajú
+        (zhlavia spoločné s inými traťami – výluka odbočnej trate nesmie zastaviť vlak na hlavnej trati).
+        Pridajú sa všetky súbežné koľaje (napr. druhá koľaj dvojkoľajnej trate) a koľaje dopravní vnútri
+        úseku, ktoré ležia do ~40 m od základnej cesty. Vďaka tomu výluka zasiahne vlak na ktorejkoľvek
+        koľaji a obchádzka nevedie cez ten istý úsek. Výluka v jednej dopravni (od = do) zahŕňa všetky
+        koľaje v jej obvode. Prázdna množina = úsek sa v sieti nenašiel (volajúci to musí ohlásiť).
         """
         key = (norm(from_station), norm(to_station))
         if key in self._closure_cache:
             return self._closure_cache[key]
-        a, b = self.find_station(from_station), self.find_station(to_station)
-        base: set = set()
-        if a and b and a.node != b.node:
-            for gauge in ("1435", "1520"):
-                r = self.shortest(a.node, b.node, TrainSpec(traction="M", gauge=gauge, vmax_kmh=200))
-                if r:
-                    base = set(r.edges)
-                    break
-        result = set(base)
-        if base:
-            pts = [p for ei in base for p in self.edges[ei].geom]
-            la0, la1 = min(p[0] for p in pts) - 0.003, max(p[0] for p in pts) + 0.003
-            lo0, lo1 = min(p[1] for p in pts) - 0.004, max(p[1] for p in pts) + 0.004
-            for e in self.edges:
-                if e.idx in base:
-                    continue
-                g = e.geom
-                if not any(la0 <= p[0] <= la1 and lo0 <= p[1] <= lo1 for p in g):
-                    continue
-                samples = list(g)
-                for j in range(len(g) - 1):
-                    if haversine(*g[j], *g[j + 1]) > 150:
-                        samples.append(((g[j][0] + g[j + 1][0]) / 2, (g[j][1] + g[j + 1][1]) / 2))
-                near = 0
-                for la, lo in samples:
-                    m = self.match(la, lo, 40.0, prefer_edges=base)
-                    if m and m["edge"] in base:
-                        near += 1
-                if samples and near / len(samples) >= 0.7:
-                    result.add(e.idx)
+        pair = self._closure_stations(from_station, to_station)
+        result: set = set()
+        if pair is not None:
+            a, b = pair
+            if a.node == b.node or haversine(a.lat, a.lon, b.lat, b.lon) < 300.0:
+                result = self.station_area_edges(a)
+            else:
+                result = self._section_edges(a, b)
         self._closure_cache[key] = result
         self._closure_cache[(key[1], key[0])] = result
         return result
+
+    def _same_name(self, st: Station) -> list:
+        return list({id(s): s for s in self.by_norm.get(norm(st.name), [])}.values()) or [st]
+
+    def _closure_stations(self, from_station: str, to_station: str) -> Optional[tuple]:
+        """Dvojica dopravní úseku; pri rovnakých názvoch (napr. viac „Odb. Letisko“) najbližšia dvojica."""
+        a, b = self.find_station(from_station), self.find_station(to_station)
+        if a is None or b is None:
+            return None
+        best, bd = (a, b), haversine(a.lat, a.lon, b.lat, b.lon)
+        for x in self._same_name(a):
+            for y in self._same_name(b):
+                d = haversine(x.lat, x.lon, y.lat, y.lon)
+                if d < bd:
+                    best, bd = (x, y), d
+        return best
+
+    def _section_edges(self, a: Station, b: Station) -> set:
+        base: set = set()
+        # motorová trakcia (všetky koľaje) aj elektrická (hlavná elektrifikovaná trať, ak má iné vedenie
+        # než staršia súbežná koľaj, napr. modernizované úseky) – výluka platí pre všetky koľaje úseku
+        for gauge, traction in (("1435", "M"), ("1435", "E"), ("1520", "M"), ("1520", "E")):
+            spec = TrainSpec(traction=traction, gauge=gauge, vmax_kmh=200)
+            sa, sb = self.area_nodes(a, spec), self.area_nodes(b, spec)
+            if not sa or not sb:
+                continue
+            found = []
+            r = self.shortest(sa - sb or sa, sb - sa or sb, spec)
+            if r and r.edges:
+                found.append(r)
+            na, nb = self.node_for(a, spec), self.node_for(b, spec)
+            if na is not None and nb is not None and na != nb:
+                r2 = self.shortest(na, nb, spec)
+                if r2 and r2.edges:
+                    found.append(r2)
+            if found:
+                shortest_m = min(r.length_m for r in found)
+                for r in found:
+                    if r.length_m <= shortest_m * 1.5:  # obe spojenia (obvod aj hlavný uzol), ak sú porovnateľné
+                        base |= set(r.edges)
+        if not base:
+            return set()
+        # bez koľají v obvode koncových dopravní (zhlavia a koľaje spoločné s inými traťami)
+        trim = min(1500.0, 0.3 * haversine(a.lat, a.lon, b.lat, b.lon))
+
+        def inside(ei: int) -> bool:
+            return all(haversine(p[0], p[1], a.lat, a.lon) <= trim or haversine(p[0], p[1], b.lat, b.lon) <= trim
+                       for p in _densify(self.edges[ei].geom, 100.0))
+
+        core = {ei for ei in base if not inside(ei)}
+        if not core:  # veľmi krátky úsek – ponechať celý
+            core, inside = set(base), (lambda _ei: False)
+        result = set(core)
+        core_len = sum(self.edges[ei].len_m for ei in core)
+        # súbežné koľaje: väčšina hrany do 40 m od základnej cesty (celej, aj v obvode staníc),
+        # ale hrany celé v obvode koncových dopravní sa nepridajú
+        pts = [p for ei in base for p in self.edges[ei].geom]
+        la0, la1 = min(p[0] for p in pts) - 0.003, max(p[0] for p in pts) + 0.003
+        lo0, lo1 = min(p[1] for p in pts) - 0.004, max(p[1] for p in pts) + 0.004
+        for e in self.edges:
+            if e.idx in result:
+                continue
+            g = e.geom
+            if not any(la0 <= p[0] <= la1 and lo0 <= p[1] <= lo1 for p in g):
+                continue
+            if inside(e.idx):
+                continue
+            samples = _densify(g, 150.0)
+            near = 0
+            for la, lo in samples:
+                m = self.match(la, lo, 40.0, prefer_edges=base)
+                if m and m["edge"] in base:
+                    near += 1
+            if not samples:
+                continue
+            frac = near / len(samples)
+            # väčšina hrany je pri úseku, alebo dlhá súbežná koľaj presahuje úsek (napr. hrana 6 km, z ktorej
+            # polovica leží pozdĺž úseku výluky)
+            if frac >= 0.7 or frac * e.len_m >= max(300.0, 0.5 * core_len):
+                result.add(e.idx)
+        return result
+
+    def station_area_edges(self, station: Station, radius_m: float = 600.0) -> set:
+        """Koľaje v obvode dopravne (oba konce hrany do radius_m od stanice) – pre výluku v jednej stanici."""
+        near = set()
+        for nid, (la, lo) in self.nodes.items():
+            if abs(la - station.lat) > 0.008 or abs(lo - station.lon) > 0.012:
+                continue
+            if haversine(station.lat, station.lon, la, lo) <= radius_m:
+                near.add(nid)
+        near.add(station.node)
+        out = {ei for n in near for ei, y in self.adj.get(n, ()) if y in near}
+        if not out:  # malá dopravňa na dlhej hrane – aspoň hrany pri jej uzle
+            out = {ei for ei, _ in self.adj.get(station.node, ())}
+        return out
 
     # ------------------------------------------------------------------ priradenie polohy
     def _build_grid(self) -> dict:

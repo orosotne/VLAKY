@@ -93,10 +93,23 @@ def propose_driver_assignment(session: Session, now: Optional[datetime] = None, 
         return result
 
     busy: dict = {d.id: [] for d in drivers}
-    for sh in session.scalars(select(DriverShift).where(DriverShift.status.in_(("planovana", "prebieha")))):
-        if sh.driver_id in busy:
-            s0 = ensure_utc(sh.start_utc)
-            busy[sh.driver_id].append((s0, ensure_utc(sh.planned_end_utc) if sh.planned_end_utc else s0 + max_duty))
+    # obsadený čas: plánované a prebiehajúce zmeny aj nedávno ukončené (odpočinok 11 h po skončení zmeny)
+    recent = now - rest - max_duty
+    for sh in session.scalars(select(DriverShift).where(DriverShift.status.in_(("planovana", "prebieha",
+                                                                                 "ukoncena")))):
+        if sh.driver_id not in busy:
+            continue
+        s0 = ensure_utc(sh.start_utc)
+        if sh.status == "ukoncena":
+            e0 = ensure_utc(sh.actual_end_utc or sh.planned_end_utc) if (sh.actual_end_utc or sh.planned_end_utc) \
+                else s0 + max_duty
+            if e0 < recent:
+                continue
+        else:
+            e0 = ensure_utc(sh.planned_end_utc) if sh.planned_end_utc else s0 + max_duty
+            if sh.status == "prebieha" and e0 < now:
+                e0 = now  # zmena ešte beží – obsadený aspoň do teraz
+        busy[sh.driver_id].append((s0, e0))
     lines = {t.id: _route_lines(t) for t in trains}
 
     model = cp_model.CpModel()

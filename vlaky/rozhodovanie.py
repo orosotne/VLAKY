@@ -357,7 +357,8 @@ def _windows(evals: Sequence[Evaluation], step: float) -> list:
 def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float,
               p: Params = Params(), horizon_min: float = 24 * 60, step_min: float = 10,
               allocated_departures: Sequence[float] = (),
-              crew_start: Optional[float] = None) -> Recommendation:
+              crew_start: Optional[float] = None,
+              stable_needs_new_path: bool = False) -> Recommendation:
     """Prehľadá odchody od `ready` po `ready + horizon_min` po každej trase.
 
     Pravidlá výberu:
@@ -369,6 +370,11 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
       4. Vyberie sa najnižší očakávaný náklad. Ak je víťaz ORANŽOVÝ a existuje
          ZELENÁ varianta drahšia najviac o robustness_premium, vyberie sa ZELENÁ.
       5. Ak nič neostane, rozhodnutie je ESKALOVAŤ (ŽSR + zákazník).
+
+    Rozšírenia kanonickej kópie (referencia ich nemá, predvolené hodnoty správanie nemenia):
+      crew_start – rušňovodič už v službe (POČKAŤ: jeho pracovný čas beží ďalej),
+      stable_needs_new_path – odstavenie ruší trasu (idúci vlak): ODSTAVIŤ vždy znamená novú trasu,
+        teda najskôr now + new_path_lead_min.
     """
     candidates, windows = [], {}
     horizon_min = min(horizon_min, p.max_hold_h * 60.0)  # dlhšie čakanie nie je podľa PPŽS prípustné
@@ -387,7 +393,9 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
             options = [evaluate(route, depart, ready, deadline, p, normals, False, new_path, crew_start)]
             if depart > ready:
                 # ODSTAVIŤ: rušňovodič sa uvoľní, neskôr nastúpi nový (pracovný čas od depart - prep)
-                options.append(evaluate(route, depart, ready, deadline, p, normals, True, new_path))
+                st_new = new_path or stable_needs_new_path
+                if not (st_new and depart < now + p.new_path_lead_min):
+                    options.append(evaluate(route, depart, ready, deadline, p, normals, True, st_new))
             best = min(options, key=lambda e: e.expected_cost)
             if not route.is_primary:
                 best.kind = PRESMEROVAT
