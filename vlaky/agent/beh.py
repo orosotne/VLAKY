@@ -234,8 +234,24 @@ def _periodic(now: datetime, summary: dict) -> None:
 
             ok, detail = health_status()
             borders = s.scalar(select(BorderCrossing.id).limit(1)) is not None
+            from ..models import AgentHealth, Email, ExtractedEvent
+
+            day_ago = now - timedelta(hours=24)
+            mails = s.scalar(select(func.count(Email.id)).where(Email.received_at >= day_ago)) or 0
+            quarantined = s.scalar(select(func.count(Email.id)).where(Email.received_at >= day_ago,
+                                                                      Email.verdict == "karantena")) or 0
+            waiting = s.scalar(select(func.count(ExtractedEvent.id)).where(
+                ExtractedEvent.status == "navrh", ExtractedEvent.needs_confirmation.is_(True))) or 0
+            last_mail = s.scalar(select(AgentHealth).where(AgentHealth.component == "schranka")
+                                 .order_by(AgentHealth.id.desc()))
+            failed = s.scalar(select(func.count(Notification.id)).where(Notification.created_at >= day_ago,
+                                                                        Notification.status == "chyba")) or 0
             body = "\n".join([f"Denná správa Agenta dispečera ({dkey})", "",
                               *(f"{k}: {v}" for k, v in detail.items()),
+                              f"posledný stav čítania schránky: {last_mail.status if last_mail else 'neznámy'}",
+                              f"e-maily za 24 h: {mails} (v karanténe {quarantined})",
+                              f"udalosti čakajúce na potvrdenie: {waiting}",
+                              f"nedoručené správy za 24 h: {failed}",
                               f"hraničné priechody v databáze: {'áno' if borders else 'NIE'}",
                               f"tieňová prevádzka: {'áno' if cfg.shadow_mode else 'nie'}"])
             out = send_internal(s, "zdravie", f"[AGENT] Denná správa – {'OK' if ok else 'PROBLÉM'}", body,
