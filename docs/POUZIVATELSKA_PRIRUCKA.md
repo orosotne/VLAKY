@@ -15,7 +15,7 @@ Pre dispečerov, vedúceho dispečingu a plánovačov. Inštalácia a prevádzka
 
 ## 2. Prihlásenie a roly
 
-Prihlasujete sa menom a heslom (prihlásenie platí 12 h).
+Prihlasujete sa menom a heslom (prihlásenie platí 12 h). Po 5 neúspešných pokusoch z jedného počítača (alebo 10 pokusoch na jeden účet) sa prihlásenie na 15 min zablokuje. **Odhlásiť** ukončí všetky vaše prihlásenia (aj na iných zariadeniach).
 
 | Rola | Čo môže |
 |---|---|
@@ -63,8 +63,13 @@ Každé odporúčanie obsahuje:
 **Dôležité pravidlá ŽSR, s ktorými agent počíta:**
 
 - ad hoc trasu (P5) objednať aspoň **6 h** pred odchodom; neskôr len výnimočne cez dispečera ŽSR,
-- vlak, ktorý neodíde do **18 h**, ŽSR zruší,
-- odstavenie je najviac 18 h a koľaj určí ŽSR.
+- vlak, ktorý neodíde do **18 h**, ŽSR zruší – agent ráta 18 h od začiatku státia (nie od posledného prepočtu) a neskorší odchod už neponúkne,
+- odstavenie je najviac 18 h a koľaj určí ŽSR; odstavenie idúceho vlaku znamená novú trasu (aspoň 6 h vopred),
+- preberanie na hranici sa plánuje s dlhšou dobou preberania (P90), aby plán vyšiel aj pri pomalšom preberaní.
+
+**Kedy agent nedá ZELENÚ:** výluka na trase ešte nie je potvrdená (počíta sa s ňou), výluku sa nepodarilo umiestniť na sieť (skontrolujte názvy dopravní vo výluke), chýbajú čerstvé údaje o polohe alebo je poloha mimo trasy, pri idúcom vlaku chýba záznam o nástupe rušňovodiča, alebo agent dlhšie ako 30 min úspešne neskontroloval svoju schránku. Dôvod je vždy vypísaný v odporúčaní.
+
+**Keď sa výpočet nepodarí:** vlak dostane odporúčanie **ESKALOVAŤ** s popisom chyby – staré odporúčanie vtedy neplatí, posúďte vlak sami a chybu nahláste správcovi.
 
 ## 6. Výluky
 
@@ -77,7 +82,7 @@ Každé odporúčanie obsahuje:
 - **Objednávky** zákazníkov prichádzajú e-mailom. Agent k nim pošle **návrh prepravy**: trasy, časy, okno na objednanie trasy.
 - **Vlak z objednávky** vytvoríte jedným tlačidlom, alebo vlak zadáte ručne: odkiaľ, kam, vstupný hraničný priechod, dĺžka, hmotnosť, trakcia, termín, pripravenosť (miestny čas).
 - **Prepočítať** spustí okamžité vyhodnotenie vlaku.
-- **Odkaz pre rušňovodiča** vytvorí odkaz do mobilu, cez ktorý rušňovodič hlási nástup, pripravenosť, odchod a problém a posiela polohu. Odkazy sa dajú zrušiť.
+- **Odkaz pre rušňovodiča** vytvorí odkaz do mobilu, cez ktorý rušňovodič hlási nástup, pripravenosť, odchod a problém a posiela polohu. Odkazy sa dajú zrušiť. Nástup sa dá z odkazu zaznamenať len raz (začiatok bežiacej zmeny môže zmeniť iba dispečer), z jedného vlaku prejde najviac 6 hlásení za 10 min a upozornenie na problém príde najviac raz za 10 min (ďalšie hlásenia sú v detaile vlaku a v audite).
 
 ## 8. Hraničné priechody a preberanie
 
