@@ -174,12 +174,15 @@ def build_segments(net: Network, groute: GRoute, windows: list, t0: datetime, sp
         wps = all_wps[:1] + all_wps[-1:] if len(all_wps) >= 2 else all_wps
     seg_edges = _segment_edges(net, groute, wps)
     info = {li.station: li for li in session.scalars(select(LocationInfo))}
+    from .kalibracia import delay_defaults
+
+    d50, d90 = delay_defaults(session)  # kalibrované z histórie (ak vedúci schválil), inak predvolené
     segments, affecting = [], []
     for i, (a, b) in enumerate(zip(wps, wps[1:])):
         km = max(0.0, b.km - a.km)
         run = max(0.5, (b.minutes - a.minutes) * (run_scale if run_scale != 1.0 else 1 + RUN_MARGIN))
-        p50 = max(0.3, cfg.default_delay_p50_min_per_100km * km / 100.0)
-        p90 = max(p50 * 1.5 + 0.5, cfg.default_delay_p90_min_per_100km * km / 100.0)
+        p50 = max(0.3, d50 * km / 100.0)
+        p90 = max(p50 * 1.5 + 0.5, d90 * km / 100.0)
         closures = []
         edges = seg_edges[i] if i < len(seg_edges) else set()
         for w in windows:

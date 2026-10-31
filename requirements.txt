@@ -11,3 +11,4 @@ bcrypt==4.*
 psycopg[binary]==3.*
 pdfminer.six
 openpyxl==3.*
+ortools==9.*

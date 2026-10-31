@@ -8,6 +8,8 @@
   python -m vlaky demo [--reset]              # ukážkové (FIKTÍVNE) dáta + simulácia polohy
   python -m vlaky simulate                    # simulátor GPS polôh pre ukážkové vlaky
   python -m vlaky test-notify                 # skúšobná správa na interný zoznam
+  python -m vlaky navrh-nasadenia             # návrh nasadenia rušňovodičov (CP-SAT, 13 h, odpočinok 11 h)
+  python -m vlaky kalibracia [--aplikovat]    # návrh kalibrácie rezerv a dôb preberania z histórie
   python -m vlaky health                      # stav agenta (návratový kód 0 = OK)
 """
 from __future__ import annotations
@@ -41,6 +43,10 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--reset", action="store_true")
     sub.add_parser("simulate")
     sub.add_parser("test-notify")
+    sub.add_parser("navrh-nasadenia", help="návrh nasadenia rušňovodičov (CP-SAT) na najbližších 24 h")
+    kal = sub.add_parser("kalibracia", help="návrh kalibrácie rezerv z histórie (bez zmeny)")
+    kal.add_argument("--aplikovat", action="store_true", help="použiť návrh (len položky s dosť vzorkami)")
+    kal.add_argument("--kto", default="veduci")
     sub.add_parser("health")
     args = ap.parse_args(argv)
 
@@ -102,6 +108,29 @@ def main(argv: list[str] | None = None) -> int:
                                 dedup_key="")
         for n in out:
             print(n.channel, n.recipient, n.status, n.error)
+        return 0
+    if args.cmd == "navrh-nasadenia":
+        import json
+
+        from .db import init_db, session_scope
+        from .planovanie.nasadenie import propose_driver_assignment
+
+        init_db()
+        with session_scope() as s:
+            print(json.dumps(propose_driver_assignment(s), ensure_ascii=False, indent=1))
+        return 0
+    if args.cmd == "kalibracia":
+        import json
+
+        from .db import init_db, session_scope
+        from .planovanie.kalibracia import apply_calibration, propose_calibration
+
+        init_db()
+        with session_scope() as s:
+            prop = propose_calibration(s)
+            print(json.dumps(prop, ensure_ascii=False, indent=1))
+            if args.aplikovat:
+                print(json.dumps(apply_calibration(s, prop, args.kto), ensure_ascii=False, indent=1))
         return 0
     if args.cmd == "health":
         from .agent.zdravie import health_status
