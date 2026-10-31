@@ -22,6 +22,8 @@ PROPOSAL_TYPES = {"station", "yard", "border", "junction", "spur_junction"}  # b
 DEFAULT_SPEED = {"main": 80.0, "branch": 60.0, "industrial": 30.0, "": 60.0}
 SERVICE_SPEED = {"siding": 20.0, "yard": 20.0, "spur": 30.0, "crossover": 30.0}
 SERVICE_COST = {"siding": 2.0, "yard": 2.0, "spur": 1.5, "crossover": 1.2}
+MAX_TURN_DEG = 100.0      # ostrejšia zmena smeru = úvrať (obeh rušňa)
+REVERSAL_MIN = 20.0       # úvrať je možná len v stanici a stojí ~20 min (obeh rušňa, skúška bŕzd)
 
 
 def norm(text: str) -> str:
@@ -54,6 +56,14 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dp, dl = p2 - p1, math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * EARTH_R * math.asin(math.sqrt(min(1.0, a)))
+
+
+def _bearing(a: tuple, b: tuple) -> float:
+    la1, lo1 = math.radians(a[0]), math.radians(a[1])
+    la2, lo2 = math.radians(b[0]), math.radians(b[1])
+    y = math.sin(lo2 - lo1) * math.cos(la2)
+    x = math.cos(la1) * math.sin(la2) - math.sin(la1) * math.cos(la2) * math.cos(lo2 - lo1)
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
 
 
 @dataclass(frozen=True)
@@ -104,6 +114,7 @@ class Route:
     minutes: float
     cost: float
     stations: list = field(default_factory=list)  # [(Station, cum_km, cum_min)]
+    reversals: int = 0               # počet úvratí (obeh rušňa v stanici)
 
 
 class Network:
@@ -144,6 +155,27 @@ class Network:
                     self.by_ref[ref.lower()] = st
         self._grid: Optional[dict] = None
         self._closure_cache: dict = {}
+        # smer odchodu z uzla po hrane (prvý segment geometrie) – na kontrolu úvratí
+        self._dir: dict = {}
+        for e in self.edges:
+            g = e.geom
+            if len(g) >= 2:
+                self._dir[(e.idx, e.u)] = _bearing(g[0], g[1])
+                self._dir[(e.idx, e.v)] = _bearing(g[-1], g[-2])
+        # úvrať je možná v obvode stanice (uzly do 600 m od stanice alebo zriaďovacej stanice)
+        node_cells: dict = defaultdict(list)
+        for nid, (la, lo) in self.nodes.items():
+            node_cells[(int(la / 0.01), int(lo / 0.01))].append((nid, la, lo))
+        self.reverse_nodes = set()
+        for st in self.stations:
+            if st.type not in ("station", "yard"):
+                continue
+            ci, cj = int(st.lat / 0.01), int(st.lon / 0.01)
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    for nid, la, lo in node_cells.get((ci + di, cj + dj), ()):
+                        if haversine(st.lat, st.lon, la, lo) <= 600.0:
+                            self.reverse_nodes.add(nid)
 
     # ------------------------------------------------------------------ stanice
     def find_station(self, query: str) -> Optional[Station]:
@@ -205,42 +237,84 @@ class Network:
         return self.edge_minutes(e, train) * SERVICE_COST.get(e.service, 1.0)
 
     # ------------------------------------------------------------------ trasovanie
-    def shortest(self, origin: int, dest: int, train: TrainSpec,
+    def turn_penalty(self, prev_edge: Optional[int], node: int, next_edge: int) -> Optional[float]:
+        """Penalizácia prechodu prev_edge → node → next_edge (None = zakázané).
+
+        Ostrá zmena smeru (> MAX_TURN_DEG) znamená úvrať: v stanici je možná za REVERSAL_MIN minút,
+        inde (výhybka na trati, odbočka) je zakázaná – vlak nemôže „zatočiť“ do protismeru.
+        """
+        if prev_edge is None:
+            return 0.0
+        d_in = self._dir.get((prev_edge, node))
+        d_out = self._dir.get((next_edge, node))
+        if d_in is None or d_out is None:
+            return 0.0
+        arrive = (d_in + 180.0) % 360.0          # smer príchodu do uzla
+        turn = abs((d_out - arrive + 180.0) % 360.0 - 180.0)
+        if turn <= MAX_TURN_DEG:
+            return 0.0
+        return REVERSAL_MIN if node in self.reverse_nodes else None
+
+    def shortest(self, origin, dest, train: TrainSpec,
                  penalty: Optional[dict] = None, banned: Iterable[int] = ()) -> Optional[Route]:
-        """Dijkstra podľa jazdného času (vedľajšie koľaje penalizované)."""
+        """Dijkstra nad hranami (stav = uzol + hrana príchodu) s kontrolou úvratí.
+
+        origin/dest môžu byť uzol alebo množina uzlov (obvod stanice). Cena = jazdný čas
+        (vedľajšie koľaje penalizované) + úvrate v staniciach; bez obratov na trati.
+        """
         banned = set(banned)
         penalty = penalty or {}
-        dist = {origin: 0.0}
-        prev: dict[int, tuple] = {}
-        heap = [(0.0, origin)]
+        origins = set(origin) if isinstance(origin, (set, frozenset, list, tuple)) else {origin}
+        dests = set(dest) if isinstance(dest, (set, frozenset, list, tuple)) else {dest}
+        dist: dict = {}
+        prev: dict = {}
+        heap = []
+        for o in origins:
+            dist[(o, -1)] = 0.0
+            heap.append((0.0, o, -1))
+        heapq.heapify(heap)
+        found = None
         while heap:
-            d, x = heapq.heappop(heap)
-            if x == dest:
+            d, x, via = heapq.heappop(heap)
+            if x in dests:
+                found = (x, via)
                 break
-            if d > dist.get(x, math.inf):
+            if d > dist.get((x, via), math.inf):
                 continue
             for ei, y in self.adj.get(x, ()):
-                if ei in banned:
+                if ei in banned or ei == via:
                     continue
                 e = self.edges[ei]
                 if not self.edge_allowed(e, train):
                     continue
-                nd = d + self.edge_cost(e, train) * penalty.get(ei, 1.0)
-                if nd < dist.get(y, math.inf):
-                    dist[y] = nd
-                    prev[y] = (x, ei)
-                    heapq.heappush(heap, (nd, y))
-        if dest not in dist:
+                tp = self.turn_penalty(None if via < 0 else via, x, ei)
+                if tp is None:
+                    continue
+                nd = d + self.edge_cost(e, train) * penalty.get(ei, 1.0) + tp
+                key = (y, ei)
+                if nd < dist.get(key, math.inf):
+                    dist[key] = nd
+                    prev[key] = (x, via, ei)
+                    heapq.heappush(heap, (nd, y, ei))
+        if found is None:
             return None
-        nodes, edges = [dest], []
-        while nodes[-1] != origin:
-            x, ei = prev[nodes[-1]]
+        nodes, edges = [found[0]], []
+        state = found
+        reversals = 0
+        while state[1] != -1:
+            x, via, ei = prev[state]
             nodes.append(x)
             edges.append(ei)
+            state = (x, via)
         nodes.reverse()
         edges.reverse()
+        minutes = sum(self.edge_minutes(self.edges[i], train) for i in edges)
+        for k in range(1, len(edges)):
+            if self.turn_penalty(edges[k - 1], nodes[k], edges[k]):
+                reversals += 1
         r = Route(nodes, edges, sum(self.edges[i].len_m for i in edges),
-                  sum(self.edge_minutes(self.edges[i], train) for i in edges), dist[dest])
+                  minutes + reversals * REVERSAL_MIN, dist[found])
+        r.reversals = reversals
         r.stations = self._route_stations(r, train)
         return r
 
@@ -260,6 +334,20 @@ class Network:
                 best, bd = nid, d
         return best
 
+    def area_nodes(self, station: Station, train: TrainSpec, radius_m: float = 400.0) -> set:
+        """Uzly v obvode stanice, z ktorých vie vlak ísť (trasa môže začať/skončiť kdekoľvek v stanici)."""
+        out = set()
+        for nid, (la, lo) in self.nodes.items():
+            if abs(la - station.lat) > 0.005 or abs(lo - station.lon) > 0.008:
+                continue
+            if haversine(station.lat, station.lon, la, lo) <= radius_m and any(
+                    self.edge_allowed(self.edges[ei], train) for ei, _ in self.adj.get(nid, ())):
+                out.add(nid)
+        node = self.node_for(station, train)
+        if node is not None:
+            out.add(node)
+        return out
+
     def resolve(self, name: str, train: TrainSpec) -> Optional[tuple]:
         st = self.find_station(name)
         if not st:
@@ -274,11 +362,16 @@ class Network:
         if any(r is None for r in res):
             return None
         total: Optional[Route] = None
-        for (_, a), (_, b) in zip(res, res[1:]):
-            part = self.shortest(a, b, train)
+        start: set = self.area_nodes(res[0][0], train)
+        for k in range(1, len(res)):
+            target = self.area_nodes(res[k][0], train)
+            part = self.shortest(start, target, train)
             if part is None:
                 return None
             total = part if total is None else self._join(total, part, train)
+            start = {part.nodes[-1]}
+        if total is not None:
+            total.stations = self._route_stations(total, train, first=res[0][0], last=res[-1][0])
         return total
 
     def alternatives(self, origin: str, dest: str, train: TrainSpec = TrainSpec(), k: int = 3,
@@ -287,7 +380,7 @@ class Network:
         ra, rb = self.resolve(origin, train), self.resolve(dest, train)
         if not ra or not rb:
             return []
-        a, b = ra[1], rb[1]
+        a, b = self.area_nodes(ra[0], train), self.area_nodes(rb[0], train)
         best = self.shortest(a, b, train)
         if not best:
             return []
@@ -312,6 +405,8 @@ class Network:
                 break
             if all(self._overlap(cand, r) < 0.7 for r in out):
                 out.append(cand)
+        for r in out:
+            r.stations = self._route_stations(r, train, first=ra[0], last=rb[0])
         return out
 
     def _overlap(self, r1: Route, r2: Route) -> float:
@@ -326,11 +421,12 @@ class Network:
 
     def _join(self, r1: Route, r2: Route, train: TrainSpec) -> Route:
         r = Route(r1.nodes + r2.nodes[1:], r1.edges + r2.edges, r1.length_m + r2.length_m,
-                  r1.minutes + r2.minutes, r1.cost + r2.cost)
+                  r1.minutes + r2.minutes, r1.cost + r2.cost, reversals=r1.reversals + r2.reversals)
         r.stations = self._route_stations(r, train)
         return r
 
-    def _route_stations(self, r: Route, train: TrainSpec, max_m: float = 250.0) -> list:
+    def _route_stations(self, r: Route, train: TrainSpec, max_m: float = 250.0,
+                        first: Optional[Station] = None, last: Optional[Station] = None) -> list:
         """Dopravne na trase (aj keď vlak ide po inej koľaji stanice) s kumul. km a minútami."""
         if not r.edges:
             st = self.station_at_node(r.nodes[0])
@@ -345,7 +441,8 @@ class Network:
         lons = [self.nodes[n][1] for n in r.nodes]
         la0, la1, lo0, lo1 = min(lats) - 0.01, max(lats) + 0.01, min(lons) - 0.015, max(lons) + 0.015
         found: dict = {}
-        first, last = self.station_at_node(r.nodes[0]), self.station_at_node(r.nodes[-1])
+        first = first or self.station_at_node(r.nodes[0])
+        last = last or self.station_at_node(r.nodes[-1])
         for st in self.stations:
             if st.type not in PROPOSAL_TYPES or not (la0 <= st.lat <= la1 and lo0 <= st.lon <= lo1):
                 continue
@@ -362,10 +459,14 @@ class Network:
             prev = found.get(st.name)
             if prev is None or rank.get(st.type, 9) < rank.get(prev[0].type, 9):
                 found[st.name] = (st, pos_m, pos_min)
+        if first:
+            found.pop(first.name, None)
+        if last:
+            found.pop(last.name, None)
         items = sorted(found.values(), key=lambda x: x[1])
-        if first and (not items or items[0][0].name != first.name):
+        if first:
             items.insert(0, (first, 0.0, 0.0))
-        if last and items[-1][0].name != last.name:
+        if last:
             items.append((last, cum_m[-1], cum_min[-1]))
         out = []
         for st, pm, pmin in items:

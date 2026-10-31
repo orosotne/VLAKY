@@ -13,6 +13,8 @@ Tento dokument vysvetľuje pravidlá, ktoré má aplikácia používať (sekcia 
 | Rezerva do limitu 13 h | 60 min | Aj „zlá“ jazda (90. percentil) skončí aspoň 60 min pred limitom. |
 | Spoľahlivosť pre ZELENÚ | 90 % | Aspoň 90 zo 100 takýchto jázd príde včas. |
 | Bod zlomu čakať/odstaviť | 5 h | Pri dlhšom čakaní je lacnejšie vlak odstaviť (pri vzorových nákladoch). |
+| Lehota na novú (ad hoc) trasu | 6 h | Krátkodobú ad hoc trasu (produkt P5) treba objednať najneskôr 6 h pred odchodom (PPŽS). |
+| Najdlhšie čakanie / odstavenie | 18 h | Vlak, ktorý neodíde do 18 h od plánu, systém ŽSR (PIS) zruší; odstavenie je najviac 18 h. |
 
 **Semafor:** ZELENÁ = vypraviť · ORANŽOVÁ = len s potvrdením dispečera · ČERVENÁ = nevypravovať.
 
@@ -40,7 +42,8 @@ Pevná rezerva (napr. vždy 60 min) je na jednej trati zbytočne veľká a na in
 | Rezerva do limitu (`crew_buffer_min`) | 60 min | Vlak nesmie zostať stáť bez rušňovodiča – to je jedna z najdrahších situácií. | P90 skutočnej dĺžky zmien na relácii. |
 | Ukončenie po príchode (`crew_post_min`) | 30 min | Odstavenie a odovzdanie rušňa sa ráta do pracovného času. | Podľa vašich interných noriem. |
 | Tolerancia trasy (`path_tolerance_min`) | 15 min | Do akej odchýlky od pridelenej trasy ešte nie je potrebná nová trasa. | Podľa pravidiel ŽSR a vašej praxe. |
-| Lehota na novú trasu (`new_path_lead_min`) | 180 min | Ad hoc trasu nemožno získať okamžite. | Podľa lehôt ŽSR a skutočných časov vybavenia vašich žiadostí. |
+| Lehota na novú trasu (`new_path_lead_min`) | 360 min (6 h) | Ad hoc trasa na krátky čas (produkt P5) sa podľa PPŽS objednáva najneskôr 6 h pred odchodom; iné druhy trás majú dlhšie lehoty (5 pracovných dní, 30 dní). | Podľa pravidiel ŽSR a skutočných časov vybavenia vašich žiadostí. |
+| Najdlhšie čakanie (`max_hold_h`) | 18 h | PIS automaticky zruší vlak, ktorý neodišiel do 18 h od plánovaného odchodu; odstavenie v nácestnej stanici je najviac 18 h (PPŽS uvádza na inom mieste 24 h – rozpor treba overiť so ŽSR, použitá je prísnejšia hodnota). | Podľa potvrdenia ŽSR. |
 | Príprava rušňovodiča (`crew_prep_min`) | 60 min | Prevzatie rušňa, skúška bŕzd a ďalšie úkony pred odchodom – započítava sa do pracovného času. | Podľa vašich interných noriem. |
 
 **Úkony počas jazdy** (preberanie na hraničnom priechode, skúška bŕzd, technická prehliadka vozňov, výmena rušňa alebo rušňovodiča) zadávajte ako súčasť jazdnej doby dotknutého úseku. Ich typické trvanie (P50/P90) treba nastaviť podľa vašich noriem a histórie. Zdroje a orientačné hodnoty sú v `docs/02_ZAVEDENIE_SYSTEMU.md`.
@@ -130,25 +133,26 @@ Vlak Košice → Žilina, termín u zákazníka **18:00**. Výluka **Poprad-Tatr
 
 → **VYPRAVIŤ.** Najneskorší bezpečný odchod pred výlukou je **05:40**.
 
-**Scenár 2 – vlak je pripravený až o 06:30, obchádzka nie je možná**
+**Scenár 2 – vlak bude pripravený až o 06:30 (dispečer to vie o 00:30), obchádzka nie je možná**
 
 | Odchod | Rozhodnutie | Stav | P(včas) | P(zadržania) | Príchod P50 / P90 | Očak. náklad |
 |---|---|---|---|---|---|---|
+| 06:30 | VYPRAVIŤ | ČERVENÁ | 99 % | 100 % | 17:13 / 17:28 | 4 071 € |
 | 09:00 | POČKAŤ | ČERVENÁ | 99 % | 100 % | 17:13 / 17:28 | 3 747 € |
-| 12:00 | ODSTAVIŤ | ČERVENÁ | 99 % | 97 % | 17:13 / 17:29 | 3 306 € |
 | **12:30** | **ODSTAVIŤ** | **ORANŽOVÁ** | 97 % | 0 % | 17:21 / 17:41 | **2 483 €** |
 | 13:00 | ODSTAVIŤ | ORANŽOVÁ | 76 % | 0 % | 17:51 / 18:11 | 2 837 € |
 
-→ Hneď vypraviť nemožno: pridelenú trasu 05:30 vlak zmeškal a nová trasa je k dispozícii najskôr o 09:00 (lehota 3 h). Odchod o 09:00 je ČERVENÝ – vlak by prišiel k výluke a asi 3,5 hodiny by stál v Poprade. Najlepšie je **ODSTAVIŤ** (čakanie 6 h > bod zlomu 5 h) a **objednať novú trasu na 12:30**. Je to ORANŽOVÁ: rezerva voči termínu je len 39 min, preto treba potvrdenie dispečera a je vhodné **vopred informovať zákazníka**.
+→ Vypraviť o 06:30 je ČERVENÉ: vlak by prišiel k výluke a takmer 5 hodín by stál v Poprade. Najlepšie je **ODSTAVIŤ** (čakanie 6 h > bod zlomu 5 h) a **hneď objednať novú trasu na 12:30**. Lehota na ad hoc trasu je 6 h, takže objednávka musí ísť ešte v ten deň ráno. Výsledok je ORANŽOVÝ, lebo rezerva voči termínu je len 39 min. Treba preto potvrdenie dispečera a je vhodné **vopred informovať zákazníka**.
 
 **Scenár 3 – ako scenár 2, ale existuje obchádzka (fiktívna)**
 
 | Trasa | Odchod | Rozhodnutie | Stav | P(včas) | Príchod P50 / P90 | Očak. náklad |
 |---|---|---|---|---|---|---|
 | hlavná | 12:30 | ODSTAVIŤ | ORANŽOVÁ | 97 % | 17:21 / 17:41 | 2 483 € |
-| **obchádzka** | **09:00** | **PRESMEROVAŤ** | **ZELENÁ** | 100 % | 14:33 / 15:01 | **2 552 €** |
+| **obchádzka** | **06:30** | **PRESMEROVAŤ** | **ZELENÁ** | 100 % | 12:03 / 12:31 | **2 100 €** |
+| obchádzka | 09:00 | PRESMEROVAŤ | ZELENÁ | 100 % | 14:33 / 15:01 | 2 552 € |
 
-→ **PRESMEROVAŤ** cez obchádzku o 09:00. Je síce o 69 € drahšia, ale ZELENÁ a vlak príde takmer o 3 hodiny skôr. Pravidlo „ZELENÁ má prednosť, ak je drahšia najviac o 10 %“ tu rozhodlo v prospech spoľahlivosti.
+→ **PRESMEROVAŤ** cez obchádzku o 06:30: je lacnejšia aj spoľahlivejšia a vlak príde o 5 hodín skôr. Podmienka: ad hoc trasu po obchádzke treba objednať **hneď o 00:30**, inak 6-hodinová lehota nevyjde. Keby dispečer zmenu zistil až o 06:00, najskorší odchod po obchádzke by bol o 12:00 a výhodnejšie by bolo vlak odstaviť (scenár 2).
 
 **Scenár 4 – pracovný čas rušňovodiča**
 

@@ -316,7 +316,8 @@ deadline_buffer_min: 60         # plánovaný príchod (medián) aspoň 60 min p
 crew_buffer_min: 60             # aj pri zlom priebehu (P90) ostane rušňovodičovi aspoň 60 min do limitu
 # --- Trasy ---
 path_tolerance_min: 15          # odchýlka od pridelenej trasy, ktorá ešte nevyžaduje novú trasu
-new_path_lead_min: 180          # najkratšia lehota na získanie novej (ad hoc) trasy – overiť podľa pravidiel ŽSR
+new_path_lead_min: 360          # ad hoc trasa na krátky čas (produkt P5) najneskôr 6 h pred odchodom (PPŽS)
+max_hold_h: 18                  # vlak neodídený do 18 h od plánu ruší PIS; odstavenie najviac 18 h (PPŽS)
 # --- Prahy rozhodovania (pravdepodobnosti 0 – 1) ---
 p_on_time_green: 0.90           # ZELENÁ len ak P(včas) >= 90 %
 p_on_time_amber: 0.70           # pod 70 % je ČERVENÁ

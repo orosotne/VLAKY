@@ -83,7 +83,8 @@ class Params:
     crew_buffer_min: float = 60.0
     # Trasy (objednávky trás) [min]
     path_tolerance_min: float = 15.0
-    new_path_lead_min: float = 180.0
+    new_path_lead_min: float = 360.0      # ad hoc trasa na krátky čas (P5) min. 6 h pred odchodom (PPŽS)
+    max_hold_h: float = 18.0              # PIS ruší vlak neodídený do 18 h; odstavenie max. 18 h (PPŽS)
     # Prahy rozhodovania [pravdepodobnosti 0-1]
     p_on_time_green: float = 0.90
     p_on_time_amber: float = 0.70
@@ -361,6 +362,7 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
       5. Ak nič neostane, rozhodnutie je ESKALOVAŤ (ŽSR + zákazník).
     """
     candidates, windows = [], {}
+    horizon_min = min(horizon_min, p.max_hold_h * 60.0)  # dlhšie čakanie nie je podľa PPŽS prípustné
     k = int(horizon_min // step_min)
     for route in routes:
         normals = _normals(p.samples, len(route.segments), p.seed)
@@ -468,16 +470,17 @@ def main() -> None:
     if win:
         print(f"  - Najneskorší bezpečný odchod pred výlukou: {hhmm(win[0][1])}")
 
-    # 2) Vlak je pripravený o hodinu neskôr (06:30), obchádzka nie je možná.
-    shown = {9 * h, 12 * h, 12 * h + 30, 12 * h + 40, 13 * h}
-    rec2 = recommend([primary], now=6 * h, ready=6 * h + 30, deadline=deadline, p=p,
+    # 2) Vlak bude pripravený o hodinu neskôr (06:30); dispečer to vie o 00:30 (6 h vopred,
+    #    takže stihne objednať ad hoc trasu s lehotou 6 h). Obchádzka nie je možná.
+    shown = {6 * h + 30, 9 * h, 12 * h, 12 * h + 30, 12 * h + 40, 13 * h}
+    rec2 = recommend([primary], now=30, ready=6 * h + 30, deadline=deadline, p=p,
                      horizon_min=12 * h, step_min=10, allocated_departures=[5 * h + 30])
-    _print("SCENÁR 2: pripravený až o 06:30, bez obchádzky", rec2, shown)
+    _print("SCENÁR 2: pripravený až o 06:30 (známe o 00:30), bez obchádzky", rec2, shown)
 
     # 3) Ako 2, ale existuje obchádzka (fiktívna).
-    rec3 = recommend([primary, detour], now=6 * h, ready=6 * h + 30, deadline=deadline, p=p,
+    rec3 = recommend([primary, detour], now=30, ready=6 * h + 30, deadline=deadline, p=p,
                      horizon_min=12 * h, step_min=10, allocated_departures=[5 * h + 30])
-    _print("SCENÁR 3: pripravený až o 06:30, obchádzka je možná", rec3, shown)
+    _print("SCENÁR 3: pripravený až o 06:30 (známe o 00:30), obchádzka je možná", rec3, shown)
 
     # 4) Pracovná doba rušňovodiča (limit 13 h vrátane prípravy a odovzdania rušňa).
     print("=" * 100)

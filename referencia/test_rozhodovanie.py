@@ -83,7 +83,7 @@ class TestRozhodovanie(unittest.TestCase):
     def test_nova_trasa_az_po_lehote(self):
         # Pridelená trasa o 01:00; iný odchod potrebuje novú trasu, ktorá je možná až now + 180 min.
         r = Route("A-B", (Segment("A-B", 60, 1, 3),))
-        p = Params(**FAST)
+        p = Params(new_path_lead_min=180, **FAST)
         rec = recommend([r], now=0, ready=60, deadline=24 * 60, p=p, horizon_min=300,
                         step_min=10, allocated_departures=[60])
         departs = sorted(e.depart for e in rec.candidates)
@@ -119,6 +119,15 @@ class TestRozhodovanie(unittest.TestCase):
         ev = evaluate(r, depart=60, ready=60, deadline=5000, p=Params(**FAST))
         self.assertEqual(ev.p_crew_relief, 1)
         self.assertEqual(ev.status, CERVENA)
+
+    def test_predvolena_lehota_6h_a_limit_18h(self):
+        p = Params()
+        self.assertEqual(p.new_path_lead_min, 360)
+        self.assertEqual(p.max_hold_h, 18)
+        r = Route("A-B", (Segment("A-B", 60, 1, 3),))
+        rec = recommend([r], now=0, ready=0, deadline=5000, p=Params(**FAST), horizon_min=24 * 60,
+                        step_min=60)
+        self.assertLessEqual(max(e.depart for e in rec.candidates), 18 * 60)
 
     def test_nic_bezpecne_eskalovat(self):
         r = Route("A-B", (Segment("A-B", 600, 5, 20),))

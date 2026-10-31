@@ -89,7 +89,8 @@ class Params:
     crew_buffer_min: float = 60.0
     # Trasy (objednávky trás) [min]
     path_tolerance_min: float = 15.0
-    new_path_lead_min: float = 180.0
+    new_path_lead_min: float = 360.0      # ad hoc trasa na krátky čas (P5) min. 6 h pred odchodom (PPŽS)
+    max_hold_h: float = 18.0              # PIS ruší vlak neodídený do 18 h; odstavenie max. 18 h (PPŽS)
     # Prahy rozhodovania [pravdepodobnosti 0-1]
     p_on_time_green: float = 0.90
     p_on_time_amber: float = 0.70
@@ -370,6 +371,7 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
       5. Ak nič neostane, rozhodnutie je ESKALOVAŤ (ŽSR + zákazník).
     """
     candidates, windows = [], {}
+    horizon_min = min(horizon_min, p.max_hold_h * 60.0)  # dlhšie čakanie nie je podľa PPŽS prípustné
     k = int(horizon_min // step_min)
     for route in routes:
         normals = _normals(p.samples, len(route.segments), p.seed)

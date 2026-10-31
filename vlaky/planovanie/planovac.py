@@ -37,7 +37,8 @@ from ..siet.graf import WAIT_TYPES, Network, Route as GRoute, TrainSpec, network
 
 POKRACOVAT = "POKRAČOVAŤ"
 DONE_STATES = {"ukonceny", "zruseny", "odovzdany"}
-RUN_MARGIN = 0.05            # prirážka k vypočítanej jazdnej dobe (kým nie sú časy z pridelenej trasy)
+RUN_MARGIN = 0.04            # prirážka k vypočítanej jazdnej dobe (UIC 451-1 pre nákladné vlaky ~4 %);
+                             # pri časoch z pridelenej trasy ŽSR sa nepridáva (prirážky už obsahuje)
 NO_DEADLINE_MIN = 7 * 24 * 60
 NO_PATH_SENTINEL = -10 ** 9  # „žiadna pridelená trasa“ → každý odchod vyžaduje novú trasu
 BLOCKING = {"uplna", "mimoriadnost", "trakcne_vedenie"}
