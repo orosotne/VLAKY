@@ -933,8 +933,16 @@ def _summary(train: Train, decision: str, chosen: Optional[Evaluation], now: dat
             span = f"do limitu 18 h státia (zostáva {horizon_min / 60:.1f} h)"
         else:
             span = f"v najbližších {settings().horizon_hours} h"
-        return (f"Vlak {train.number} ({rel}): ESKALOVAŤ – žiadna bezpečná varianta {span}. Kontaktovať ŽSR "
-                f"(iná trasa alebo čas) a zákazníka (nový termín).")
+        txt = (f"Vlak {train.number} ({rel}): ESKALOVAŤ – žiadna bezpečná varianta {span}. Kontaktovať ŽSR "
+               f"(iná trasa alebo čas) a zákazníka (nový termín).")
+        if chosen is not None:
+            if chosen.kind == VYPRAVIT and train.status == "v_jazde":
+                what = "pokračovať v jazde"
+            else:
+                what = f"{chosen.kind} s odchodom {fmt(_dt(now, chosen.depart))}"
+            txt += (f" Najmenej zlá možnosť: {what}, príchod {fmt(_dt(now, chosen.arrival_p50))} "
+                    f"(90 % do {fmt(_dt(now, chosen.arrival_p90))}).")
+        return txt
     dep = fmt(_dt(now, chosen.depart))
     arr50, arr90 = fmt(_dt(now, chosen.arrival_p50)), fmt(_dt(now, chosen.arrival_p90))
     head = {VYPRAVIT: f"VYPRAVIŤ o {dep}", POKRACOVAT: "POKRAČOVAŤ v jazde",

@@ -365,3 +365,13 @@ def test_poznamka_k_neplatnemu_oknu_len_pri_vyluke_na_trase(session, fixed_now):
     rec = evaluate_train(session, t.id, fixed_now + timedelta(minutes=1), "test")
     assert any("neplatné denné okno" in r for r in rec.reasons)
     assert not (rec.decision == "VYPRAVIŤ" and rec.color == "ZELENÁ")
+
+
+def test_eskalovat_uvedie_najmenej_zlu_moznost(session, fixed_now):
+    seed_borders(session)
+    t = _train(session, fixed_now, deadline_utc=fixed_now + timedelta(hours=4))  # termín sa nedá stihnúť
+    _closure(session, "Liptovský Mikuláš", "Poprad-Tatry", fixed_now - timedelta(hours=1),
+             fixed_now + timedelta(hours=10))
+    rec = evaluate_train(session, t.id, fixed_now, "test")
+    assert rec.decision == "ESKALOVAŤ"
+    assert "Najmenej zlá možnosť" in rec.summary
