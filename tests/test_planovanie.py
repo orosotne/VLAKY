@@ -193,3 +193,22 @@ def test_evaluate_all(session, fixed_now):
     _train(session, fixed_now, number="2", origin="Kúty", destination="Štúrovo")
     recs = evaluate_all(session, fixed_now, "test")
     assert len(recs) == 2
+
+
+def test_casy_z_pridelenej_trasy(session, fixed_now):
+    seed_borders(session)
+    t = _train(session, fixed_now)
+    dep = fixed_now + timedelta(minutes=30)
+    session.add(Path(train_id=t.id, train_number=t.number, status="pridelena", departure_utc=dep,
+                     points=[{"station": "Čadca", "dep": dep.isoformat()},
+                             {"station": "Žilina", "arr": (dep + timedelta(minutes=40)).isoformat(),
+                              "dep": (dep + timedelta(minutes=45)).isoformat()},
+                             {"station": "Košice", "arr": (dep + timedelta(minutes=300)).isoformat()}]))
+    session.flush()
+    rec = evaluate_train(session, t.id, fixed_now, "test")
+    from datetime import datetime
+
+    arr = datetime.fromisoformat(rec.chosen["arrival_p50"])
+    # podľa trasy ŽSR 300 min (graf odhaduje ~180 min) → príchod približne o 5 h po odchode
+    assert timedelta(minutes=280) <= arr - dep <= timedelta(minutes=340)
+    assert any("pridelenej trasy ŽSR" in r for r in rec.reasons)

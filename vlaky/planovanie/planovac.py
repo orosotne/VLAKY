@@ -159,7 +159,7 @@ def _segment_edges(net: Network, groute: GRoute, waypoints: list) -> list:
 
 
 def build_segments(net: Network, groute: GRoute, windows: list, t0: datetime, spec: TrainSpec,
-                   session: Session, start_km: float = 0.0) -> tuple:
+                   session: Session, start_km: float = 0.0, run_scale: float = 1.0) -> tuple:
     """Rozdelí trasu na úseky medzi dopravňami a priradí im výluky (s typom a časom)."""
     cfg = settings()
     wps = [w for w in _waypoints(groute) if w.km >= start_km - 1e-6]
@@ -176,7 +176,7 @@ def build_segments(net: Network, groute: GRoute, windows: list, t0: datetime, sp
     segments, affecting = [], []
     for i, (a, b) in enumerate(zip(wps, wps[1:])):
         km = max(0.0, b.km - a.km)
-        run = max(0.5, (b.minutes - a.minutes) * (1 + RUN_MARGIN))
+        run = max(0.5, (b.minutes - a.minutes) * (run_scale if run_scale != 1.0 else 1 + RUN_MARGIN))
         p50 = max(0.3, cfg.default_delay_p50_min_per_100km * km / 100.0)
         p90 = max(p50 * 1.5 + 0.5, cfg.default_delay_p90_min_per_100km * km / 100.0)
         closures = []
@@ -284,6 +284,33 @@ def allocated_paths(session: Session, train: Train) -> list:
     return [p for p in rows if p.departure_utc]
 
 
+def path_run_scale(paths: list, groute: GRoute) -> tuple:
+    """Pomer jazdných časov z pridelenej trasy ŽSR k odhadu z grafu (presnejšie časy z trasy).
+
+    Vracia (pomer, popis). Ak trasa nemá časy aspoň v dvoch dopravniach na trase vlaku, (1.0, "").
+    """
+    from ..siet.graf import norm
+
+    pos = {norm(st.name): mins for st, _km, mins in groute.stations}
+    for p in sorted(paths, key=lambda x: x.id, reverse=True):
+        pts = []
+        for pt in p.points or []:
+            name = norm(str(pt.get("station", "")))
+            t = pt.get("dep") or pt.get("arr")
+            if name in pos and t:
+                try:
+                    pts.append((pos[name], datetime.fromisoformat(t)))
+                except ValueError:
+                    continue
+        if len(pts) >= 2:
+            (g1, t1), (g2, t2) = pts[0], pts[-1]
+            graph_min = g2 - g1
+            path_min = (ensure_utc(t2) - ensure_utc(t1)).total_seconds() / 60.0
+            if graph_min > 5 and 0.5 <= path_min / graph_min <= 2.5:
+                return path_min / graph_min, f"Jazdné časy podľa pridelenej trasy ŽSR (pomer {path_min / graph_min:.2f}×)."
+    return 1.0, ""
+
+
 def mailbox_age_minutes(session: Session, now: datetime) -> Optional[float]:
     kv = session.scalar(select(KeyValue).where(KeyValue.key == "mail_last_ok"))
     if not kv or not kv.value:
@@ -355,7 +382,11 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
         reasons.append("Vlak nemá zadaný termín zákazníka – posudzujú sa len výluky a pracovný čas.")
 
     windows = closure_windows(session, now - timedelta(hours=2), now + timedelta(hours=cfg.horizon_hours + 30))
-    segs, wps, affecting = build_segments(net, primary, windows, now, spec, session, start_km)
+    paths = allocated_paths(session, train)
+    run_scale, scale_note = path_run_scale(paths, primary)
+    if scale_note:
+        reasons.append(scale_note)
+    segs, wps, affecting = build_segments(net, primary, windows, now, spec, session, start_km, run_scale)
     routes = [DRoute(f"{train.origin} – {train.destination}", tuple(segs), electric=spec.traction == "E")]
 
     # obchádzky okolo blokujúcich výluk na hlavnej trase
@@ -377,7 +408,6 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
                                      is_primary=False))
 
     # pridelené trasy
-    paths = allocated_paths(session, train)
     if running:
         allocated = []
     elif paths:
