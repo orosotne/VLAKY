@@ -96,3 +96,36 @@ def sms_text(rec: Recommendation) -> str:
     if (rec.crew or {}).get("status") in ("ORANŽOVÁ", "ČERVENÁ"):
         txt += f"; vystriedať rušňovodiča do {_t(rec.crew.get('relieve_by'))}"
     return (txt + f". Detail: {settings().public_url.rstrip('/')}/odporucania/{rec.id}")[:300]
+
+
+def order_proposal_text(order, plan: dict) -> tuple:
+    """Návrh prepravy pre novú objednávku (krok A.3 v príbehu vlaku)."""
+    s = settings()
+    subject = (f"{'[TIEŇ]' if s.shadow_mode else ''}[AGENT][DÔLEŽITÉ] Nová objednávka: "
+               f"{order.origin} → {order.destination} ({order.customer or 'zákazník'})")
+    if plan.get("error"):
+        return subject, f"Objednávku sa nepodarilo naplánovať: {plan['error']}\n\nSkontrolujte údaje objednávky."
+    lines = [f"Zákazník: {order.customer or '—'}", f"Relácia: {order.origin} → {order.destination}",
+             f"Najskorší odchod: {fmt(order.earliest_departure_utc)}   Termín: {fmt(order.deadline_utc)}",
+             f"Tovar: {order.cargo or '—'}   Vozne: {order.wagons or '—'}   Hmotnosť: {order.weight_t or '—'} t   "
+             f"Dĺžka: {order.length_m or '—'} m{'   RID: áno' if order.rid else ''}", "",
+             f"Odporúčanie agenta: {plan.get('decision', '')}"]
+    lines += [f"  - {e}" for e in plan.get("explanation", [])]
+    if plan.get("routes"):
+        lines += ["", "Možné trasy:"]
+        for r in plan["routes"]:
+            via = ", ".join(r["stations"][1:-1][:8])
+            lines.append(f"  {r['name']}: {r['km']} km, ~{r['minutes']} min (cez {via}…)")
+    pp = plan.get("path_proposal") or {}
+    if pp.get("stations"):
+        win = pp.get("request_window")
+        lines += ["", f"NÁVRH TRASY na objednanie u ŽSR ({pp.get('route')}):"
+                      + (f" odchod v okne {_t(win[0])} – {_t(win[1])}" if win else "")]
+        for st in pp["stations"]:
+            if st.get("type") == "junction":
+                continue
+            lines.append(f"  {st['name']:<34} prích. {_t(st.get('arr')):>13}  odch. {_t(st.get('dep')):>13}")
+    lines += ["", "Ďalší krok: dispečer potvrdí termín zákazníkovi a objedná trasu v IS KIS (ad hoc trasa "
+                  "najneskôr 6 h pred odchodom). Agent nič neodosiela navonok.",
+              f"Detail: {s.public_url.rstrip('/')}/vlaky"]
+    return subject, "\n".join(lines)

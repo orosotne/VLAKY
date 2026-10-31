@@ -98,6 +98,12 @@ def run_cycle(now: datetime | None = None, force_evaluate: bool = False) -> dict
         with session_scope() as s:
             record(s, "planovanie", "error", error=repr(exc)[:500], trace=traceback.format_exc()[-2000:])
 
+    # 2b) nové objednávky zákazníkov → návrh prepravy dispečerovi
+    try:
+        summary["orders"] = propose_new_orders(now)
+    except Exception as exc:  # noqa: BLE001
+        summary["errors"].append(f"objednávky: {exc!r}")
+
     # 3) súhrn, odovzdávka, denná správa
     try:
         _periodic(now, summary)
@@ -113,6 +119,27 @@ def run_cycle(now: datetime | None = None, force_evaluate: bool = False) -> dict
             ping_heartbeat(not summary["errors"], "; ".join(summary["errors"])[:1000])
             set_kv(s, "heartbeat", {"ts": now.isoformat()})
     return summary
+
+
+def propose_new_orders(now: datetime) -> int:
+    """Pre každú novú objednávku (status „nova“) pripraví návrh prepravy a pošle ho dispečerom."""
+    from ..models import Order
+    from ..notifikacie.odosielanie import send_internal
+    from ..notifikacie.texty import order_proposal_text
+    from ..planovanie.planovac import plan_order
+
+    n = 0
+    with session_scope() as s:
+        for order in s.scalars(select(Order).where(Order.status == "nova")).all():
+            plan = plan_order(s, order.id, now)
+            subject, body = order_proposal_text(order, plan)
+            send_internal(s, "objednavka", subject, body, "DÔLEŽITÉ", dedup_key=f"order:{order.id}",
+                          channels=["email", "teams"])
+            order.status = "navrhnuta" if not plan.get("error") else "chyba_planu"
+            audit(s, "agent", "order_proposal", "order", order.id, decision=plan.get("decision"),
+                  error=plan.get("error", ""))
+            n += 1
+    return n
 
 
 def _periodic(now: datetime, summary: dict) -> None:
