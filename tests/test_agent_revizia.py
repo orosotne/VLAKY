@@ -276,3 +276,14 @@ def test_agent_prezije_chybu_cyklu_a_neuvolni_cudzi_zamok(cfg, monkeypatch):
     assert len(calls) == 2
     with session_scope() as s:
         assert get_kv(s, beh.LOCK_KEY)["owner"] == "iny-server:1"
+
+
+def test_denna_sprava_obsahuje_stav_schranky(cfg, fixed_now):
+    now = fixed_now.replace(hour=cfg.daily_report_hour + 1)  # po hodine dennej správy (miestny čas je o 1 h viac)
+    set_fake_now(now)
+    beh.run_cycle(now)
+    with session_scope() as s:
+        n = s.scalar(select(Notification).where(Notification.subject.contains("Denná správa")))
+    assert n is not None
+    assert "e-maily za 24 h" in n.body and "udalosti čakajúce na potvrdenie" in n.body
+    assert "posledný stav čítania schránky: ok" in n.body
