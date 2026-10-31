@@ -91,12 +91,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "demo":
         from .simulacia.demo import seed_demo
 
-        print(seed_demo(reset=args.reset))
+        try:
+            print(seed_demo(reset=args.reset))
+        except RuntimeError as exc:
+            print(f"CHYBA: {exc}", file=sys.stderr)
+            return 2
         return 0
     if args.cmd == "simulate":
         from .simulacia.demo import run_simulator
 
-        return run_simulator()
+        try:
+            return run_simulator()
+        except RuntimeError as exc:
+            print(f"CHYBA: {exc}", file=sys.stderr)
+            return 2
     if args.cmd == "test-notify":
         from .db import init_db, session_scope
         from .notifikacie.odosielanie import send_internal

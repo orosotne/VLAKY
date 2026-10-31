@@ -159,8 +159,12 @@ def _send_teams(subject: str, body: str) -> str:
 
 def _deliver(session: Session, channel: str, recipient: str, subject: str, body: str, priority: str,
              kind: str, dedup_key: str, rec_id: int | None) -> Notification:
-    n = Notification(channel=channel, recipient=recipient, subject=subject, body=body, priority=priority,
-                     kind=kind, dedup_key=dedup_key, recommendation_id=rec_id, created_at=now_utc())
+    # dĺžky podľa stĺpcov (PostgreSQL by dlhší text odmietol a zhodil celú transakciu)
+    if len(subject) > 300:
+        subject = subject[:299] + "…"
+    n = Notification(channel=channel[:10], recipient=recipient[:200], subject=subject, body=body,
+                     priority=priority[:12], kind=kind[:30], dedup_key=dedup_key[:120], recommendation_id=rec_id,
+                     created_at=now_utc())
     session.add(n)
     session.flush()
     if not _guard(session, channel, recipient):
@@ -211,6 +215,19 @@ def send_internal(session: Session, kind: str, subject: str, body: str, priority
     return out
 
 
+def recommendation_dedup_key(rec: Recommendation) -> str:
+    """Rovnaký obsah = rovnaký kľúč (opakované kolísanie stavu sa nepošle znova), ale posun odchodu
+    o 30 min a viac (napr. predĺžená alebo zrušená výluka) je nová správa."""
+    dep = (rec.chosen or {}).get("depart")
+    bucket = "x"
+    if dep:
+        try:
+            bucket = str(int(datetime.fromisoformat(dep).timestamp() // 1800))
+        except ValueError:
+            pass
+    return f"rec:{rec.train_id}:{rec.fingerprint}:{bucket}"
+
+
 def notify_recommendation(session: Session, rec: Recommendation) -> list:
     """Pošle odporúčanie podľa priority (INFO sa neposiela hneď, ide do súhrnu)."""
     channels = _channels(rec.priority)
@@ -218,7 +235,7 @@ def notify_recommendation(session: Session, rec: Recommendation) -> list:
         return []
     subject = recommendation_subject(rec)
     body = recommendation_body(rec)
-    dedup = f"rec:{rec.train_id}:{rec.fingerprint}"
+    dedup = recommendation_dedup_key(rec)
     out = []
     allowed = allowed_recipients()
     for ch in channels:

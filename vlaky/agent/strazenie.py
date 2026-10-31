@@ -17,6 +17,7 @@ from ..models import Attachment, DriverShift, Email, PositionReport, Train
 from ..notifikacie.odosielanie import send_internal
 from ..planovanie.planovac import DONE_STATES, current_params
 from ..siet.graf import haversine
+from .zdravie import get_kv, set_kv
 
 
 def crew_alerts(session: Session, now: datetime) -> int:
@@ -78,11 +79,21 @@ def standing_alerts(session: Session, now: datetime) -> int:
             if haversine(lat0, lon0, r.snapped_lat or r.lat, r.snapped_lon or r.lon) > 300:
                 break
             still_since = ensure_utc(r.ts_utc)
+        kv_key = f"standing:{t.id}"
         standing = (ensure_utc(last.ts_utc) - still_since).total_seconds() / 60.0
         if standing < minutes:
+            if get_kv(session, kv_key):
+                set_kv(session, kv_key, {})  # vlak sa pohol – epizóda státia skončila
             continue
+        # epizóda státia má stály začiatok (okno polôh je len 3×N min, takže still_since sa posúva)
+        episode = get_kv(session, kv_key)
+        if episode.get("since") and haversine(episode["lat"], episode["lon"], lat0, lon0) <= 300:
+            still_since = min(still_since, datetime.fromisoformat(episode["since"]))
+        else:
+            set_kv(session, kv_key, {"since": still_since.isoformat(), "lat": lat0, "lon": lon0})
+        standing = (ensure_utc(last.ts_utc) - still_since).total_seconds() / 60.0
         where = last.nearest_station or f"{lat0:.4f}, {lon0:.4f}"
-        bucket = still_since.strftime("%Y%m%d%H%M")
+        bucket = still_since.strftime("%Y%m%d%H%M")  # rovnaká epizóda = rovnaký kľúč (pripomenutie po dedup okne)
         subject = f"[AGENT][DÔLEŽITÉ] Vlak {t.number} stojí {standing:.0f} min pri {where}"
         body = (f"Vlak {t.number} ({t.origin} → {t.destination}) sa od {fmt(still_since)} pohol menej ako 300 m.\n"
                 f"Posledná poloha: {fmt(last.ts_utc)} ({last.source}), pri {where}.\n\n"
@@ -101,7 +112,10 @@ def retention_purge(session: Session, now: datetime) -> dict:
     gps_cut = now - timedelta(days=cfg.retention_gps_days)
     res = session.execute(delete(PositionReport).where(PositionReport.ts_utc < gps_cut))
     mail_cut = now - timedelta(days=cfg.retention_email_days)
-    emails = list(session.scalars(select(Email).where(Email.received_at < mail_cut, Email.body_text != "")))
+    # ešte nevymazané: telo, súbor .eml alebo text príloh (aj e-mail len s prílohou, bez textu)
+    emails = list(session.scalars(select(Email).where(
+        Email.received_at < mail_cut,
+        (Email.body_text != "") | (Email.raw_path != "") | Email.attachments.any(Attachment.text != ""))))
     for e in emails:
         e.body_text = ""
         for a in e.attachments:

@@ -22,7 +22,7 @@ from ..cas import now_utc
 from ..config import ROOT, settings
 from ..db import Base, engine, init_db, session_scope
 from ..hranice import find_border, seed_borders
-from ..models import (Closure, Driver, DriverShift, Handover, Locomotive, Path, PositionReport, Train)
+from ..models import (Closure, Driver, DriverShift, Handover, Locomotive, Path, PositionReport, Train, User)
 from ..pouzivatelia import create_user
 from ..siet.graf import TrainSpec, haversine, network
 
@@ -46,7 +46,14 @@ def _reset_db() -> None:
     Base.metadata.create_all(engine())
 
 
+DEMO_ENVS = ("dev", "test", "demo")
+
+
 def seed_demo(reset: bool = False, now: datetime | None = None, copy_emails: bool = True) -> str:
+    if settings().env not in DEMO_ENVS:
+        raise RuntimeError(f"Ukážkové dáta sa dajú pripraviť len vo vývojovom prostredí (VLAKY_ENV = "
+                           f"{', '.join(DEMO_ENVS)}), nie v „{settings().env}“ – fiktívne vlaky a e-maily by sa "
+                           f"dostali k skutočným dispečerom.")
     init_db()
     if reset:
         _reset_db()
@@ -55,9 +62,14 @@ def seed_demo(reset: bool = False, now: datetime | None = None, copy_emails: boo
     lines = ["UKÁŽKOVÉ DÁTA (FIKTÍVNE) pripravené."]
     with session_scope() as s:
         seed_borders(s)
-        create_user(s, "dispecer", pw, "dispecer", "Dispečer (ukážka)", "dispecer1@dopravca.example")
-        create_user(s, "veduci", pw, "veduci", "Vedúci dispečingu (ukážka)", "veduci@dopravca.example")
-        lines.append(f"Prihlásenie: dispecer / {pw}  a  veduci / {pw}")
+        for username, role, name, email in (("dispecer", "dispecer", "Dispečer (ukážka)", "dispecer1@dopravca.example"),
+                                            ("veduci", "veduci", "Vedúci dispečingu (ukážka)",
+                                             "veduci@dopravca.example")):
+            if s.scalar(select(User.id).where(User.username == username)) is None:
+                create_user(s, username, pw, role, name, email)
+                lines.append(f"Prihlásenie: {username} / {pw}")
+            else:  # existujúci účet sa nemení (heslo, rola)
+                lines.append(f"Účet {username} už existuje – heslo sa nezmenilo.")
         if s.scalar(select(Train.id).limit(1)) is not None and not reset:
             lines.append("Vlaky už existujú – nové sa nepridali (použite --reset).")
             return "\n".join(lines)
@@ -177,6 +189,9 @@ def _sim_position(session, train: Train, now: datetime) -> bool:
 
 def run_simulator(interval_s: float = 10.0, max_cycles: int | None = None) -> int:
     """Posúva vlaky v jazde po trati (polohy so zdrojom „sim“). Ctrl+C ukončí."""
+    if settings().env not in DEMO_ENVS:
+        raise RuntimeError("Simulátor polohy beží len vo vývojovom prostredí – v produkcii by vytváral "
+                           "fiktívne polohy skutočných vlakov.")
     init_db()
     cycles = 0
     print("Simulátor polohy beží (FIKTÍVNE polohy). Ctrl+C ukončí.", flush=True)

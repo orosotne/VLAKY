@@ -48,10 +48,20 @@ def build_report(session: Session, now: datetime | None = None, hours: int = 12)
     lines += ["", "Očakávané preberania na hraniciach:"]
     lines += [f"  - vlak {h.train_id}: {h.border.handover_station if h.border else '?'} avízo "
               f"{fmt(h.avizo_eta_utc)} ({h.status})" for h in handovers] or ["  (žiadne)"]
-    new_closures = list(session.scalars(select(Closure).where(Closure.created_at >= since)))
+    new_closures = list(session.scalars(select(Closure).where((Closure.created_at >= since) |
+                                                              (Closure.updated_at >= since))
+                                        .order_by(Closure.start_utc)))
     data["closures_new"] = len(new_closures)
+
+    def _state(c) -> str:
+        if c.status == "zrusene":
+            return "ZRUŠENÁ"
+        created = c.created_at.replace(tzinfo=since.tzinfo) if c.created_at.tzinfo is None else c.created_at
+        kind = "nová" if created >= since else f"zmenená (verzia {c.version})"
+        return f"{kind}, {'overená' if c.status == 'overene' else 'NEPOTVRDENÁ'}"
+
     lines += ["", f"Nové alebo zmenené výluky za {hours} h:"]
-    lines += [f"  - {c.from_station} – {c.to_station} {fmt(c.start_utc)} – {fmt(c.end_utc)} ({c.status})"
+    lines += [f"  - {c.from_station} – {c.to_station} {fmt(c.start_utc)} – {fmt(c.end_utc)} ({_state(c)})"
               for c in new_closures] or ["  (žiadne)"]
     waiting = session.scalars(select(ExtractedEvent).where(ExtractedEvent.status == "navrh",
                                                            ExtractedEvent.needs_confirmation.is_(True))).all()
