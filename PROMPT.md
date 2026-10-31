@@ -23,7 +23,7 @@ Pravidlá:
 
 ## 1. Kontext
 
-- **Dopravca:** `[NÁZOV DOPRAVCU – napr. ČD Cargo, a.s. / ČD Cargo Slovakia, s.r.o.]`. Je to železničný podnik (RU), ktorý prevádzkuje nákladné vlaky na sieti **ŽSR** (Železnice Slovenskej republiky – manažér železničnej infraštruktúry, IM) a nadväzne na sieťach susedných štátov `[ČR – Správa železnic; ďalšie: …]`.
+- **Dopravca:** `[NÁZOV DOPRAVCU – pravdepodobne CD Cargo Slovakia, s.r.o. (v zozname dopravcov ŽSR kód 9052, CDCSK) / ČD Cargo, a.s.; overiť aj Rail Cargo Operator – ČSKD]`. Je to železničný podnik (RU), ktorý prevádzkuje nákladné vlaky na sieti **ŽSR** (Železnice Slovenskej republiky – manažér železničnej infraštruktúry, IM) a nadväzne na sieťach susedných štátov `[ČR – Správa železnic; ďalšie: …]`.
 - **Používateľ:** dispečer dopravcu. Sprostredkúva medzi **zákazníkom** (objednávateľom prepravy) a **ŽSR**: dohaduje termíny, objednáva trasy, rieši výluky, sleduje jazdu vlakov a informuje zákazníka.
 - **Preberanie vlakov na hraniciach:** vlaky sa **vždy preberajú na vstupných hraničných priechodoch SR** (napr. Kúty, Rajka, Štúrovo, Čadca, na východe Čierna nad Tisou; úplný zoznam v module M6). Príchod vlaku na hranicu a jeho prevzatie je preto kľúčová udalosť celého plánu.
 - **Rozsah prevádzky:** `[počet vlakov denne/týždenne; hlavné relácie; používané hraničné priechody; typy rušňov – elektrické (AC/DC/viacsystémové) / motorové; typické dĺžky a hmotnosti vlakov; vlečky zákazníkov]`.
@@ -145,7 +145,11 @@ Súhrn všetkých funkcií v poradí, v akom ich dispečer potrebuje. Všetko ok
 | Nákladný list | Prepravný doklad zásielky (medzinárodne CIM, smerom na Ukrajinu CIM/SMGS). |
 | TTP | Tabuľky traťových pomerov – podrobné údaje ŽSR o tratiach a dopravniach. |
 | RINF | Register železničnej infraštruktúry EÚ (vedie ho ERA) – parametre tratí a dopravných bodov. |
-| TAF TSI | Technická špecifikácia EÚ pre telematiku v nákladnej doprave – štandardné správy medzi ŽSR a dopravcom (napr. o jazde vlaku). |
+| TEL TSI (predtým TAF TSI) | Technická špecifikácia EÚ pre telematiku – štandardné správy medzi ŽSR a dopravcom (napr. o jazde vlaku). Platí vykonávacie nariadenie (EÚ) 2026/253. |
+| PPŽS | Podmienky používania železničnej siete – sieťové vyhlásenie ŽSR (pravidlá trás, výluk, poplatkov). |
+| KIS, PIS | Systémy ŽSR: KIS (Komplexný interoperabilný systém – objednávanie trás, portál dopravcu s polohou vlaku a výlukami), PIS (Prevádzkový informačný systém). |
+| ROV, SROV | Rozkaz o výluke, Súborný rozkaz o výluke – záväzné dokumenty ŽSR o výlukách. |
+| POTR | Prechodné obmedzenie traťovej rýchlosti (pomalá jazda). |
 | RNE TIS | Train Information System združenia RailNetEurope – údaje o jazde medzinárodných vlakov. |
 | ETA, P50, P90 | Predpokladaný čas príchodu; medián (polovica jázd príde skôr) a 90. percentil (90 % jázd príde skôr). |
 
@@ -192,7 +196,8 @@ Súhrn všetkých funkcií v poradí, v akom ich dispečer potrebuje. Všetko ok
 ### M4 Register výluk a obmedzení
 - **Záznam:** ID; zdroj (e-mail, plán výluk ŽSR, ručne) s odkazom na originál; typ (úplná výluka úseku, výluka koľaje – jednokoľajná prevádzka, vypnutie trakčného vedenia, pomalá jazda, obmedzenie dĺžky alebo hmotnosti, mimoriadnosť); úsek (od – do dopravne, číslo trate, koľaj); platnosť (od – do, opakovanie – napr. denne 08:00 – 14:00 v období od – do); dopad (ktoré trakcie, max. rýchlosť, náhradné riešenie); stav (návrh z AI → overené dispečerom → zmenené / zrušené); história verzií.
 - **Automatická kontrola konfliktov:** po každej zmene registra alebo plánu sa skontrolujú všetky plánované aj idúce vlaky podľa sekcie 10 (vrátane rezerv pred a po výluke). Pri konflikte vznikne upozornenie s návrhom riešenia.
-- **Import:** z e-mailov (M5) a z verejného plánu výluk ŽSR `[podľa dostupného formátu]`.
+- **Import:** z e-mailov (M5): ROV, SROV, týždenné „Oznámenie o povolených výlukách“ (PDF/XLSX prílohy), telegramy, POTR. Verejný plán výluk ŽSR je len v PDF. Mapa výluk ŽSR zakazuje automatické sťahovanie, preto sa nepoužíva.
+- **Ručné zadanie:** mimoriadnosti, ktoré kontrolný dispečer ŽSR oznámi telefonicky alebo cez WhatsApp, zadá dispečer na stránke Výluky, prípadne ich prepošle e-mailom do schránky agenta.
 
 ### M5 Monitoring e-mailov (AI)
 - **Napojenie:** vlastná schránka agenta `[agent.dispecing@DOMENA]` na `[Microsoft 365 / Google Workspace / inom hostingu – doplniť]` (sekcia 2.5). Spracovanie v reálnom čase (push notifikácie alebo IMAP IDLE) a záložné periodické dočítanie (napr. každých 5 min), aby sa nič nestratilo.
@@ -253,13 +258,17 @@ Súhrn všetkých funkcií v poradí, v akom ich dispečer potrebuje. Všetko ok
 
 | Zdroj | Čo dáva | Napojenie | Fáza |
 |---|---|---|---|
-| RINF (ERA) | Úradné parametre úsekov a dopravných bodov SR | Export/API podľa dostupnosti; import do modelu siete | F0 |
+| RINF (ERA) | Úradné identifikátory a parametre úsekov (údaje SR k 30. 7. 2025, chýba max. dĺžka vlaku) | Verejný SPARQL endpoint; na kontrolu a prepojenie kódov | F0 |
+| TTP ŽSR (125 PDF podľa tratí) | Normy dĺžky vlakov, užitočné dĺžky koľají, sklony, traťové triedy, miesta zmeny trakcie | Import do doplnkových údajov dopravní | F1 |
 | OpenStreetMap / OpenRailwayMap | Geometria tratí a staníc pre mapu | Extrakt OSM (Geofabrik / Overpass); licencia ODbL – uviesť zdroj | F0 |
 | Dokumenty ŽSR (podmienky používania infraštruktúry, TTP, plán výluk) | Overenie parametrov, výluky, pravidlá trás, hraničné priechody | Import PDF/XLSX, prípadne ručne s auditom | F0 – F1 |
 | E-mailová schránka dispečingu | Výluky, trasy, zmeny, avíza, objednávky | Microsoft Graph / Gmail API / IMAP | F1 |
 | Interné systémy dopravcu | Objednávky, rušne, plán služieb rušňovodičov, zostavy vlakov | Export/API `[doplniť systémy]` | F2 |
 | Partneri na susedných sieťach | Avíza príchodu vlakov na hranicu | E-mail (M5), neskôr API | F1 – F3 |
-| Údaje o jazde vlakov od ŽSR, susedných manažérov infraštruktúry a RNE TIS (TAF TSI) | Skutočné časy prechodov dopravňami a hranicami, meškania | Podľa dostupnosti a zmluvných podmienok | F3 |
+| ŽSR KIS (portál dopravcu: Poloha vlaku, Pripravenosť vlaku, Dôvody meškania, výluky) | Polohy v bodoch hlásenia, meškania, výluky | Prístup: žiadosť na gro410@zsr.sk; strojovo TSI XML cez zmluvu podľa DP 2 a RNE Common Interface | F3 |
+| RNE TIS | Medzinárodné vlaky v SK, CZ, PL, HU, AT, ETA siete | Web zadarmo; API (Data Flow) platené | F3 |
+| Správa železnic GRAPP (CZ) | Poloha vlastných vlakov v ČR pred preberaním | Účet dopravcu, webová služba | F3 |
+| Udalosti o jazde (TEL TSI 2026/253, od 31. 12. 2027 právo na údaje podľa nariadenia 2026/1184) | Príchod, odchod a prejazd dopravňou | Endpoint `/api/udalosti-jazdy` | F3 |
 | GPS jednotky v rušňoch | Poloha každých 10 – 30 s | API/MQTT dodávateľa telematiky | F3 |
 | Aplikácia v tablete/mobile rušňovodiča (alternatíva) | Poloha, nástup a koniec zmeny, hlásenia (pripravený, odchod, problém) | Vlastná webová aplikácia (PWA) | F3 |
 
@@ -300,7 +309,7 @@ Každý adaptér zdroja: idempotentný import, zaznamenanie času a zdroja, moni
 - **Nie:** rozhodovanie o uskutočniteľnosti, výpočet časov a pracovného času, „odhad“ chýbajúcich dát. Výstup LLM je vždy validovaný (schéma, register siete, logické kontroly) a pri nízkej istote ho potvrdzuje človek.
 
 ### 9.7 Nové algoritmy
-Nové teoretické výsledky v hľadaní najkratších ciest (2025 – 2026) pri sieti veľkosti ŽSR prakticky nič nezrýchlia. Úzkym hrdlom sú dáta, obmedzenia a neistota. Akýkoľvek nový algoritmus alebo model zaraď do výroby až vtedy, keď na vašich historických dátach v pripravenom porovnávacom teste (backtest) prekoná doterajšie riešenie.
+Nové teoretické výsledky v hľadaní najkratších ciest (2025 – 2026: Duan a kol., C-HD, APSP) ani matematické výsledky OpenAI (napr. tvrdenie o ETH z 26. 10. 2026) pri sieti veľkosti ŽSR prakticky nič nezrýchlia (podrobne v `docs/04_ALGORITMY.md`). Úzkym hrdlom sú dáta, obmedzenia a neistota. Akýkoľvek nový algoritmus alebo model zaraď do výroby až vtedy, keď na vašich historických dátach v pripravenom porovnávacom teste (backtest) prekoná doterajšie riešenie.
 
 ## 10. Časové rezervy a rozhodovacie pravidlá (záväzné, konfigurovateľné)
 
