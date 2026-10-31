@@ -4,7 +4,19 @@ Jednoduchý popis bez technických detailov. Podrobné zadanie pre vývoj je v `
 
 ## V skratke
 
-Softvér je **pravá ruka dispečera**. Sleduje e-maily, výluky, vlaky na mape Slovenska, preberanie na hraniciach a pracovný čas rušňovodičov. Pri každom vlaku stále prepočítava, či stihne termín, a odporučí, čo urobiť: **vypraviť, počkať, odstaviť, presmerovať** alebo **eskalovať** (dohodnúť sa so ŽSR a zákazníkom). Rozhoduje vždy dispečer. Softvér navrhuje, upozorňuje, vysvetľuje a pripravuje podklady.
+Softvér je **Agent dispečer** – samostatný „digitálny kolega“, ktorý beží nepretržite na vlastnom serveri (VPS) a má **vlastnú e-mailovú adresu**. Chodia mu tam prevádzkové zmeny (výluky, trasy, avíza, objednávky). Na ich základe **sám plánuje dopravu** a skutočnému dispečerovi **posiela odporúčania** – napríklad ako navrhnúť trasu, kedy vlak vypraviť alebo kedy vystriedať rušňovodiča. Sám nič neobjednáva ani neposiela ŽSR, zákazníkom či rušňovodičom.
+
+Je to **pravá ruka dispečera**. Sleduje e-maily, výluky, vlaky na mape Slovenska, preberanie na hraniciach a pracovný čas rušňovodičov. Pri každom vlaku stále prepočítava, či stihne termín, a odporučí, čo urobiť: **vypraviť, počkať, odstaviť, presmerovať** alebo **eskalovať** (dohodnúť sa so ŽSR a zákazníkom). Rozhoduje vždy dispečer. Softvér navrhuje, upozorňuje, vysvetľuje a pripravuje podklady.
+
+## Ako bude Agent dispečer fungovať
+
+1. **Vlastná e-mailová adresa** (napr. `agent.dispecing@vasafirma.sk`). ŽSR, partneri a zákazníci ju pridajú do rozosielania, alebo sa na ňu automaticky preposielajú kópie z dispečerskej schránky. **Ľudia dostávajú e-maily naďalej** – agent je ďalší čitateľ, nie náhrada.
+2. **Číta a rozumie:** z každého e-mailu a prílohy vytiahne, čo sa zmenilo (výluka, trasa, avízo, objednávka), a overí to. Čo je neisté, dá dispečerovi na potvrdenie.
+3. **Plánuje:** prepočíta všetky dotknuté vlaky – trasu, časy, preberanie na hranici, výluky, pracovný čas rušňovodiča (13 h), rezervy a termín.
+4. **Odporúča dispečerovi:** pošle mu správu (e-mail, pri naliehavých veciach aj Teams alebo SMS). V nej je, čo sa stalo, čo to ovplyvní, **odporúčanie s návrhom trasy** (kadiaľ, kedy, kde vystriedať rušňovodiča, kedy objednať trasu u ŽSR) a pripravený koncept objednávky alebo správy zákazníkovi. Príklad predmetu (vymyslený): *„[AGENT] Vlak 12345 Čadca → Košice: POČKAŤ do 12:30 – výluka Poprad-Tatry – Liptovský Mikuláš“*.
+5. **Dispečer rozhoduje:** odporúčanie prijme, upraví alebo zamietne a sám odošle objednávku či správu. Agent sa z jeho reakcií učí.
+6. **Stráži sa aj sám:** každý deň pošle správu, že funguje. Ak by vypadol, dispečera upozorní nezávislé monitorovanie. Dispečer potom pracuje ako doteraz, lebo e-maily má aj vo svojej schránke.
+7. **Najprv na skúšku:** prvých 4 – 6 týždňov beží agent „v tieni“. Jeho odporúčania sa len porovnávajú s rozhodnutiami dispečerov a do ostrej prevádzky ide až potom.
 
 ## Čo uvidí dispečer na obrazovke
 
@@ -58,7 +70,7 @@ Softvér je **pravá ruka dispečera**. Sleduje e-maily, výluky, vlaky na mape 
 
 ## Čo softvér nerobí
 - Neriadi vlaky a nezasahuje do zabezpečovacích zariadení – jazdu vlakov riadi ŽSR.
-- Bez potvrdenia dispečera nič neodošle ŽSR, zákazníkom ani rušňovodičom.
+- Nič neodošle ŽSR, zákazníkom, partnerom ani rušňovodičom a nič neobjednáva. Správy posiela iba dispečerom; všetko navonok robí dispečer.
 - Nevymýšľa si údaje. Keď niečo chýba alebo je neisté, opýta sa.
 
 ## Čo bude potrebovať

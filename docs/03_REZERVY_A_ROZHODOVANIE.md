@@ -1,6 +1,6 @@
 # Časové rezervy a rozhodovanie: vypraviť, počkať, odstaviť, presmerovať
 
-Tento dokument vysvetľuje pravidlá, ktoré má aplikácia používať (sekcia 9 v `PROMPT.md`). Presne ich implementuje `referencia/rozhodovanie.py`. Všetky čísla sú **návrh na začiatok** a treba ich nastaviť podľa vašich dát (kapitola 9).
+Tento dokument vysvetľuje pravidlá, ktoré má aplikácia používať (sekcia 10 v `PROMPT.md`). Presne ich implementuje `referencia/rozhodovanie.py`. Všetky čísla sú **návrh na začiatok** a treba ich nastaviť podľa vašich dát (kapitola 9).
 
 ## Zhrnutie na jednu obrazovku
 

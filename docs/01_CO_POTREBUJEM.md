@@ -12,7 +12,8 @@ Zoznam podkladov, prístupov a rozhodnutí na zavedenie systému. Je zoradený p
   - objednávky a zmeny od zákazníkov.
 
   Všetko aj s prílohami (PDF, Excel…), anonymizované (mená a telefóny môžu byť začiernené). Ideálne aj s tým, ako si to dispečer zapísal: to bude „správna odpoveď“ na testovanie presnosti AI.
-- [ ] **E-mail technicky.** Outlook / Microsoft 365, Gmail alebo iný systém? Existuje zdieľaná dispečerská schránka? Kontakt na IT, ktoré schváli prístup aplikácie k schránke (stačí len čítanie).
+- [ ] **E-mailová adresa agenta.** Na akej doméne a v akom systéme ju zriadime (Microsoft 365, Google Workspace, iný), napr. `agent.dispecing@vasafirma.sk`. Ďalej treba rozhodnúť, ako sa na ňu dostanú prevádzkové e-maily: ŽSR, partneri a zákazníci ju pridajú do rozosielania, alebo sa budú automaticky preposielať kópie z dispečerskej schránky. Potrebný je aj kontakt na IT.
+- [ ] **Komu agent posiela odporúčania.** E-mailové adresy dispečerov, kanál v MS Teams a telefónne čísla na SMS pri naliehavých veciach. Mimo tohto zoznamu agent nesmie posielať nič.
 - [ ] **Dokumenty a prístupy k ŽSR.** Čo z toho máte a používate:
   - podmienky používania železničnej infraštruktúry ŽSR (verejný dokument),
   - Tabuľky traťových pomerov (TTP) pre vaše trate,
@@ -31,7 +32,8 @@ Zoznam podkladov, prístupov a rozhodnutí na zavedenie systému. Je zoradený p
 - [ ] **História jázd** za posledných 6 – 12 mesiacov: plán verzus skutočnosť (príchody na hranicu a časy prevzatia, odchody, príchody, meškania a príčiny, skutočný pracovný čas rušňovodičov). Stačí export z interných systémov; doplniť sa dá aj z údajov ŽSR alebo RNE TIS.
 - [ ] **Zdroj polohy vlakov.** Rozhodnutie, z čoho bude poloha: GPS jednotky v rušňoch (rozpočet, súhlas vlastníka rušňa, kto ich nainštaluje), údaje od ŽSR alebo RNE TIS, aplikácia v tablete rušňovodiča, alebo kombinácia. Možnosti sú v `docs/02_ZAVEDENIE_SYSTEMU.md`.
 - [ ] **GDPR a zamestnanci.** Posúdenie vplyvu na ochranu údajov (DPIA) a prerokovanie so zástupcami zamestnancov, pretože poloha rušňa nepriamo sleduje rušňovodiča. Zodpovedná osoba (DPO) vo firme.
-- [ ] **IT prostredie.** Cloud v EÚ alebo vlastný server, firemné prihlasovanie (SSO), kto bude systém prevádzkovať a kto bude vyvíjať (interné IT, dodávateľ, vývoj s pomocou AI). Pravidlá firmy pre používanie AI nástrojov s firemnými dátami.
+- [ ] **Server (VPS) a prevádzka.** U ktorého poskytovateľa v EÚ bude VPS a kto ho bude spravovať (aktualizácie, zálohy, obnova, monitoring). Ďalej firemné prihlasovanie (SSO) a kto bude vyvíjať (interné IT, dodávateľ, vývoj s pomocou AI). Pravidlá firmy pre používanie AI nástrojov s firemnými dátami a zmluvy o spracúvaní údajov.
+- [ ] **Tieňová prevádzka.** Súhlas, že prvé 4 – 6 týždňov bude agent len „v tieni“ (odporúčania sa porovnávajú s rozhodnutiami dispečerov). Kto ich bude vyhodnocovať.
 - [ ] **Rozpočet a termín pilotu.** Na ktorých 1 – 2 reláciách začneme.
 
 ## C. Čo odo mňa nepotrebuješ zháňať

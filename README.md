@@ -1,6 +1,6 @@
 # VLAKY – návrh dispečerského systému pre nákladné vlaky na sieti ŽSR
 
-Návrh aplikácie pre dispečera nákladného železničného dopravcu. Aplikácia má:
+Návrh **Agenta dispečera** pre nákladného železničného dopravcu: samostatného agenta, ktorý beží nepretržite na vlastnom serveri (VPS), má **vlastnú e-mailovú adresu** na prevádzkové zmeny, sám plánuje dopravu a **skutočnému dispečerovi iba odporúča**, ako navrhnúť trasu a čo urobiť. Agent spolu s webovou aplikáciou má:
 
 - na **živej mape Slovenska** ukazovať, kde presne sú vlaky na trati,
 - sledovať **preberanie vlakov na vstupných hraničných priechodoch SR** (Kúty, Rajka, Štúrovo, Čadca, Čierna nad Tisou a ďalšie),
