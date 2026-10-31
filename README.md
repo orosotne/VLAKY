@@ -12,7 +12,7 @@ Návrh **Agenta dispečera** pre nákladného železničného dopravcu: samostat
 
 Celý popis toho, čo bude softvér robiť (bez technických detailov), je v [`docs/00_CO_BUDE_SOFTVER_ROBIT.md`](docs/00_CO_BUDE_SOFTVER_ROBIT.md).
 
-Repozitár zatiaľ obsahuje **zadanie (prompt), podklady na zavedenie a spustiteľnú referenciu rozhodovacích pravidiel**, nie hotovú aplikáciu.
+Repozitár obsahuje **zadanie (prompt), podklady na zavedenie a hotový systém postavený podľa promptu**: agenta, webovú aplikáciu so živou mapou SR, nasadenie na VPS a testy. Na ostrú prevádzku treba doplniť prístupy (schránka agenta, server, prístupy k ŽSR) – pozri `docs/01_CO_POTREBUJEM.md`.
 
 ## Obsah
 
@@ -29,6 +29,8 @@ Repozitár zatiaľ obsahuje **zadanie (prompt), podklady na zavedenie a spustite
 | [`docs/PREVADZKA.md`](docs/PREVADZKA.md) | **Prevádzka na VPS** – inštalácia, schránka agenta, zálohy a test obnovy, monitoring, postup pri incidentoch. |
 | [`docs/ARCHITEKTURA.md`](docs/ARCHITEKTURA.md) | Architektúra hotového systému: komponenty, dátový tok, rozhodnutia. |
 | [`docs/PREDPOKLADY.md`](docs/PREDPOKLADY.md) | Predpoklady použité pri stavbe (odpovede na úvodné otázky promptu). |
+| [`docs/POUZIVATELSKA_PRIRUCKA.md`](docs/POUZIVATELSKA_PRIRUCKA.md) | **Príručka pre dispečera** – mapa, fronta, odporúčania, výluky, hranice, 13 h, reporty. |
+| [`vlaky/`](vlaky/) | **Hotový systém** (Python): agent, plánovanie, e-maily, notifikácie, web so živou mapou. |
 | [`referencia/`](referencia/) | Spustiteľná referenčná implementácia rozhodovania a jej testy (Python, bez externých knižníc). |
 
 ## Ako postupovať
@@ -37,6 +39,40 @@ Repozitár zatiaľ obsahuje **zadanie (prompt), podklady na zavedenie a spustite
 2. **Vývoj:** vlož [`PROMPT.md`](PROMPT.md) do AI nástroja na vývoj (napr. Claude Code) alebo ho odovzdaj IT či dodávateľovi. Postupuje sa po fázach F0 – F4.
 3. **Hneď teraz:** na dennú prácu použi [`PROMPT_ASISTENT.md`](PROMPT_ASISTENT.md) v schválenom AI nástroji.
 4. **Pravidlá rozhodovania:** pozri si príklad v [`docs/03_REZERVY_A_ROZHODOVANIE.md`](docs/03_REZERVY_A_ROZHODOVANIE.md) a odsúhlas alebo uprav predvolené rezervy.
+
+## Spustenie systému
+
+**Na skúšku na počítači (Python 3.12+), s fiktívnymi ukážkovými dátami:**
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+```
+
+```bash
+export VLAKY_DEMO_PASSWORD='ukazka-heslo-2026' VLAKY_SECRET_KEY="$(openssl rand -hex 32)" VLAKY_POSITIONS_TOKEN="$(openssl rand -hex 16)"
+```
+
+```bash
+python -m vlaky demo --reset
+```
+
+```bash
+python -m vlaky agent --once
+```
+
+```bash
+python -m vlaky web --port 8000
+```
+
+Potom otvor http://127.0.0.1:8000 a prihlás sa ako `dispecer` s heslom z `VLAKY_DEMO_PASSWORD`. Agent spracuje ukážkové e-maily zo schránky `data/schranka` a správy pre dispečera uloží do `data/odoslane`. Polohu vlakov v jazde posúva `python -m vlaky simulate`.
+
+**Na serveri (VPS):** Docker Compose s PostgreSQL, webom, agentom a Caddy (HTTPS) – postup krok za krokom je v [`docs/PREVADZKA.md`](docs/PREVADZKA.md).
+
+**Testy celého systému:**
+
+```bash
+python -m pytest -q
+```
 
 ## Spustenie referenčnej implementácie
 
