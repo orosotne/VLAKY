@@ -468,6 +468,16 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
         current_ref = next((e for e in rec.candidates if e.route == routes[0].name
                             and abs(e.depart - ready_min) < 1e-6 and e.kind == VYPRAVIT), None)
     crew = _crew_info(shift, current_ref or chosen, now, params, current=current_ref is not None)
+    # plánovaný (ešte nezačatý) nástup rušňovodiča zbytočne skoro → navrhnúť posun (krok C.11 príbehu vlaku)
+    if shift is not None and chosen is not None and chosen.kind != ODSTAVIT and \
+            ensure_utc(shift.start_utc) > now:
+        ideal = _dt(now, chosen.depart - params.crew_prep_min)
+        idle = (ideal - ensure_utc(shift.start_utc)).total_seconds() / 60.0
+        if idle >= 30:
+            reasons.append(f"Posunúť nástup rušňovodiča{(' ' + shift.driver.name) if shift.driver else ''} "
+                           f"z {fmt(shift.start_utc)} na {fmt(ideal)} – inak by {idle / 60:.1f} h čakal a míňal "
+                           f"pracovný čas (limit {params.crew_max_duty_min / 60:.0f} h).")
+            crew["suggested_start"] = ideal.isoformat()
     if crew.get("status") == CERVENA:
         reasons.append(f"Rušňovodič by prekročil {params.crew_max_duty_min / 60:.0f} h – naplánujte výmenu "
                        f"najneskôr o {fmt(datetime.fromisoformat(crew['relieve_by']))}.")
@@ -559,7 +569,19 @@ def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) 
     ready = max(now, ensure_utc(order.earliest_departure_utc) if order.earliest_departure_utc else now)
     deadline_min = _min(now, order.deadline_utc) if order.deadline_utc else _min(now, ready) + NO_DEADLINE_MIN
     rec = two_stage_recommend(droutes, _min(now, ready), deadline_min, params, [NO_PATH_SENTINEL], None)
-    out = {"order_id": order.id, "decision": rec.decision, "explanation": rec.explanation,
+    explanation = []
+    ch = rec.chosen
+    if ch is not None and rec.decision != ESKALOVAT:
+        explanation.append(f"{rec.decision} po trase „{ch.route}“ s odchodom {fmt(_dt(now, ch.depart))}: "
+                           f"P(včas) {ch.p_on_time:.0%}, príchod {fmt(_dt(now, ch.arrival_p50))} "
+                           f"(90 % do {fmt(_dt(now, ch.arrival_p90))}), očakávaný náklad {ch.expected_cost:,.0f} €.")
+        explanation.append("Trasu treba objednať v IS KIS (ad hoc trasa P5 najneskôr 6 h pred odchodom).")
+        if ch.status != ZELENA:
+            explanation.append("ORANŽOVÁ – vyžaduje potvrdenie dispečera: " + "; ".join(ch.reasons))
+    else:
+        explanation.append("Žiadna bezpečná varianta v horizonte – dohodnúť so zákazníkom iný termín "
+                           "alebo so ŽSR iný čas či trasu.")
+    out = {"order_id": order.id, "decision": rec.decision, "explanation": explanation,
            "variants": _variants(rec, now), "routes": []}
     for g, d in zip(groutes, droutes):
         out["routes"].append({"name": d.name, "km": round(g.length_m / 1000, 1), "minutes": round(g.minutes),

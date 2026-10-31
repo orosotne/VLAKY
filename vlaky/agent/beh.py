@@ -23,7 +23,7 @@ from ..audit import audit
 from ..cas import local, now_utc
 from ..config import settings
 from ..db import init_db, session_scope
-from ..models import BorderCrossing, Recommendation
+from ..models import BorderCrossing, Notification, Recommendation
 from .zdravie import get_kv, ping_heartbeat, purge_old, record, set_kv
 
 _STOP = {"flag": False}
@@ -95,9 +95,16 @@ def run_cycle(now: datetime | None = None, force_evaluate: bool = False) -> dict
         from ..notifikacie.odosielanie import notify_recommendation
 
         with session_scope() as s:
-            for rec in s.scalars(select(Recommendation).where(Recommendation.id > start_rec_id,
-                                                              Recommendation.state == "nove")
-                                 .order_by(Recommendation.id)):
+            # každé aktuálne odporúčanie, ktoré ešte nebolo odoslané (bez ohľadu na to, kto ho vytvoril:
+            # cyklus agenta, prepočet z webu, import) – deduplikácia zabráni dvojitému odoslaniu
+            notified_ids = select(Notification.recommendation_id).where(Notification.recommendation_id.is_not(None))
+            since = now - timedelta(hours=6)
+            q = (select(Recommendation)
+                 .where(Recommendation.state == "nove", Recommendation.priority != "INFO",
+                        (Recommendation.id > start_rec_id) | (Recommendation.created_at >= since),
+                        Recommendation.id.not_in(notified_ids))
+                 .order_by(Recommendation.id))
+            for rec in s.scalars(q):
                 summary["notified"] += len(notify_recommendation(s, rec))
     except Exception as exc:  # noqa: BLE001
         summary["errors"].append(f"plánovanie: {exc!r}")
@@ -110,7 +117,9 @@ def run_cycle(now: datetime | None = None, force_evaluate: bool = False) -> dict
     except Exception as exc:  # noqa: BLE001
         summary["errors"].append(f"objednávky: {exc!r}")
 
-    # 3) súhrn, odovzdávka, denná správa
+    # 3) súhrn, odovzdávka, denná správa (stav cyklu sa zapíše vopred, aby denná správa videla tento cyklus)
+    with session_scope() as s:
+        set_kv(s, "agent_last_cycle", {"ts": now.isoformat(), "errors": len(summary["errors"])})
     try:
         _periodic(now, summary)
     except Exception as exc:  # noqa: BLE001

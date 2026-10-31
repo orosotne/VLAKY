@@ -212,3 +212,18 @@ def test_casy_z_pridelenej_trasy(session, fixed_now):
     # podľa trasy ŽSR 300 min (graf odhaduje ~180 min) → príchod približne o 5 h po odchode
     assert timedelta(minutes=280) <= arr - dep <= timedelta(minutes=340)
     assert any("pridelenej trasy ŽSR" in r for r in rec.reasons)
+
+
+def test_navrh_posunu_nastupu_rusnovodica(session, fixed_now):
+    seed_borders(session)
+    t = _train(session, fixed_now, ready_utc=fixed_now + timedelta(hours=1))
+    d = Driver(name="R2")
+    session.add(d)
+    session.flush()
+    # nástup naplánovaný o 30 min, ale vlak bez trasy odíde najskôr o 6 h (lehota P5)
+    session.add(DriverShift(driver_id=d.id, train_id=t.id, start_utc=fixed_now + timedelta(minutes=30),
+                            status="planovana"))
+    session.flush()
+    rec = evaluate_train(session, t.id, fixed_now, "test")
+    assert any("Posunúť nástup rušňovodiča" in r for r in rec.reasons)
+    assert "suggested_start" in rec.crew
