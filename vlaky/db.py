@@ -54,6 +54,33 @@ def init_db(url: str | None = None) -> None:
 
         os.makedirs(os.path.dirname(os.path.abspath(eng.url.database)), exist_ok=True)
     Base.metadata.create_all(eng)
+    _add_missing_columns(eng)
+
+
+def _add_missing_columns(eng: Engine) -> None:
+    """Jednoduchá migrácia: doplní do existujúcich tabuliek nové stĺpce (create_all ich nepridá).
+
+    Nové stĺpce musia byť nullable alebo mať server_default. Zmeny typov a mazanie stĺpcov sa robia ručne
+    (docs/PREVADZKA.md – aktualizácia).
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(eng)
+    existing_tables = set(insp.get_table_names())
+    with eng.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in have:
+                    continue
+                ddl = col.type.compile(dialect=eng.dialect)
+                default = ""
+                if col.server_default is not None and hasattr(col.server_default, "arg"):
+                    arg = col.server_default.arg
+                    default = f" DEFAULT {arg if isinstance(arg, str) and arg.isdigit() else repr(str(arg))}"
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}{default}'))
 
 
 @contextmanager

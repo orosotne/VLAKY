@@ -5,11 +5,12 @@ import hashlib
 import secrets
 import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
@@ -75,7 +76,7 @@ def _pw_fingerprint(password_hash: str) -> str:
 
 def issue_session(response, user: User) -> None:
     token = _serializer().dumps({"uid": user.id, "u": user.username, "pw": _pw_fingerprint(user.password_hash),
-                                 "csrf": secrets.token_urlsafe(32)})
+                                 "ep": int(user.session_epoch or 0), "csrf": secrets.token_urlsafe(32)})
     response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_MAX_AGE, httponly=True, samesite="lax",
                         secure=secure_cookies(), path="/")
 
@@ -100,6 +101,8 @@ def _load_user(request: Request) -> Optional[CurrentUser]:
             return None
         if data.get("pw") != _pw_fingerprint(user.password_hash):
             return None
+        if int(data.get("ep", 0) or 0) != int(user.session_epoch or 0):
+            return None  # po odhlásení sú staré cookies neplatné aj na serveri
         return CurrentUser(user.id, user.username, user.full_name or "", user.role, str(data.get("csrf", "")))
 
 
@@ -143,39 +146,70 @@ async def csrf_form(request: Request):
 
 # ---------------------------------------------------------------- obmedzenie neúspešných prihlásení
 class LoginLimiter:
-    """Jednoduché obmedzenie v pamäti: po `max_failures` neúspechoch z jednej IP blokovať na `window_s`."""
+    """Obmedzenie v pamäti: po `max_failures` neúspechoch pre kľúč (IP alebo účet) blokovať na `window_s`.
 
-    def __init__(self, max_failures: int = 5, window_s: int = 900) -> None:
+    Úspešné prihlásenie nesmie vynulovať počítadlo IP adresy (inak by útočník striedal pokusy na cudzí účet
+    s prihlásením do vlastného). Pri zaplnení pamäte sa najprv mažú vypršané záznamy, nikdy nie blokované.
+    """
+
+    def __init__(self, max_failures: int = 5, window_s: int = 900, max_keys: int = 10000) -> None:
         self.max_failures = max_failures
         self.window_s = window_s
-        self._fails: dict[str, deque] = defaultdict(deque)
+        self.max_keys = max_keys
+        self._fails: dict[str, deque] = {}
+        self._logged: dict[str, float] = {}
         self._lock = threading.Lock()
 
-    def _prune(self, key: str, now: float) -> deque:
-        q = self._fails[key]
+    def _prune(self, key: str, now: float) -> Optional[deque]:
+        q = self._fails.get(key)
+        if q is None:
+            return None
         while q and now - q[0] > self.window_s:
             q.popleft()
+        if not q:
+            self._fails.pop(key, None)
+            return None
         return q
 
     def retry_after(self, key: str) -> int:
         now = time.monotonic()
         with self._lock:
             q = self._prune(key, now)
-            if len(q) >= self.max_failures:
+            if q is not None and len(q) >= self.max_failures:
                 return max(1, int(self.window_s - (now - q[0])))
             return 0
 
     def fail(self, key: str) -> None:
+        now = time.monotonic()
         with self._lock:
-            q = self._prune(key, time.monotonic())
-            q.append(time.monotonic())
-            if len(self._fails) > 10000:  # ochrana pamäte
-                for k in list(self._fails)[:5000]:
-                    self._fails.pop(k, None)
+            q = self._prune(key, now)
+            if q is None:
+                q = self._fails[key] = deque()
+            q.append(now)
+            if len(self._fails) > self.max_keys:  # ochrana pamäte: najprv vypršané, potom neblokované
+                for k in list(self._fails):
+                    self._prune(k, now)
+                if len(self._fails) > self.max_keys:
+                    for k in [k for k, v in self._fails.items() if len(v) < self.max_failures]:
+                        if len(self._fails) <= self.max_keys // 2:
+                            break
+                        self._fails.pop(k, None)
 
     def reset(self, key: str) -> None:
         with self._lock:
             self._fails.pop(key, None)
+
+    def should_log(self, key: str) -> bool:
+        """Zablokovaný pokus sa do auditu zapíše najviac raz za okno (ochrana pred zahltením auditu)."""
+        now = time.monotonic()
+        with self._lock:
+            last = self._logged.get(key)
+            if last is not None and now - last < self.window_s:
+                return False
+            if len(self._logged) > self.max_keys:
+                self._logged = {k: v for k, v in self._logged.items() if now - v < self.window_s}
+            self._logged[key] = now
+            return True
 
 
 def client_ip(request: Request) -> str:
@@ -203,28 +237,8 @@ def login_page(request: Request, next: str = "/"):  # noqa: A002 – názov para
     return _login_page(request, safe_next(next))
 
 
-@router.post("/login", response_class=HTMLResponse)
-async def login_submit(request: Request):
-    form = await request.form()
-    username = str(form.get("username") or "").strip()[:80]
-    password = str(form.get("password") or "")[:200]
-    next_url = safe_next(str(form.get("next") or "/"))
-    limiter: LoginLimiter = request.app.state.login_limiter
-    ip = client_ip(request)
-
-    wait = limiter.retry_after(ip)
-    if wait:
-        with session_scope() as s:
-            audit(s, username or "?", "login_blocked", "user", "", ip=ip)
-        return _login_page(request, next_url, f"Príliš veľa neúspešných pokusov. Skúste to znova o "
-                           f"{max(1, wait // 60)} min.", username, status_code=429)
-
-    cookie_token = request.cookies.get(LOGIN_CSRF_COOKIE, "")
-    form_token = str(form.get("csrf_token") or "")
-    if not cookie_token or not form_token or not secrets.compare_digest(cookie_token, form_token):
-        return _login_page(request, next_url, "Platnosť formulára vypršala. Prihláste sa znova.", username,
-                           status_code=403)
-
+def _check_login(username: str, password: str, ip: str) -> Optional[User]:
+    """Overenie hesla (bcrypt – mimo slučky udalostí) a záznam do auditu."""
     from ..pouzivatelia import authenticate
 
     with session_scope() as s:
@@ -233,10 +247,42 @@ async def login_submit(request: Request):
             audit(s, username or "?", "login_failed", "user", "", ip=ip)
         else:
             audit(s, user.username, "login", "user", user.id, ip=ip)
+        return user
+
+
+@router.post("/login", response_class=HTMLResponse)
+async def login_submit(request: Request):
+    form = await request.form()
+    username = str(form.get("username") or "").strip()[:80]
+    password = str(form.get("password") or "")[:200]
+    next_url = safe_next(str(form.get("next") or "/"))
+    limiter: LoginLimiter = request.app.state.login_limiter
+    accounts: LoginLimiter = request.app.state.account_limiter
+    ip = client_ip(request)
+    ip_key, acct_key = f"ip:{ip}", f"u:{username.lower()}"
+
+    # najprv platnosť formulára (bez zápisu do auditu – ochrana pred zahltením)
+    cookie_token = request.cookies.get(LOGIN_CSRF_COOKIE, "")
+    form_token = str(form.get("csrf_token") or "")
+    if not cookie_token or not form_token or not secrets.compare_digest(cookie_token, form_token):
+        return _login_page(request, next_url, "Platnosť formulára vypršala. Prihláste sa znova.", username,
+                           status_code=403)
+
+    wait = max(limiter.retry_after(ip_key), accounts.retry_after(acct_key) if username else 0)
+    if wait:
+        if limiter.should_log(ip_key):
+            with session_scope() as s:
+                audit(s, username or "?", "login_blocked", "user", "", ip=ip)
+        return _login_page(request, next_url, f"Príliš veľa neúspešných pokusov. Skúste to znova o "
+                           f"{max(1, wait // 60)} min.", username, status_code=429)
+
+    user = await run_in_threadpool(_check_login, username, password, ip)
     if user is None:
-        limiter.fail(ip)
+        limiter.fail(ip_key)
+        if username:
+            accounts.fail(acct_key)
         return _login_page(request, next_url, "Nesprávne meno alebo heslo.", username, status_code=401)
-    limiter.reset(ip)
+    accounts.reset(acct_key)  # počítadlo IP adresy sa úspechom nenuluje
     resp = RedirectResponse(next_url, status_code=303)
     issue_session(resp, user)
     resp.delete_cookie(LOGIN_CSRF_COOKIE, path="/")
@@ -249,6 +295,9 @@ async def logout(request: Request, form=Depends(csrf_form)):
     user = optional_user(request)
     if user is not None:
         with session_scope() as s:
+            db_user = s.get(User, user.id)
+            if db_user is not None:  # zneplatní všetky relácie používateľa aj na serveri
+                db_user.session_epoch = int(db_user.session_epoch or 0) + 1
             audit(s, user.username, "logout", "user", user.id, ip=client_ip(request))
     resp = redirect("/login", "Boli ste odhlásený.", "info")
     clear_session(resp)

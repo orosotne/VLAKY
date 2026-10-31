@@ -179,14 +179,14 @@ def _cell(value) -> str:
     if isinstance(value, datetime):
         return local(value).strftime("%Y-%m-%d %H:%M")
     text = str(value)
-    if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
+    if text.lstrip(" \t\r\n")[:1] in ("=", "+", "-", "@", "＝", "＋", "－", "＠") or text[:1] in ("\t", "\r", "\n"):
         return "'" + text
     return text
 
 
 def _csv(name: str, header: list, rows: list, d_od: date, d_do: date) -> Response:
     buf = io.StringIO()
-    w = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n")
+    w = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_ALL, lineterminator="\r\n")  # každá bunka v úvodzovkách
     w.writerow(header)
     for row in rows:
         w.writerow([_cell(v) for v in row])

@@ -39,8 +39,20 @@ def create_user(session: Session, username: str, password: str, role: str = "dis
     return user
 
 
+_DUMMY_HASH: list = []
+
+
+def _dummy_hash() -> str:
+    if not _DUMMY_HASH:
+        _DUMMY_HASH.append(bcrypt.hashpw(b"neexistujuci-pouzivatel", bcrypt.gensalt()).decode("ascii"))
+    return _DUMMY_HASH[0]
+
+
 def authenticate(session: Session, username: str, password: str) -> User | None:
     user = session.scalar(select(User).where(User.username == username, User.active.is_(True)))
-    if user and verify_password(password, user.password_hash):
+    if user is None:
+        verify_password(password, _dummy_hash())  # rovnaký čas odpovede – neprezradí, či účet existuje
+        return None
+    if verify_password(password, user.password_hash):
         return user
     return None

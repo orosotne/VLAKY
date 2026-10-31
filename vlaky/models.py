@@ -25,6 +25,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(200), default="")
     phone: Mapped[str] = mapped_column(String(40), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # zvýši sa pri odhlásení – všetky staršie relácie (cookies) používateľa prestanú platiť
+    session_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

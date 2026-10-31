@@ -130,17 +130,28 @@ def _send_sms(phone: str, text: str) -> str:
     return "odoslana"
 
 
+def plain_markdown(text: str) -> str:
+    """Text pre Adaptive Card bez maskovaných odkazov.
+
+    Do upozornení sa dostáva aj text zvonka (hlásenie rušňovodiča, e-mail) – odkaz v tvare
+    „[ŽSR dispečing](https://podvrh…)“ by v Teams vyzeral dôveryhodne. Medzi „]“ a „(“ sa vloží znak
+    nulovej šírky, takže Teams odkaz nevykreslí a adresa ostane viditeľná ako obyčajný text.
+    """
+    return (text or "").replace("](", "]\u200b(").replace("]\n(", "]\u200b\n(")
+
+
 def _send_teams(subject: str, body: str) -> str:
     s = settings()
     if not s.teams_webhook_url:
         return "outbox"
+    subject, body = plain_markdown(subject), plain_markdown(body[:6000])
     # Adaptive Card (Teams Workflows / Power Automate „webhook“); text skrátený na rozumnú dĺžku
     card = {"type": "message", "attachments": [{
         "contentType": "application/vnd.microsoft.card.adaptive",
         "content": {"$schema": "http://adaptivecards.io/schemas/adaptive-card.json", "type": "AdaptiveCard",
                     "version": "1.4",
                     "body": [{"type": "TextBlock", "text": subject, "weight": "Bolder", "wrap": True},
-                             {"type": "TextBlock", "text": body[:6000], "wrap": True, "fontType": "Monospace"}]}}]}
+                             {"type": "TextBlock", "text": body, "wrap": True, "fontType": "Monospace"}]}}]}
     r = httpx.post(s.teams_webhook_url, json=card, timeout=20)
     r.raise_for_status()
     return "odoslana"

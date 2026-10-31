@@ -14,13 +14,15 @@
   function store(t) { try { if (t) { localStorage.setItem(KEY, t); } else { localStorage.removeItem(KEY); } } catch (e) { /* bez úložiska */ } }
   function stored() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
 
-  /** Token z fragmentu (#t=…), zo starého tvaru odkazu (?t=…) alebo uložený v zariadení. */
+  /** Token z fragmentu (#t=…) alebo uložený v zariadení. Token v adrese (?t=…) sa nepoužije – dostal by sa do
+   *  záznamov servera; adresa sa vždy vyčistí. */
   function takeToken() {
     var t = '';
     var m = (window.location.hash || '').match(/[#&]t=([^&]+)/);
     if (m) { t = decodeURIComponent(m[1]); }
-    var q = new URLSearchParams(window.location.search).get('t');
-    if (!t && q) { t = q; }
+    if (window.location.search && window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    }
     if (t) {
       store(t);
       if (window.history && window.history.replaceState) { window.history.replaceState(null, '', window.location.pathname); }

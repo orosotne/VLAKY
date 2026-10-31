@@ -19,17 +19,31 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..config import settings
 from .auth import CsrfError, LoginLimiter, NotAuthenticated, PermissionDenied, optional_user
-from .common import STATIC_DIR, log, render, tile_csp_source
+from .common import MAPLIBRE_VERSION, STATIC_DIR, log, render, tile_csp_source
 
 DEFAULT_SECRET = "zmen-ma-v-produkcii"
+WEAK_SECRETS = {DEFAULT_SECRET, "changeme", "change-me", "secret", "test-secret", "tajne", "heslo", "password"}
+
+
+def production_problems(cfg) -> list:
+    """Nastavenia, s ktorými web v produkcii nesmie bežať (podvrhnuteľné odkazy rušňovodiča, cookies bez Secure)."""
+    problems = []
+    key = cfg.secret_key or ""
+    if len(key) < 32 or key.strip().lower() in WEAK_SECRETS or len(set(key)) < 8:
+        problems.append("VLAKY_SECRET_KEY musí byť náhodný reťazec s aspoň 32 znakmi (openssl rand -hex 32).")
+    if not (cfg.public_url or "").lower().startswith("https://"):
+        problems.append("VLAKY_PUBLIC_URL musí začínať https:// (napr. https://dispecing.firma.sk).")
+    return problems
+
 
 def build_csp(tile_source: str = "") -> str:
-    """Content-Security-Policy: len vlastný pôvod + unpkg.com (MapLibre) + pôvod mapových dlaždíc."""
+    """Content-Security-Policy: len vlastný pôvod + MapLibre (presná verzia na unpkg.com) + mapové dlaždice."""
     tiles = f" {tile_source}" if tile_source else ""
+    maplibre = f"https://unpkg.com/maplibre-gl@{MAPLIBRE_VERSION}/dist/"  # nie celý unpkg.com (ľubovoľný balík)
     return "; ".join([
         "default-src 'self'",
-        "script-src 'self' https://unpkg.com",
-        "style-src 'self' https://unpkg.com",
+        f"script-src 'self' {maplibre}",
+        f"style-src 'self' {maplibre}",
         f"img-src 'self' data: blob:{tiles}",
         f"connect-src 'self'{tiles}",
         "worker-src 'self' blob:",
@@ -91,9 +105,11 @@ def _startup() -> None:
     from ..models import BorderCrossing
 
     cfg = settings()
-    if cfg.secret_key == DEFAULT_SECRET:
-        if cfg.env == "prod":
-            raise RuntimeError("VLAKY_SECRET_KEY nie je nastavený – v produkcii je povinný.")
+    if cfg.env == "prod":
+        problems = production_problems(cfg)
+        if problems:
+            raise RuntimeError("Web sa v produkcii nespustí: " + " ".join(problems))
+    elif cfg.secret_key == DEFAULT_SECRET:
         log.warning("Používa sa predvolený VLAKY_SECRET_KEY – nastavte vlastný (premenná prostredia).")
     init_db()
     with session_scope() as s:
@@ -115,7 +131,8 @@ def create_app(auto_evaluate: bool = True) -> FastAPI:
         yield
 
     app = FastAPI(title="Agent dispečer", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
-    app.state.login_limiter = LoginLimiter()
+    app.state.login_limiter = LoginLimiter()                          # podľa IP adresy
+    app.state.account_limiter = LoginLimiter(max_failures=10)          # podľa účtu (pokusy z viacerých IP)
     app.state.auto_evaluate = auto_evaluate
 
     app.add_middleware(GZipMiddleware, minimum_size=1024)
