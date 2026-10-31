@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Dopravňa {{ st.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="crumbs"><a href="/dopravne">Dopravne</a> › {{ st.name }}</p>
+  <h1>{{ st.name }} <span class="muted">{{ type }}</span></h1>
+  <p class="muted">Údaje z OpenStreetMap: skratka {{ st.railway_ref or "—" }}, UIC {{ st.uic_ref or "—" }}. Nasledujúce údaje dopĺňa dispečing – overte ich v TTP.</p>
+</div>
+{% if errors %}<div class="flash flash-chyba" role="alert">Formulár obsahuje chyby – opravte označené polia.</div>{% endif %}
+<form method="post" action="/dopravne/upravit" class="card form-grid" novalidate>
+  {{ m.csrf() }}
+  <input type="hidden" name="stanica" value="{{ st.name }}">
+  {{ m.checkbox("can_wait", "Vlak tu môže čakať (dosť dlhá koľaj, bez blokovania trate)", values) }}
+  {{ m.checkbox("can_stable", "Vlak tu možno odstaviť (odstavná koľaj)", values) }}
+  {{ m.checkbox("can_change_crew", "Možná výmena rušňovodiča", values) }}
+  <div class="grid-3">
+    {{ m.field("max_train_length_m", "Užitočná dĺžka koľaje – max. dĺžka vlaku [m]", values, errors, type="number", attrs={"min": 50, "max": 3000, "step": 1}) }}
+  </div>
+  {{ m.field("note", "Poznámka (napr. číslo koľaje, obmedzenia)", values, errors, type="textarea", wide=True, attrs={"maxlength": 2000}) }}
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">Uložiť</button>
+    <a class="btn btn-ghost" href="/dopravne?q={{ st.name|urlencode }}">Zrušiť</a>
+  </div>
+</form>
+{% endblock %}

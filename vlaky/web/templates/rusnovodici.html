@@ -8,6 +8,48 @@
     Zelená = viac ako {{ params.crew_buffer_min|minutes }} do limitu, oranžová = menej, červená = menej ako {{ (params.crew_buffer_min / 2)|minutes }} alebo hrozí prekročenie.</p>
 </div>
 
+{% if user.can("crew") %}
+<section class="card" id="navrh" aria-labelledby="h-navrh-nasadenia">
+  <div class="panel-head">
+    <h2 id="h-navrh-nasadenia">Návrh nasadenia rušňovodičov</h2>
+    <a class="btn btn-sm{% if not proposal %} btn-primary{% endif %}" href="/rusnovodici?navrh=1#navrh">Navrhnúť nasadenie (24 h)</a>
+  </div>
+  {% if proposal_error %}<p class="flash flash-varovanie">{{ proposal_error }}</p>{% endif %}
+  {% if proposal %}
+  <p class="muted small">Len návrh (optimalizácia CP-SAT{% if proposal.get("solver") %}, riešenie: {{ proposal.get("solver") }}{% endif %}) – nič sa nezmení, kým zmenu nevytvoríte. Rešpektuje limit pracovného času, odpočinok a znalosť tratí.</p>
+  {% for n in proposal.get("notes") or [] %}<p class="muted">{{ n }}</p>{% endfor %}
+  {% if proposal.get("assignments") %}
+  <div class="table-scroll">
+  <table class="table table-compact">
+    <thead><tr><th scope="col">Vlak</th><th scope="col">Rušňovodič</th><th scope="col">Začiatok</th><th scope="col">Koniec</th><th scope="col">Služba</th><th scope="col">Presun</th><th scope="col"></th></tr></thead>
+    <tbody>
+    {% for a in proposal.get("assignments") %}
+      <tr>
+        <td><a href="/vlaky/{{ a.get('train_id') }}">{{ a.get("train") }}</a></td><td>{{ a.get("driver") }}</td>
+        <td class="nowrap">{{ a.get("start_txt") or (a.get("start")|t) }}</td><td class="nowrap">{{ a.get("end_txt") or (a.get("end")|t) }}</td>
+        <td>{{ a.get("duty_h")|num(1) }} h</td><td>{{ a.get("deadhead_min")|minutes }}</td>
+        <td>
+          <form method="post" action="/zmeny/z-navrhu" class="inline" data-confirm="Vytvoriť zmenu: {{ a.get('driver') }} na vlak {{ a.get('train') }} od {{ a.get('start_txt') }}?">
+            {{ m.csrf() }}
+            <input type="hidden" name="driver_id" value="{{ a.get('driver_id') }}"><input type="hidden" name="train_id" value="{{ a.get('train_id') }}">
+            <input type="hidden" name="start" value="{{ a.get('start') }}"><input type="hidden" name="end" value="{{ a.get('end') }}">
+            <button type="submit" class="btn btn-sm">Vytvoriť zmenu</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  {% if proposal.get("unassigned") %}
+  <h3>Bez rušňovodiča</h3>
+  <ul>{% for u in proposal.get("unassigned") %}<li><strong>{{ u.get("train") }}</strong>: {{ u.get("reason") }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
 <section class="card" id="zmeny" aria-labelledby="h-zmeny">
   <h2 id="h-zmeny">Zmeny</h2>
   <div class="table-scroll">

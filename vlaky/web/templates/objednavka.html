@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Objednávka #{{ o.id }}{% endblock %}
+{% set st_types = {"station": "stanica", "yard": "zriaďovacia stanica", "border": "hraničný bod", "junction": "odbočka", "spur_junction": "odbočenie vlečky", "halt": "zastávka"} %}
+{% block content %}
+<div class="page-head">
+  <p class="crumbs"><a href="/objednavky">Objednávky</a> › #{{ o.id }}</p>
+  <h1>Objednávka #{{ o.id }} <span class="muted">{{ o.origin }} → {{ o.destination }}</span></h1>
+  <div class="head-actions">
+    {% if user.can("operate") and o.status != "zamietnuta" %}
+    <a class="btn btn-primary" href="/vlaky/novy?objednavka={{ o.id }}">Vytvoriť vlak z objednávky</a>
+    {% endif %}
+  </div>
+</div>
+<div class="grid-2 gap">
+  <section class="card">
+    <h2>Údaje objednávky</h2>
+    <dl class="meta">
+      <dt>Stav</dt><dd><span class="badge status-{{ o.status }}">{{ ORDER_STATUS.get(o.status, o.status) }}</span></dd>
+      <dt>Zákazník</dt><dd>{{ o.customer or "—" }}</dd>
+      <dt>Odkiaľ</dt><dd>{{ o.origin }}</dd>
+      <dt>Kam</dt><dd>{{ o.destination }}</dd>
+      <dt>Najskorší odchod</dt><dd>{{ o.earliest_departure_utc|tfull }}</dd>
+      <dt>Termín doručenia</dt><dd>{{ o.deadline_utc|tfull }} ({{ DEADLINE_TYPE.get(o.deadline_type, o.deadline_type) }})</dd>
+      <dt>Tovar</dt><dd>{{ o.cargo or "—" }}{% if o.rid %} <span class="badge badge-warn">RID – nebezpečný tovar</span>{% endif %}</dd>
+      <dt>Zostava</dt><dd>{{ o.wagons or "—" }} vozňov · {{ o.weight_t|num }} t · {{ o.length_m|num }} m</dd>
+      <dt>Prijatá</dt><dd>{{ o.created_at|tfull }}{% if o.source_event_id %} · <a href="/fronta">z e-mailu (udalosť #{{ o.source_event_id }})</a>{% endif %}</dd>
+      {% if o.notes %}<dt>Poznámky</dt><dd class="prewrap">{{ o.notes }}</dd>{% endif %}
+    </dl>
+  </section>
+  <section class="card">
+    <h2>Vlaky z objednávky</h2>
+    {% for t in trains %}
+      <p><a href="/vlaky/{{ t.id }}"><strong>{{ t.number }}</strong></a> {{ t.origin }} → {{ t.destination }} · {{ TRAIN_STATUS.get(t.status, t.status) }}</p>
+    {% else %}
+      <p class="muted">Zatiaľ žiadny vlak.</p>
+    {% endfor %}
+    {% if user.can("operate") and o.status != "zamietnuta" %}
+    <form method="post" action="/objednavky/{{ o.id }}/zamietnut" class="reject-form" data-confirm="Zamietnuť objednávku #{{ o.id }}?">
+      {{ m.csrf() }}
+      <label for="dovod-o">Dôvod zamietnutia</label>
+      <div class="inline-fields">
+        <input id="dovod-o" name="dovod" required maxlength="1000" placeholder="napr. termín nie je možné dodržať">
+        <button type="submit" class="btn btn-danger">Zamietnuť</button>
+      </div>
+    </form>
+    {% endif %}
+  </section>
+</div>
+
+{% if o.status != "zamietnuta" %}
+<section class="card" aria-labelledby="h-navrh">
+  <h2 id="h-navrh">Návrh prepravy agenta</h2>
+  {% if plan_error %}
+    <p class="flash flash-varovanie">{{ plan_error }}</p>
+  {% elif plan %}
+    <p><strong class="decision-word-sm">{{ plan.get("decision") }}</strong></p>
+    {% if plan.get("explanation") %}<ul class="reasons">{% for e in plan.get("explanation") %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    {% if plan.get("routes") %}
+    <h3>Trasy</h3>
+    <div class="table-scroll">
+    <table class="table table-compact">
+      <thead><tr><th scope="col">Trasa</th><th scope="col">Dĺžka</th><th scope="col">Jazdná doba</th><th scope="col">Cez stanice</th></tr></thead>
+      <tbody>
+      {% for r in plan.get("routes") %}
+        <tr><td>{{ r.get("name") }}</td><td class="nowrap">{{ r.get("km")|num(1) }} km</td><td class="nowrap">{{ r.get("minutes")|minutes }}</td>
+            <td class="small">{% set sts = r.get("stations") or [] %}{{ sts[:3]|join(", ") }}{% if sts|length > 6 %} … {% endif %}{{ sts[-3:]|join(", ") if sts|length > 3 else "" }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+    {% if plan.get("variants") %}
+    <h3>Varianty</h3>
+    <div class="table-scroll">
+    <table class="table table-compact">
+      <thead><tr><th scope="col">Trasa</th><th scope="col">Odchod</th><th scope="col">Varianta</th><th scope="col">Semafor</th><th scope="col">P(včas)</th><th scope="col">Príchod P50 / P90</th><th scope="col">Náklad</th><th scope="col">Dôvody</th></tr></thead>
+      <tbody>
+      {% for v in plan.get("variants") %}
+        <tr><td>{{ v.get("route") }}</td><td class="nowrap">{{ v.get("depart")|t }}</td><td>{{ v.get("kind") }}</td><td>{{ m.semafor(v.get("status")) }}</td>
+            <td>{{ v.get("p_on_time")|pct }}</td><td class="nowrap">{{ v.get("arrival_p50")|t }} / {{ v.get("arrival_p90")|tt }}</td>
+            <td class="nowrap">{{ v.get("expected_cost")|eur }}</td><td class="small">{{ (v.get("reasons") or [])|join("; ") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+    {% set pp = plan.get("path_proposal") or {} %}
+    {% if pp.get("stations") %}
+    <h3>Návrh trasy – {{ pp.get("route") }}{% if pp.get("km") %} ({{ pp.get("km")|num(1) }} km){% endif %}</h3>
+    {% if pp.get("request_window") %}<p>Okno na objednanie odchodu u ŽSR: od <strong>{{ pp.get("request_window")[0]|t }}</strong> do <strong>{{ pp.get("request_window")[1]|t }}</strong></p>{% endif %}
+    <div class="table-scroll">
+    <table class="table table-compact">
+      <thead><tr><th scope="col">Dopravňa</th><th scope="col">Typ</th><th scope="col">km</th><th scope="col">Príchod</th><th scope="col">Odchod</th></tr></thead>
+      <tbody>
+      {% for st in pp.get("stations") %}
+        <tr><td>{{ st.get("name") }}</td><td class="small">{{ st_types.get(st.get("type"), st.get("type")) }}</td><td>{{ st.get("km")|num(1) }}</td><td class="nowrap">{{ st.get("arr")|t }}</td><td class="nowrap">{{ st.get("dep")|t }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="muted small">Časy sú návrh agenta (model siete a rezervy), nie pridelená trasa ŽSR.</p>
+    {% endif %}
+  {% else %}
+    <p class="muted">Návrh nie je k dispozícii.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

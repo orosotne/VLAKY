@@ -68,9 +68,10 @@ def settings_page(request: Request, user=Depends(params_perm)):
         current = current_param_set(s, now)
         history = list(s.scalars(select(ParameterSet).order_by(ParameterSet.valid_from.desc(), ParameterSet.id.desc())
                                  .limit(20)))
+        extra = {k: v for k, v in ((current.values or {}) if current else {}).items() if k not in defaults}
         return render(request, "nastavenia.html", {
             "groups": _param_groups(values, defaults), "current": current, "history": history, "now": now,
-            "overview": _settings_overview(), "errors": {}, "form_values": {}, "note": ""}, user=user)
+            "overview": _settings_overview(), "errors": {}, "form_values": {}, "note": "", "extra": extra}, user=user)
 
 
 @router.post("/nastavenia")
@@ -115,7 +116,10 @@ def settings_save(request: Request, user=Depends(params_perm), form=Depends(csrf
         changes = {k: [before.get(k), v] for k, v in new_values.items() if before.get(k) != v}
         if not changes and valid_from <= now:
             return redirect("/nastavenia", "Hodnoty sa nezmenili – nová sada parametrov sa neuložila.", "info")
-        ps = ParameterSet(valid_from=valid_from, created_by=user.username, values=new_values, note=note)
+        # ďalšie kľúče platnej sady (napr. kalibrované zdržania z histórie) sa zachovajú
+        current = current_param_set(s, now)
+        extra = {k: v for k, v in ((current.values or {}) if current else {}).items() if k not in defaults}
+        ps = ParameterSet(valid_from=valid_from, created_by=user.username, values={**extra, **new_values}, note=note)
         s.add(ps)
         s.flush()
         audit(s, user.username, "parameters_update", "parameter_set", ps.id, valid_from=valid_from, note=note,

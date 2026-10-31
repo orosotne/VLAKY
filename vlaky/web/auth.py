@@ -25,8 +25,8 @@ SESSION_MAX_AGE = 12 * 3600          # 12 h od prihlásenia (absolútna platnos�
 
 # Oprávnenia rolí (sekcia 6 PROMPT.md).
 PERMISSIONS: dict[str, frozenset] = {
-    "dispecer": frozenset({"view", "operate", "crew"}),
-    "veduci": frozenset({"view", "operate", "crew", "params", "users", "audit", "borders"}),
+    "dispecer": frozenset({"view", "operate", "crew", "reports"}),
+    "veduci": frozenset({"view", "operate", "crew", "params", "users", "audit", "borders", "reports"}),
     "planovac": frozenset({"view", "crew"}),
     "obchod": frozenset({"view"}),
     "admin": frozenset({"view", "users", "audit"}),

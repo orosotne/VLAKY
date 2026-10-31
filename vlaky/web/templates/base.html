@@ -19,6 +19,7 @@
   ("/", "Mapa", "view", ""),
   ("/fronta", "Fronta", "view", counts.get("fronta")),
   ("/odporucania", "Odporúčania", "view", counts.get("kriticke")),
+  ("/objednavky", "Objednávky", "view", counts.get("objednavky")),
   ("/vlaky", "Vlaky", "view", ""),
   ("/vyluky", "Výluky", "view", ""),
   ("/hranice", "Hranice", "view", ""),
@@ -40,6 +41,8 @@
         <details>
           <summary>Správa</summary>
           <ul>
+            {% if user.can("reports") %}<li><a href="/reporty">Reporty</a></li>{% endif %}
+            <li><a href="/dopravne">Dopravne</a></li>
             {% if user.can("params") %}<li><a href="/nastavenia">Nastavenia</a></li>{% endif %}
             {% if user.can("users") %}<li><a href="/pouzivatelia">Používatelia</a></li>{% endif %}
             {% if user.can("audit") %}<li><a href="/audit">Audit</a></li>{% endif %}

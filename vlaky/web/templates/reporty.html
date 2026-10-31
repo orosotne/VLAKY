@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% import "_makra.html" as m with context %}
+{% block title %}Reporty{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Reporty a vyhodnotenie agenta</h1>
+  <p class="muted">Za obdobie (miestny čas). Slúži aj na vyhodnotenie tieňovej prevádzky: zhoda odporúčaní s rozhodnutiami dispečera, presnosť extrakcie e-mailov, falošné poplachy.</p>
+  <form method="get" class="filters" aria-label="Obdobie">
+    <label>Od <input type="date" name="od" value="{{ od }}"></label>
+    <label>Do <input type="date" name="do" value="{{ do }}"></label>
+    <button type="submit" class="btn btn-sm">Zobraziť</button>
+  </form>
+  <div class="head-actions">
+    {% for e in exports %}<a class="btn btn-sm" href="/reporty/export/{{ e }}.csv?od={{ od }}&do={{ do }}">Export {{ {"odporucania": "odporúčaní", "preberania": "preberaní", "udalosti": "udalostí z e-mailov"}[e] }} (CSV)</a>{% endfor %}
+  </div>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><span class="kpi-n">{{ r.recs_total }}</span><span class="kpi-l">odporúčaní</span></div>
+  <div class="kpi"><span class="kpi-n">{{ r.acceptance|pct if r.acceptance is not none else "—" }}</span><span class="kpi-l">prijatých (vrátane úprav)</span></div>
+  <div class="kpi"><span class="kpi-n">{{ r.states.get("zamietnute", 0) }}</span><span class="kpi-l">zamietnutých</span></div>
+  <div class="kpi"><span class="kpi-n">{{ r.events_total }}</span><span class="kpi-l">udalostí z e-mailov</span></div>
+  <div class="kpi"><span class="kpi-n">{{ r.edits_share|pct if r.edits_share is not none else "—" }}</span><span class="kpi-l">potvrdení s opravou</span></div>
+  <div class="kpi"><span class="kpi-n">{{ r.crew_red }}</span><span class="kpi-l">odporúčaní s ČERVENÝM pracovným časom</span></div>
+</div>
+
+<div class="grid-2 gap">
+  <section class="card">
+    <h2>Odporúčania</h2>
+    <div class="grid-3 kpi-tables">
+      <table class="table table-compact"><caption>Rozhodnutie</caption><tbody>{% for k, n in r.by_decision %}<tr><td>{{ k }}</td><td>{{ n }}</td></tr>{% else %}<tr><td class="muted">—</td></tr>{% endfor %}</tbody></table>
+      <table class="table table-compact"><caption>Semafor</caption><tbody>{% for k, n in r.by_color %}<tr><td>{{ m.semafor(k) }}</td><td>{{ n }}</td></tr>{% else %}<tr><td class="muted">—</td></tr>{% endfor %}</tbody></table>
+      <table class="table table-compact"><caption>Priorita</caption><tbody>{% for k, n in r.by_priority %}<tr><td>{{ m.priority(k) }}</td><td>{{ n }}</td></tr>{% else %}<tr><td class="muted">—</td></tr>{% endfor %}</tbody></table>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Reakcie dispečera</h2>
+    <dl class="meta">
+      {% for k, v in REC_STATE.items() %}<dt>{{ v|capitalize }}</dt><dd>{{ r.states.get(k, 0) }}</dd>{% endfor %}
+      <dt>Rozhodnuté spolu</dt><dd>{{ r.decided }}</dd>
+      <dt>Podiel prijatých (aj s úpravou)</dt><dd>{{ r.acceptance|pct if r.acceptance is not none else "—" }}</dd>
+      <dt>Prijaté bez úpravy</dt><dd>{{ r.accepted_unchanged|pct if r.accepted_unchanged is not none else "—" }}</dd>
+    </dl>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Dôvody zamietnutia odporúčaní</h2>
+  {% if r.rejections %}
+  <div class="table-scroll">
+  <table class="table table-compact">
+    <thead><tr><th scope="col">Kedy</th><th scope="col">Vlak</th><th scope="col">Odporúčanie</th><th scope="col">Kto</th><th scope="col">Dôvod</th></tr></thead>
+    <tbody>
+    {% for x in r.rejections %}<tr><td class="nowrap">{{ x.at|t }}</td><td>{{ x.train }}</td><td><a href="/odporucania/{{ x.id }}">{{ x.decision }}</a> {{ m.semafor(x.color) }}</td><td>{{ x.by }}</td><td>{{ x.note or "—" }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="muted">Žiadne zamietnuté odporúčania.</p>{% endif %}
+</section>
+
+<div class="grid-2 gap">
+  <section class="card">
+    <h2>Upozornenia dispečerom ({{ r.notif_total }})</h2>
+    {% if r.notif %}
+    <div class="table-scroll">
+    <table class="table table-compact">
+      <thead><tr><th scope="col">Kanál</th>{% for st in r.notif_statuses %}<th scope="col">{{ st }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for ch, row in r.notif.items() %}<tr><td>{{ ch }}</td>{% for st in r.notif_statuses %}<td>{{ row.get(st, 0) }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table>
+    </div>
+    {% if r.notif_blocked %}<p class="flash flash-varovanie">Zablokované správy (príjemca mimo interného zoznamu): {{ r.notif_blocked }}</p>{% endif %}
+    {% else %}<p class="muted">Žiadne upozornenia.</p>{% endif %}
+  </section>
+  <section class="card">
+    <h2>E-maily a udalosti</h2>
+    <dl class="meta">
+      <dt>Prijaté e-maily</dt><dd>{{ r.emails_total }}</dd>
+      <dt>Overenie</dt><dd>{% for k, n in r.emails_verdict %}{{ {"ok": "povolení odosielatelia", "karantena": "karanténa", "podozrivy": "podozrivé"}.get(k, k) }}: {{ n }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</dd>
+      <dt>Spracovanie</dt><dd>{% for k, n in r.emails_status %}{{ k }}: {{ n }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</dd>
+      <dt>Udalosti</dt><dd>{{ r.events_total }}{% if r.events_by_kind %} ({% for k, n in r.events_by_kind %}{{ EVENT_KIND.get(k, k) }}: {{ n }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}</dd>
+      <dt>Zapísané automaticky</dt><dd>{{ r.events_auto }}</dd>
+      <dt>Potvrdené dispečerom</dt><dd>{{ r.events_confirmed }} (z toho s opravou {{ r.events_with_edits }}{% if r.edits_share is not none %}, {{ r.edits_share|pct }}{% endif %})</dd>
+      <dt>Zamietnuté</dt><dd>{{ r.events_rejected }}</dd>
+      <dt>Čakajú na potvrdenie</dt><dd>{{ r.events_waiting }}</dd>
+    </dl>
+  </section>
+</div>
+
+<div class="grid-2 gap">
+  <section class="card">
+    <h2>Preberanie na hraniciach ({{ r.handover_count }})</h2>
+    {% if r.handovers %}
+    <div class="table-scroll">
+    <table class="table table-compact">
+      <thead><tr><th scope="col">Priechod</th><th scope="col">Počet</th><th scope="col">P50 [min]</th><th scope="col">P90 [min]</th><th scope="col">Plán P50 / P90</th></tr></thead>
+      <tbody>{% for h in r.handovers %}<tr><td>{{ h.border }}</td><td>{{ h.n }}</td><td>{{ h.p50|num }}</td><td>{{ h.p90|num }}</td><td>{{ h.plan_p50|num }} / {{ h.plan_p90|num }}</td></tr>{% endfor %}</tbody>
+    </table>
+    </div>
+    <p class="muted small">Trvanie = prevzatie − príchod na hranicu.</p>
+    {% else %}<p class="muted">Žiadne ukončené preberania v období.</p>{% endif %}
+  </section>
+  <section class="card">
+    <h2>Pracovný čas rušňovodičov</h2>
+    <dl class="meta">
+      <dt>Odporúčania s ČERVENOU (prekročenie 13 h pri P50)</dt><dd>{{ r.crew_red }} (vlaky: {{ r.crew_trains.get("ČERVENÁ", 0) }})</dd>
+      <dt>Odporúčania s ORANŽOVOU (riziko pri P90)</dt><dd>{{ r.crew_orange }} (vlaky: {{ r.crew_trains.get("ORANŽOVÁ", 0) }})</dd>
+    </dl>
+  </section>
+</div>
+
+{% if user.can("params") %}
+<section class="card" id="kalibracia" aria-labelledby="h-kalibracia">
+  <h2 id="h-kalibracia">Kalibrácia z histórie</h2>
+  {% if calibration_error %}<p class="flash flash-varovanie">{{ calibration_error }}</p>
+  {% elif calibration %}
+  <p class="muted small">Návrh za posledných {{ calibration.get("period_days") }} dní; použijú sa len položky s aspoň {{ calibration.get("min_samples") }} vzorkami (ak nezaškrtnete inak). Návrh sa pri použití prepočíta na serveri.</p>
+  {% for n in calibration.get("notes") or [] %}<p class="muted">{{ n }}</p>{% endfor %}
+  {% if calibration.get("borders") %}
+  <h3>Doby preberania na hraniciach</h3>
+  <div class="table-scroll">
+  <table class="table table-compact">
+    <thead><tr><th scope="col">Priechod</th><th scope="col">Vzorky</th><th scope="col">Návrh P50 / P90 [min]</th><th scope="col">Teraz P50 / P90 [min]</th><th scope="col">Dosť dát</th></tr></thead>
+    <tbody>{% for b in calibration.get("borders") %}<tr><td>{{ b.get("name") or b.get("code") }} <span class="muted small">{{ b.get("code") }}</span></td><td>{{ b.get("n") }}</td><td>{{ b.get("p50")|num(1) }} / {{ b.get("p90")|num(1) }}</td><td>{{ b.get("current_p50")|num }} / {{ b.get("current_p90")|num }}</td><td>{{ "áno" if b.get("enough") else "nie" }}</td></tr>{% endfor %}</tbody>
+  </table>
+  </div>
+  {% endif %}
+  {% set d = calibration.get("delay") or {} %}
+  {% if d %}
+  <h3>Zdržanie na 100 km</h3>
+  <p>Vzorky: {{ d.get("n") }} · návrh P50 {{ d.get("p50_min_per_100km")|num(1) }} / P90 {{ d.get("p90_min_per_100km")|num(1) }} min · teraz {{ d.get("current_p50")|num(1) }} / {{ d.get("current_p90")|num(1) }} min · dosť dát: {{ "áno" if d.get("enough") else "nie" }}</p>
+  {% endif %}
+  {% if calibration.get("borders") or d %}
+  <form method="post" action="/reporty/kalibracia" class="inline-fields" data-confirm="Použiť návrh kalibrácie? Zmeny sa zapíšu do registra priechodov a parametrov (audit).">
+    {{ m.csrf() }}
+    <label class="small"><input type="checkbox" name="aj_male" value="1"> použiť aj položky s malým počtom vzoriek</label>
+    <button type="submit" class="btn btn-primary">Použiť návrh</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

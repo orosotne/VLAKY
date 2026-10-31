@@ -594,7 +594,7 @@
     // posunúť mapu tak, aby sa okno s detailom zmestilo pod značku vlaku
     var pt = this.map.project(pos.lngLat);
     var h = this.map.getContainer().clientHeight;
-    if (!state.following && (pt.y > h * 0.35 || pt.y < 40)) { this.map.panBy([0, pt.y - h * 0.22], { duration: 400 }); }
+    if (!state.following && (pt.y > h * 0.25 || pt.y < 40)) { this.map.panBy([0, pt.y - h * 0.14], { duration: 400 }); }
     this.popupId = t.id;
     this.popup = new maplibregl.Popup({ offset: 18, maxWidth: '360px', closeOnClick: true, anchor: 'top' })
       .setLngLat(pos.lngLat).setDOMContent(popupContent(t)).addTo(this.map);
@@ -941,7 +941,8 @@
   // ============================================================ tabuľka, upozornenia, časová os
   function positionCell(t) {
     if (t.position) {
-      return [t.position.nearest_station || 'na trati', el('div', { class: 'muted' }, [fmt(t.position.ts) + ' · ' + t.position.source_text])];
+      var est = t.estimate ? el('div', { class: 'odhad' }, ['odhad +' + t.estimate.km.toFixed(1).replace('.', ',') + ' km']) : null;
+      return [t.position.nearest_station || 'na trati', el('div', { class: 'muted' }, [fmt(t.position.ts) + ' · ' + t.position.source_text]), est];
     }
     if (t.anchor) { return [el('span', { class: 'muted' }, ['bez polohy'])]; }
     return [el('span', { class: 'muted' }, ['—'])];

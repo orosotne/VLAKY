@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 
 from sqlalchemy import func, select
 
@@ -84,3 +85,26 @@ def test_dispecer_nema_pristup(client):
     assert client.get("/nastavenia").status_code == 403
     token = csrf(client, "/vlaky")
     assert client.post("/nastavenia", data={"csrf_token": token}, follow_redirects=False).status_code == 403
+
+
+def test_dalsie_kluce_sady_sa_zachovaju(client):
+    """Kalibrované hodnoty (mimo Params) z platnej sady sa pri úprave parametrov nestratia."""
+    from vlaky.db import session_scope
+    from vlaky.models import ParameterSet
+
+    from vlaky.cas import now_utc
+
+    with session_scope() as s:
+        s.add(ParameterSet(values={"delay_p50_min_per_100km": 6.5, "delay_p90_min_per_100km": 21.0},
+                           created_by="kalibracia", note="Kalibrácia (FIKTÍVNE)",
+                           valid_from=now_utc() - timedelta(minutes=5)))
+    login_as(client, "veduci", "veduci")
+    page = client.get("/nastavenia").text
+    assert "delay_p50_min_per_100km" in page and "6.5" in page
+    values = _form_values(page)
+    r = client.post("/nastavenia", data={**values, "crew_buffer_min": "70", "csrf_token": csrf(client, "/nastavenia"),
+                                         "note": "test"}, follow_redirects=False)
+    assert r.status_code == 303
+    with session_scope() as s:
+        ps = s.scalar(select(ParameterSet).order_by(ParameterSet.id.desc()))
+        assert ps.values["delay_p50_min_per_100km"] == 6.5 and ps.values["crew_buffer_min"] == 70.0

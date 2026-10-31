@@ -120,7 +120,9 @@ def apply_calibration(session: Session, proposal: dict, actor: str, include_smal
         applied["borders"].append({"code": bc.code, "old": old, "new": (bc.dwell_p50_min, bc.dwell_p90_min)})
     d = proposal.get("delay") or {}
     if d and (d.get("enough") or include_small):
-        last = session.scalar(select(ParameterSet).order_by(ParameterSet.valid_from.desc(), ParameterSet.id.desc()))
+        # základ = aktuálne platná sada (nie budúca naplánovaná), aby kalibrácia neaktivovala plánované hodnoty
+        last = session.scalar(select(ParameterSet).where(ParameterSet.valid_from <= now_utc())
+                              .order_by(ParameterSet.valid_from.desc(), ParameterSet.id.desc()))
         values = dict(last.values) if last and last.values else {}
         values["delay_p50_min_per_100km"] = d["p50_min_per_100km"]
         values["delay_p90_min_per_100km"] = d["p90_min_per_100km"]

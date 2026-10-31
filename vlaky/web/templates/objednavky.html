@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Objednávky{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Objednávky zákazníkov</h1>
+  <p class="muted">Objednávky z e-mailov (agent ich rozpozná a pripraví návrh prepravy) alebo zapísané ručne. Vlak z objednávky vytvorí a trasu u ŽSR objedná dispečer.</p>
+  <nav class="tabs" aria-label="Filter objednávok">
+    <a href="?stav="{% if not stav %} aria-current="page"{% endif %}>Otvorené</a>
+    {% for k, v in ORDER_STATUS.items() %}<a href="?stav={{ k }}"{% if stav == k %} aria-current="page"{% endif %}>{{ v }}</a>{% endfor %}
+    <a href="?stav=vsetky"{% if stav == "vsetky" %} aria-current="page"{% endif %}>Všetky</a>
+  </nav>
+</div>
+<section class="card">
+<div class="table-scroll">
+<table class="table">
+  <thead><tr><th scope="col">#</th><th scope="col">Prijatá</th><th scope="col">Zákazník</th><th scope="col">Odkiaľ → kam</th><th scope="col">Najskorší odchod</th><th scope="col">Termín</th><th scope="col">Tovar</th><th scope="col">Zostava</th><th scope="col">Stav</th><th scope="col">Vlaky</th></tr></thead>
+  <tbody>
+  {% for o in orders %}
+    <tr>
+      <td><a href="/objednavky/{{ o.id }}"><strong>{{ o.id }}</strong></a></td>
+      <td class="nowrap">{{ o.created_at|t }}</td>
+      <td>{{ o.customer or "—" }}</td>
+      <td><a href="/objednavky/{{ o.id }}">{{ o.origin }} → {{ o.destination }}</a></td>
+      <td class="nowrap">{{ o.earliest_departure_utc|t }}</td>
+      <td class="nowrap">{{ o.deadline_utc|t }} <span class="muted small">{{ DEADLINE_TYPE.get(o.deadline_type, o.deadline_type) }}</span></td>
+      <td>{{ o.cargo or "—" }}{% if o.rid %} <span class="badge badge-warn">RID</span>{% endif %}</td>
+      <td class="small">{% if o.wagons %}{{ o.wagons }} voz. · {% endif %}{{ o.weight_t|num }} t · {{ o.length_m|num }} m</td>
+      <td><span class="badge status-{{ o.status }}">{{ ORDER_STATUS.get(o.status, o.status) }}</span></td>
+      <td>{{ trains.get(o.id, 0) }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="10" class="muted">Žiadne objednávky v tomto výbere.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+</section>
+{% endblock %}

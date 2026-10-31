@@ -140,6 +140,21 @@
 </section>
 {% endif %}
 
+{% set drafts = proposal.get("drafts") if proposal.get("drafts") is mapping else {} %}
+{% if drafts.get("zsr_path_request") or drafts.get("customer") %}
+<section class="card drafts" aria-labelledby="h-koncepty">
+  <h2 id="h-koncepty">Koncepty správ</h2>
+  <p class="muted small">Agent nič neposiela ŽSR ani zákazníkom – text skopírujte, skontrolujte a odošlite sami.</p>
+  {% for key, title in (("zsr_path_request", "Žiadosť o trasu pre ŽSR"), ("customer", "Správa zákazníkovi")) if drafts.get(key) %}
+  <div class="draft">
+    <label for="koncept-{{ key }}"><strong>{{ title }}</strong></label>
+    <textarea id="koncept-{{ key }}" rows="{{ [drafts.get(key).count("\n") + 2, 14]|min }}" readonly>{{ drafts.get(key) }}</textarea>
+    <button type="button" class="btn btn-sm" data-copy="#koncept-{{ key }}">Kopírovať</button>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
 <section class="card" aria-labelledby="h-rozhodnutie">
   <h2 id="h-rozhodnutie">Rozhodnutie dispečera</h2>
   {% if rec.decided_by %}

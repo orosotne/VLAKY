@@ -10,6 +10,9 @@
 {% if errors %}<div class="flash flash-chyba" role="alert">Formulár obsahuje chyby – opravte označené polia.</div>{% endif %}
 <form method="post" action="{{ '/vlaky/' ~ train.id ~ '/upravit' if train else '/vlaky/novy' }}" class="card form-grid" novalidate>
   {{ m.csrf() }}
+  {% if values.get("order_id") %}<input type="hidden" name="order_id" value="{{ values.get('order_id') }}">
+  <p class="flash flash-info">Vlak k objednávke <a href="/objednavky/{{ values.get('order_id') }}">#{{ values.get("order_id") }}</a>{% if order %} – {{ order.customer }}{% endif %}. Skontrolujte a doplňte údaje.</p>{% endif %}
+  {% if errors.get("order_id") %}<p class="error">{{ errors.get("order_id") }}</p>{% endif %}
   <fieldset>
     <legend>Vlak</legend>
     <div class="grid-3">

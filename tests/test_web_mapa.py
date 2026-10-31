@@ -167,7 +167,8 @@ def _auto_applied_closure(status: str = "aplikovane"):
     now = now_utc()
     with session_scope() as s:
         m = Email(message_id=f"<auto-{now.timestamp()}@zsr.example>", sender="vyluky@zsr.example",
-                  subject="Výluka Poprad – L. Mikuláš (FIKTÍVNE)", body_text="Výluka 1. koľaje (FIKTÍVNE)", verdict="ok")
+                  subject="Výluka Poprad – L. Mikuláš (FIKTÍVNE)", body_text="Výluka 1. koľaje (FIKTÍVNE)",
+                  verdict="ok")
         s.add(m)
         s.flush()
         start, end = now + timedelta(hours=3), now + timedelta(hours=9)

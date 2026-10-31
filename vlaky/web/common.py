@@ -89,6 +89,9 @@ POSITION_SOURCE = {"gps": "GPS", "zsr": "ŽSR", "tis": "RNE TIS", "manual": "ru�
                    "sim": "simulácia"}
 ROLE_LABEL = {"dispecer": "dispečer", "veduci": "vedúci dispečingu", "planovac": "plánovač rušňovodičov a rušňov",
               "obchod": "obchod / zákaznícky servis", "admin": "administrátor"}
+ORDER_STATUS = {"nova": "nová", "navrhnuta": "navrhnutá (agent pripravil návrh)", "chyba_planu": "chyba plánu",
+                "zamietnuta": "zamietnutá"}
+DEADLINE_TYPE = {"pevny": "pevný", "pokuta": "s pokutou", "orientacny": "orientačný"}
 COLOR_CLASS = {"ZELENÁ": "zelena", "ORANŽOVÁ": "oranzova", "ČERVENÁ": "cervena"}
 PRIORITY_CLASS = {"KRITICKÉ": "kriticke", "DÔLEŽITÉ": "dolezite", "INFO": "info"}
 DECISIONS = ("VYPRAVIŤ", "POČKAŤ", "ODSTAVIŤ", "PRESMEROVAŤ", "ESKALOVAŤ", "POKRAČOVAŤ")
@@ -239,7 +242,9 @@ def param_defaults() -> dict:
 def current_param_set(session: Session, now: Optional[datetime] = None):
     from ..models import ParameterSet
 
-    return session.scalar(select(ParameterSet).where(ParameterSet.valid_from <= (now or now_utc()))
+    # now_utc() je zaokrúhlený na sekundy – sada uložená „teraz“ (s mikrosekundami) má platiť hneď
+    limit = (now or now_utc()) + timedelta(seconds=1)
+    return session.scalar(select(ParameterSet).where(ParameterSet.valid_from <= limit)
                           .order_by(ParameterSet.valid_from.desc(), ParameterSet.id.desc()))
 
 
@@ -299,6 +304,7 @@ def build_templates() -> Jinja2Templates:
         "TRAIN_STATUS": TRAIN_STATUS, "CLOSURE_KIND": CLOSURE_KIND, "CLOSURE_STATUS": CLOSURE_STATUS,
         "EVENT_KIND": EVENT_KIND, "REC_STATE": REC_STATE, "SHIFT_STATUS": SHIFT_STATUS,
         "HANDOVER_STATUS": HANDOVER_STATUS, "POSITION_SOURCE": POSITION_SOURCE, "ROLE_LABEL": ROLE_LABEL,
+        "ORDER_STATUS": ORDER_STATUS, "DEADLINE_TYPE": DEADLINE_TYPE,
         "label": _label, "MAPLIBRE_JS": MAPLIBRE_JS, "MAPLIBRE_CSS": MAPLIBRE_CSS,
         "MAPLIBRE_JS_SRI": MAPLIBRE_JS_SRI, "MAPLIBRE_CSS_SRI": MAPLIBRE_CSS_SRI,
     })
@@ -345,7 +351,7 @@ def nav_counts(user) -> dict:
     from sqlalchemy import func
 
     from ..db import session_scope
-    from ..models import Recommendation
+    from ..models import Order, Recommendation
 
     from .data import pending_queue_count
 
@@ -354,7 +360,8 @@ def nav_counts(user) -> dict:
             queue = pending_queue_count(s)
             critical = s.scalar(select(func.count(Recommendation.id)).where(
                 Recommendation.state == "nove", Recommendation.priority == "KRITICKÉ")) or 0
-        return {"fronta": queue, "kriticke": critical}
+            orders = s.scalar(select(func.count(Order.id)).where(Order.status.in_(("nova", "navrhnuta")))) or 0
+        return {"fronta": queue, "kriticke": critical, "objednavky": orders}
     except Exception:  # noqa: BLE001 – navigácia nesmie zhodiť stránku
         log.exception("Počty pre navigáciu sa nepodarilo načítať")
         return {}

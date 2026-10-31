@@ -102,3 +102,18 @@ def test_obchod_nemoze_rozhodnut(client):
     r = client.post(f"/odporucania/{rec_id}/rozhodnutie", data={"csrf_token": token, "akcia": "prijat"},
                     follow_redirects=False)
     assert r.status_code == 403
+
+
+def test_koncepty_sprav_na_kopirovanie(client):
+    train_id = make_train(number="49010")
+    rec_id = make_recommendation(train_id, path_proposal={
+        "route": "hlavná", "stations": [], "needs_new_path": True,
+        "drafts": {"zsr_path_request": "Žiadame o pridelenie ad hoc trasy pre vlak 49010 (FIKTÍVNE).\nČadca → Žilina",
+                   "customer": "Vážený zákazník, <b>vlak</b> 49010 príde o 12:30 (FIKTÍVNE)."}})
+    login_as(client, "dispecer")
+    page = client.get(f"/odporucania/{rec_id}").text
+    assert "Koncepty správ" in page and "Agent nič neposiela" in page
+    assert "Žiadame o pridelenie ad hoc trasy pre vlak 49010 (FIKTÍVNE)." in page
+    assert "&lt;b&gt;vlak&lt;/b&gt;" in page  # text konceptu je escapovaný
+    assert 'data-copy="#koncept-zsr_path_request"' in page and 'data-copy="#koncept-customer"' in page
+    assert "readonly" in page

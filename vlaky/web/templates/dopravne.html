@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Dopravne{% endblock %}
+{% macro yes(v) %}{% if v %}<span class="badge badge-ok">áno</span>{% else %}<span class="badge">nie</span>{% endif %}{% endmacro %}
+{% block content %}
+<div class="page-head">
+  <h1>Dopravne – ručné údaje dispečingu</h1>
+  <p class="muted">Kde môže vlak čakať, kde ho možno odstaviť a kde vymeniť rušňovodiča, užitočné dĺžky koľají. Údaje používa plánovač (bod, odkiaľ niet návratu; odstavenie) a mapa (vrstva „Miesta na čakanie a odstavenie“). Každá zmena je v audite.</p>
+  <form method="get" class="filters" role="search" aria-label="Hľadať dopravňu">
+    <label>Hľadať dopravňu <input name="q" value="{{ q }}" minlength="2" maxlength="80" data-autocomplete="stanice" autocomplete="off" placeholder="napr. Žilina"></label>
+    <button type="submit" class="btn btn-sm">Hľadať</button>
+  </form>
+</div>
+{% if not network_ok %}<p class="flash flash-chyba">Register siete nie je k dispozícii.</p>{% endif %}
+{% if q %}
+<section class="card">
+  <h2>Výsledky pre „{{ q }}“</h2>
+  <div class="table-scroll">
+  <table class="table table-compact">
+    <thead><tr><th scope="col">Dopravňa</th><th scope="col">Typ</th><th scope="col">Skratka / UIC</th><th scope="col">Čakanie</th><th scope="col">Odstavenie</th><th scope="col">Výmena rušňovodiča</th><th scope="col">Max. dĺžka vlaku</th><th scope="col">Poznámka</th>{% if user.can("operate") %}<th scope="col"></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for r in results %}
+      <tr>
+        <td><strong>{{ r.name }}</strong></td><td class="small">{{ r.type }}</td><td class="small">{{ r.ref or "—" }} / {{ r.uic or "—" }}</td>
+        {% if r.info.exists %}<td>{{ yes(r.info.can_wait) }}</td><td>{{ yes(r.info.can_stable) }}</td><td>{{ yes(r.info.can_change_crew) }}</td>
+        <td>{{ (r.info.max_train_length_m|num) ~ " m" if r.info.max_train_length_m else "—" }}</td><td class="small">{{ r.info.note or "—" }}</td>
+        {% else %}<td colspan="5" class="muted small">bez údajov dispečingu (plánovač použije predvolené)</td>{% endif %}
+        {% if user.can("operate") %}<td><a class="btn btn-sm" href="/dopravne/upravit?stanica={{ r.name|urlencode }}">Upraviť</a></td>{% endif %}
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="muted">Nič sa nenašlo.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+<section class="card">
+  <h2>Evidované dopravne ({{ evidence|length }})</h2>
+  <div class="table-scroll">
+  <table class="table table-compact">
+    <thead><tr><th scope="col">Dopravňa</th><th scope="col">Čakanie</th><th scope="col">Odstavenie</th><th scope="col">Výmena rušňovodiča</th><th scope="col">Max. dĺžka vlaku</th><th scope="col">Poznámka</th>{% if user.can("operate") %}<th scope="col"></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for r in evidence %}
+      <tr><td><strong>{{ r.name }}</strong></td><td>{{ yes(r.info.can_wait) }}</td><td>{{ yes(r.info.can_stable) }}</td><td>{{ yes(r.info.can_change_crew) }}</td>
+          <td>{{ (r.info.max_train_length_m|num) ~ " m" if r.info.max_train_length_m else "—" }}</td><td class="small">{{ r.info.note or "—" }}</td>
+          {% if user.can("operate") %}<td><a class="btn btn-sm" href="/dopravne/upravit?stanica={{ r.name|urlencode }}">Upraviť</a></td>{% endif %}</tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">Zatiaľ žiadne údaje – vyhľadajte dopravňu a doplňte ich.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

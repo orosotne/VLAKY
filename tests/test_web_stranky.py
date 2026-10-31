@@ -408,3 +408,60 @@ def test_fronta_s_realnym_modulom_posty(client):
         assert ev.status != "navrh" and ev.confirmed_by == "dispecer"
         edits = (ev.validation or {}).get("edits") or []
         assert edits and "end" in edits[-1]["changes"]
+
+
+
+def test_navrh_nasadenia_rusnovodicov(client, monkeypatch):
+    from vlaky.cas import now_utc
+    from vlaky.db import session_scope
+    from vlaky.models import AuditLog, Driver, DriverShift
+
+    train_id = make_train(number="47040", status="planovany")
+    with session_scope() as s:
+        d = Driver(name="Ján FIKTÍVNY")
+        s.add(d)
+        s.flush()
+        driver_id = d.id
+    start = (now_utc() + timedelta(hours=2)).replace(microsecond=0)
+    proposal = {"solver": "optimálne", "notes": ["FIKTÍVNY návrh"], "unassigned": [{"train": "47999",
+                                                                                 "reason": "chýba znalosť tratí"}],
+                "assignments": [{"train": "47040", "train_id": train_id, "driver": "Ján FIKTÍVNY",
+                                 "driver_id": driver_id, "start": start.isoformat(),
+                                 "end": (start + timedelta(hours=6)).isoformat(), "start_txt": "02.11. 07:00",
+                                 "end_txt": "02.11. 13:00", "duty_h": 6.0, "deadhead_min": 35}]}
+    mod = types.ModuleType("vlaky.planovanie.nasadenie")
+    mod.propose_driver_assignment = lambda session, now=None, horizon_h=24, time_limit_s=10.0: proposal
+    monkeypatch.setitem(sys.modules, "vlaky.planovanie.nasadenie", mod)
+    login_as(client, "planovac", "planovac")
+    plain = client.get("/rusnovodici").text
+    assert "Navrhnúť nasadenie (24 h)" in plain and "Vytvoriť zmenu" not in plain
+    page = client.get("/rusnovodici?navrh=1").text
+    assert "Ján FIKTÍVNY" in page and "02.11. 07:00" in page and "35 min" in page and "Vytvoriť zmenu" in page
+    assert "chýba znalosť tratí" in page and "optimálne" in page
+    token = csrf(client, "/rusnovodici")
+    data = {"csrf_token": token, "driver_id": driver_id, "train_id": train_id, "start": start.isoformat(),
+            "end": (start + timedelta(hours=6)).isoformat()}
+    assert client.post("/zmeny/z-navrhu", data=data, follow_redirects=False).status_code == 303
+    with session_scope() as s:
+        sh = s.scalar(select(DriverShift).where(DriverShift.train_id == train_id))
+        assert sh.status == "planovana" and sh.driver_id == driver_id
+        assert sh.start_utc.replace(tzinfo=None) == start.replace(tzinfo=None)
+        assert s.scalar(select(AuditLog).where(AuditLog.action == "shift_create_from_proposal")) is not None
+    again = client.post("/zmeny/z-navrhu", data=data, follow_redirects=True)
+    assert "už má naplánovanú zmenu" in again.text
+
+
+def test_navrh_nasadenia_realnym_modulom(client):
+    import pytest
+
+    pytest.importorskip("ortools")
+    from vlaky.db import session_scope
+    from vlaky.models import Driver
+
+    make_train(number="47041", status="planovany")
+    with session_scope() as s:
+        s.add(Driver(name="Peter FIKTÍVNY", home_station="Čadca"))
+    login_as(client, "dispecer")
+    page = client.get("/rusnovodici?navrh=1")
+    assert page.status_code == 200 and "Návrh nasadenia rušňovodičov" in page.text
+    assert "nepodarilo" not in page.text

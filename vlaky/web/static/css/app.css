@@ -243,6 +243,10 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 .decision-main { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
 .decision-word { font-size: 1.7rem; font-weight: 900; letter-spacing: .02em; }
 .decision-summary { font-size: 1.05rem; margin: .5rem 0 .2rem; }
+.decision-word-sm { font-size: 1.25rem; font-weight: 900; }
+.prewrap { white-space: pre-wrap; }
+.status-nova, .status-navrhnuta { background: var(--orange-bg); color: var(--orange); border-color: var(--orange); }
+.status-chyba_planu, .status-zamietnuta { background: var(--red-bg); color: var(--red); border-color: var(--red); }
 .reasons li, .steps li { margin: .2rem 0; }
 .crew-block-cervena { border-left: 6px solid var(--dot-red); }
 .crew-block-oranzova { border-left: 6px solid var(--dot-orange); }
@@ -257,6 +261,13 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 .health-summary.health-ok { border-left: 6px solid var(--dot-green); }
 .health-summary.health-error { border-left: 6px solid var(--dot-red); }
 .checks-list { list-style: none; padding: 0; margin: 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; margin-bottom: 1rem; }
+.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: .7rem .9rem; box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.kpi-n { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.kpi-l { color: var(--muted); font-size: .84rem; }
+.kpi-tables caption { text-align: left; font-weight: 700; padding: .2rem 0; }
+.drafts textarea { width: 100%; font-family: var(--mono); font-size: .85rem; background: var(--panel-2); }
+.drafts .draft { margin-bottom: 1rem; }
 .checks-list li { padding: .3rem 0; }
 
 /* ------------------------------------------------------------------ dashboard (živá mapa) */
@@ -381,7 +392,7 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 .pop dt { color: var(--muted); }
 .pop dd { margin: 0; }
 .pop .pop-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .4rem; }
-.pop .odhad { color: var(--orange); font-weight: 700; }
+.pop .odhad, #tabulka-vlakov .odhad { color: var(--orange); font-weight: 700; }
 .fallback-popup { position: absolute; z-index: 6; right: .6rem; top: .6rem; max-width: 22rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .7rem .8rem; box-shadow: 0 4px 16px rgba(0,0,0,.3); font-size: 13px; }
 .fallback-popup .close { position: absolute; right: .3rem; top: .2rem; background: none; border: 0; font-size: 18px; cursor: pointer; color: var(--muted); }
 canvas.fallback-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }

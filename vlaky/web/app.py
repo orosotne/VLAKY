@@ -124,7 +124,8 @@ def create_app(auto_evaluate: bool = True) -> FastAPI:
                        csp=build_csp(tile_csp_source(cfg.map_tile_url)))
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    from . import api, auth, rusnovodic, views_evidencia, views_prehlad, views_sprava
+    from . import (api, auth, rusnovodic, views_dopravne, views_evidencia, views_objednavky, views_prehlad,
+                   views_reporty, views_sprava)
 
     app.include_router(auth.router)
     app.include_router(api.router)
@@ -132,6 +133,9 @@ def create_app(auto_evaluate: bool = True) -> FastAPI:
     app.include_router(views_prehlad.router)
     app.include_router(views_evidencia.router)
     app.include_router(views_sprava.router)
+    app.include_router(views_objednavky.router)
+    app.include_router(views_dopravne.router)
+    app.include_router(views_reporty.router)
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():

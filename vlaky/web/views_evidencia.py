@@ -14,7 +14,7 @@ from ..audit import audit
 from ..cas import ensure_utc, now_utc
 from ..db import session_scope
 from ..models import (AuditLog, BorderCrossing, Closure, Driver, DriverShift, ExtractedEvent, Handover, Locomotive,
-                      Path, PositionReport, Recommendation, Train)
+                      Order, Path, PositionReport, Recommendation, Train)
 from .auth import csrf_form, require
 from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, LOCO_SYSTEMS, TRAIN_STATUS, FormReader,
                      NetworkUnavailable,
@@ -84,6 +84,10 @@ def _read_train_form(reader: FormReader, s, train_id: Optional[int] = None) -> d
     v["deadline_utc"] = reader.local_dt("deadline_utc", "Termín doručenia (miestny čas)")
     v["status"] = reader.choice("status", "Stav", TRAIN_STATUS.keys(), "planovany")
     v["notes"] = reader.text("notes", "Poznámka", maxlen=2000)
+    order_id = reader.number("order_id", "Objednávka", integer=True, minimum=1)
+    v["order_id"] = int(order_id) if order_id else None
+    if v["order_id"] and s.get(Order, v["order_id"]) is None:
+        reader.errors["order_id"] = "Objednávka neexistuje."
     if v["ready_utc"] and v["deadline_utc"] and v["deadline_utc"] <= v["ready_utc"]:
         reader.errors["deadline_utc"] = "Termín doručenia musí byť po čase pripravenosti."
     if v["origin"] and v["origin"] == v["destination"]:
@@ -127,11 +131,23 @@ def trains_page(request: Request, filter: str = "aktivne", q: str = "", user=Dep
 
 
 @router.get("/vlaky/novy", response_class=HTMLResponse)
-def train_new(request: Request, user=Depends(operate)):
+def train_new(request: Request, objednavka: int = 0, user=Depends(operate)):
+    values: dict = {"gauge": "1435", "traction": "E", "vmax_kmh": "100", "status": "planovany"}
+    order = None
     with session_scope() as s:
-        return render(request, "vlak_form.html", {"train": None, "values": {"gauge": "1435", "traction": "E",
-                                                                            "vmax_kmh": "100", "status": "planovany"},
-                                                  "errors": {}, **_train_choices(s)}, user=user)
+        if objednavka:
+            order = s.get(Order, objednavka)
+            if order is None:
+                raise HTTPException(404, "Objednávka neexistuje.")
+            values.update({"order_id": order.id, "customer": order.customer, "origin": order.origin,
+                           "destination": order.destination, "length_m": order.length_m or "",
+                           "weight_t": order.weight_t or "", "rid": "1" if order.rid else "",
+                           "deadline_utc": input_dt(order.deadline_utc),
+                           "ready_utc": input_dt(order.earliest_departure_utc),
+                           "run_date": input_dt(order.earliest_departure_utc)[:10],
+                           "notes": f"Z objednávky #{order.id}" + (f": {order.cargo}" if order.cargo else "")})
+        return render(request, "vlak_form.html", {"train": None, "values": values, "errors": {}, "order": order,
+                                                  **_train_choices(s)}, user=user)
 
 
 def _train_values_for_form(t: Train) -> dict:
@@ -141,7 +157,7 @@ def _train_values_for_form(t: Train) -> dict:
             "length_m": t.length_m or "", "weight_t": t.weight_t or "", "gauge": t.gauge, "traction": t.traction,
             "vmax_kmh": t.vmax_kmh, "rid": "1" if t.rid else "", "ready_utc": input_dt(t.ready_utc),
             "planned_departure_utc": input_dt(t.planned_departure_utc), "deadline_utc": input_dt(t.deadline_utc),
-            "status": t.status, "notes": t.notes}
+            "status": t.status, "notes": t.notes, "order_id": t.order_id or ""}
 
 
 @router.post("/vlaky/novy")
@@ -597,10 +613,23 @@ def handover_update(handover_id: int, request: Request, background: BackgroundTa
 
 
 # ================================================================ RUŠŇOVODIČI A ZMENY (M7)
+def _assignment_proposal(s) -> tuple:
+    """Návrh nasadenia rušňovodičov na 24 h (vlaky.planovanie.nasadenie) – len návrh, nič sa nemení."""
+    try:
+        mod = importlib.import_module("vlaky.planovanie.nasadenie")
+        return mod.propose_driver_assignment(s), ""
+    except (ImportError, AttributeError, NotImplementedError):
+        return None, "Modul nasadenia rušňovodičov zatiaľ nie je k dispozícii."
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Návrh nasadenia zlyhal")
+        return None, f"Návrh nasadenia sa nepodarilo vypočítať: {type(exc).__name__}: {str(exc)[:200]}"
+
+
 @router.get("/rusnovodici", response_class=HTMLResponse)
-def drivers_page(request: Request, user=Depends(view)):
+def drivers_page(request: Request, navrh: int = 0, user=Depends(view)):
     now = now_utc()
     with session_scope() as s:
+        proposal, proposal_error = _assignment_proposal(s) if navrh and user.can("crew") else (None, "")
         params = current_params(s, now)
         drivers = list(s.scalars(select(Driver).order_by(Driver.active.desc(), Driver.name)))
         shifts = list(s.scalars(select(DriverShift).options(selectinload(DriverShift.driver))
@@ -629,7 +658,8 @@ def drivers_page(request: Request, user=Depends(view)):
         active_trains = list(s.scalars(select(Train).where(Train.status.notin_(DONE_TRAIN_STATES))
                                        .order_by(Train.number)))
         return render(request, "rusnovodici.html", {"drivers": drivers, "rows": rows, "params": params,
-                                                    "active_trains": active_trains,
+                                                    "active_trains": active_trains, "proposal": proposal,
+                                                    "proposal_error": proposal_error,
                                                     "show_contacts": user.role != "obchod"}, user=user)
 
 
@@ -706,6 +736,39 @@ def shift_create(request: Request, background: BackgroundTasks, user=Depends(cre
     if tid and request.app.state.auto_evaluate:
         background.add_task(evaluate_train_bg, tid, "nová zmena rušňovodiča")
     return redirect("/rusnovodici#zmeny", "Zmena uložená.")
+
+
+@router.post("/zmeny/z-navrhu")
+def shift_from_proposal(request: Request, background: BackgroundTasks, user=Depends(crew), form=Depends(csrf_form)):
+    """Zmena podľa návrhu nasadenia (po potvrdení dispečerom/plánovačom). Údaje sa overia na serveri."""
+    from .common import parse_iso
+
+    reader = FormReader(form)
+    driver_id = reader.number("driver_id", "Rušňovodič", required=True, integer=True, minimum=1)
+    train_id = reader.number("train_id", "Vlak", required=True, integer=True, minimum=1)
+    start, end = parse_iso(reader.raw("start")), parse_iso(reader.raw("end"))
+    if start is None:
+        reader.errors["start"] = "Neplatný začiatok zmeny."
+    if not reader.ok:
+        return redirect("/rusnovodici#zmeny", " ".join(reader.errors.values()), "chyba")
+    with session_scope() as s:
+        driver, train = s.get(Driver, int(driver_id)), s.get(Train, int(train_id))
+        if driver is None or not driver.active or train is None or train.status in DONE_TRAIN_STATES:
+            return redirect("/rusnovodici?navrh=1#navrh", "Rušňovodič alebo vlak už nie je k dispozícii.", "chyba")
+        if s.scalar(select(DriverShift.id).where(DriverShift.train_id == train.id,
+                                                 DriverShift.status.in_(("planovana", "prebieha")))):
+            return redirect("/rusnovodici#zmeny", f"Vlak {train.number} už má naplánovanú zmenu.", "chyba")
+        sh = DriverShift(driver_id=driver.id, train_id=train.id, start_utc=start,
+                         planned_end_utc=end if end and end > start else None, status="planovana")
+        s.add(sh)
+        s.flush()
+        audit(s, user.username, "shift_create_from_proposal", "driver_shift", sh.id, driver=driver.name,
+              train=train.number, start=start, end=end)
+        msg = f"Zmena pre {driver.name} na vlak {train.number} naplánovaná od {iso(start)}."
+        tid = train.id
+    if request.app.state.auto_evaluate:
+        background.add_task(evaluate_train_bg, tid, "zmena podľa návrhu nasadenia")
+    return redirect("/rusnovodici#zmeny", msg)
 
 
 @router.post("/zmeny/{shift_id}/upravit")

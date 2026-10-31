@@ -26,6 +26,13 @@
     </div>
   </fieldset>
   {% endfor %}
+  {% if extra %}
+  <fieldset>
+    <legend>Ďalšie hodnoty platnej sady (len na čítanie)</legend>
+    <p class="small muted">Napr. zdržania kalibrované z histórie (Reporty → Kalibrácia). Pri uložení sa prenesú do novej sady.</p>
+    <dl class="meta">{% for k, v in extra.items() %}<dt><code>{{ k }}</code></dt><dd>{{ v }}</dd>{% endfor %}</dl>
+  </fieldset>
+  {% endif %}
   <fieldset>
     <legend>Platnosť a dôvod</legend>
     <div class="grid-3">

@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 NODE_SCRIPT = r"""
 const { chromium } = require('playwright');
-const [base, user, password, shot] = process.argv.slice(2);
+const [base, user, password, shot, driverToken, customer] = process.argv.slice(2);
 (async () => {
   const out = { pageErrors: [], consoleErrors: [], csp: [] };
   const proxy = process.env.HTTPS_PROXY
@@ -69,7 +69,33 @@ const [base, user, password, shot] = process.argv.slice(2);
     out.popup = await page.$eval('.maplibregl-popup .pop, .fallback-popup .pop',
       (e) => e.textContent.replace(/\s+/g, ' ').trim());
     out.gantt = !!(await page.$('#casova-os svg'));
+    out.trailButton = out.popup.includes('Stopa 24 h');
+    await page.click('.tb-layers > summary');
+    await page.check('#v-miesta');
+    await page.check('#v-vlecky');
+    await page.waitForTimeout(1500);
+    out.layersChecked = await page.$eval('#v-miesta', (e) => e.checked) &&
+      await page.$eval('#v-vlecky', (e) => e.checked);
+    await page.click('.tb-layers > summary');
     if (shot) await page.screenshot({ path: shot });
+    if (customer) {
+      await page.selectOption('#f-zakaznik', customer);
+      await page.waitForTimeout(300);
+      out.filteredRows = await page.$$eval('#tabulka-vlakov tbody tr[data-id]', (r) => r.length);
+    }
+    if (driverToken) {
+      const drv = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      drv.on('pageerror', (e) => out.pageErrors.push('driver: ' + String(e.message || e)));
+      await drv.goto(base + '/rusnovodic#t=' + driverToken);
+      await drv.waitForSelector('#rusnovodic:not([hidden])', { timeout: 15000 });
+      out.driverNumber = await drv.textContent('#d-cislo');
+      out.driverUrl = drv.url();
+      await drv.click('[data-typ=nastup]');
+      await drv.waitForFunction(() => document.getElementById('driver-status').textContent.length > 0, null,
+        { timeout: 10000 });
+      out.driverStatus = await drv.textContent('#driver-status');
+      await drv.close();
+    }
   } finally {
     await browser.close();
   }
@@ -101,15 +127,20 @@ def test_dashboard_v_prehliadaci(cfg, tmp_path):
     from vlaky.db import session_scope
     from vlaky.models import PositionReport
 
+    from vlaky.models import Train
+    from vlaky.web.rusnovodic import make_driver_token
+
     make_user("prehliadac", "dispecer")
-    train_id = make_train(number="51001", origin="Čadca", destination="Žilina")
+    train_id = make_train(number="51001", origin="Čadca", destination="Žilina", customer="FIKTÍVNY Oceľ")
+    make_train(number="51002", origin="Kúty", destination="Žilina", customer="FIKTÍVNA Chémia")
     make_recommendation(train_id, color="ČERVENÁ", priority="KRITICKÉ")
     with session_scope() as s:
         s.add(PositionReport(train_id=train_id, train_number="51001", ts_utc=now_utc() - timedelta(minutes=1),
                              lat=49.2265, lon=18.7395, snapped_lat=49.228345, snapped_lon=18.740581, source="gps"))
+        driver_token = make_driver_token(s.get(Train, train_id))
 
     port = _free_port()
-    env = {**os.environ, "VLAKY_DATABASE_URL": cfg.database_url, "VLAKY_SECRET_KEY": "browser-test-secret",
+    env = {**os.environ, "VLAKY_DATABASE_URL": cfg.database_url, "VLAKY_SECRET_KEY": cfg.secret_key,
            "VLAKY_POSITIONS_TOKEN": "test-token", "VLAKY_ENV": "test", "VLAKY_PUBLIC_URL": f"http://127.0.0.1:{port}",
            "PYTHONPATH": str(ROOT)}
     log_path = tmp_path / "uvicorn.log"
@@ -133,8 +164,8 @@ def test_dashboard_v_prehliadaci(cfg, tmp_path):
         script.write_text(NODE_SCRIPT, encoding="utf-8")
         shot_dir = os.environ.get("VLAKY_SCREENSHOT_DIR", "")
         shot = str(Path(shot_dir) / "test_dashboard.png") if shot_dir else ""
-        proc = subprocess.run(["node", str(script), base, "prehliadac", HESLO, shot], capture_output=True, text=True,
-                              timeout=150, cwd=str(tmp_path))
+        proc = subprocess.run(["node", str(script), base, "prehliadac", HESLO, shot, driver_token, "FIKTÍVNY Oceľ"],
+                              capture_output=True, text=True, timeout=150, cwd=str(tmp_path))
         lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("{")]
         assert lines, f"Node bez výsledku: {proc.stdout[-2000:]} {proc.stderr[-2000:]}"
         out = json.loads(lines[-1])
@@ -156,6 +187,9 @@ def test_dashboard_v_prehliadaci(cfg, tmp_path):
     assert out["mapBox"][0] > 300 and out["mapBox"][1] > 300, out["mapBox"]
     assert any("51001" in r and "ČERVENÁ" in r for r in out["rows"]), out["rows"]
     assert "Vlak 51001" in out["popup"] and "Sledovať vlak" in out["popup"]
-    assert out["gantt"] is True
+    assert out["gantt"] is True and out["trailButton"] is True and out["layersChecked"] is True
+    assert out["filteredRows"] == 1  # filter podľa zákazníka
+    assert out["driverNumber"] == "51001" and "Nástup zaznamenaný" in out["driverStatus"]
+    assert "#t=" not in out["driverUrl"]  # token sa z adresy hneď odstráni
     if out["glCanvas"]:
         assert out["markers"] >= 1 and out["borders"] == 23
