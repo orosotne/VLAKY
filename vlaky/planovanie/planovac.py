@@ -490,14 +490,13 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
         reasons.append(f"{_kind_label(w.kind)} {w.from_station} – {w.to_station} {fmt(w.start)} – {fmt(w.end)} "
                        f"sa nepodarilo umiestniť na sieť (neznámy úsek) – overte názvy dopravní vo výluke; "
                        f"kým sa to neopraví, vlak nemôže byť ZELENÝ.")
-    for w in windows:
-        if w.note:
-            reasons.append(f"{_kind_label(w.kind)} {w.from_station} – {w.to_station}: {w.note}.")
     run_scale, scale_note = path_run_scale(paths, primary)
     if scale_note:
         reasons.append(scale_note)
     segs, wps, affecting = build_segments(net, primary, windows, now, spec, session, start_km, run_scale)
     routes = [DRoute(f"{train.origin} – {train.destination}", tuple(segs), electric=spec.traction == "E")]
+    for w in {w.closure_id: w for w, _a, _b in affecting if w.note}.values():
+        reasons.append(f"{_kind_label(w.kind)} {w.from_station} – {w.to_station}: {w.note}.")
 
     # obchádzky okolo blokujúcich výluk na hlavnej trase
     blocked: set = set()

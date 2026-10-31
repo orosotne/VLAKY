@@ -351,3 +351,17 @@ def test_odstavenie_s_povinnou_novou_trasou():
     assert all(not (e.kind == ODSTAVIT and e.depart < p.new_path_lead_min) for e in strict.candidates)
     assert all(e.needs_new_path for e in strict.candidates if e.kind == ODSTAVIT)
     assert any(e.kind == ODSTAVIT and e.depart < p.new_path_lead_min for e in free.candidates)
+
+
+def test_poznamka_k_neplatnemu_oknu_len_pri_vyluke_na_trase(session, fixed_now):
+    seed_borders(session)
+    t = _train(session, fixed_now)
+    _closure(session, "Zvolen", "Banská Bystrica", fixed_now, fixed_now + timedelta(days=1),
+             daily_from="25:00", daily_to="06:00")  # mimo trasy Čadca – Košice
+    rec = evaluate_train(session, t.id, fixed_now, "test")
+    assert not any("neplatné denné okno" in r for r in rec.reasons)
+    _closure(session, "Liptovský Mikuláš", "Poprad-Tatry", fixed_now, fixed_now + timedelta(days=1),
+             daily_from="25:00", daily_to="06:00")  # na trase → počíta sa celé obdobie a dispečer to vidí
+    rec = evaluate_train(session, t.id, fixed_now + timedelta(minutes=1), "test")
+    assert any("neplatné denné okno" in r for r in rec.reasons)
+    assert not (rec.decision == "VYPRAVIŤ" and rec.color == "ZELENÁ")
