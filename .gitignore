@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 .venv/
 .env
+data/vlaky.db*
+data/schranka/
+data/odoslane/
+data/zalohy/
+.pytest_cache/
