@@ -1,0 +1,61 @@
+{% macro field(name, label_text, values, errors, type="text", required=False, help="", attrs={}, wide=False) -%}
+{% set fid = "pole-" ~ name %}
+<div class="field{% if errors.get(name) %} has-error{% endif %}{% if wide %} field-wide{% endif %}">
+  <label for="{{ fid }}">{{ label_text }}{% if required %} <span class="req" aria-hidden="true">*</span>{% endif %}</label>
+  {% if type == "textarea" %}
+  <textarea id="{{ fid }}" name="{{ name }}" rows="{{ attrs.get('rows', 3) }}"{% if required %} required{% endif %}{% if errors.get(name) %} aria-invalid="true" aria-describedby="{{ fid }}-chyba"{% endif %}{% for k, v in attrs.items() if k != 'rows' %} {{ k }}="{{ v }}"{% endfor %}>{{ values.get(name, "") }}</textarea>
+  {% else %}
+  <input id="{{ fid }}" name="{{ name }}" type="{{ type }}" value="{{ values.get(name, '') }}"{% if required %} required{% endif %}{% if errors.get(name) %} aria-invalid="true" aria-describedby="{{ fid }}-chyba"{% endif %}{% for k, v in attrs.items() %} {{ k }}="{{ v }}"{% endfor %}>
+  {% endif %}
+  {% if help %}<small class="help">{{ help }}</small>{% endif %}
+  {% if errors.get(name) %}<small class="error" id="{{ fid }}-chyba">{{ errors.get(name) }}</small>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro select(name, label_text, options, values, errors, required=False, empty="", help="") -%}
+{% set fid = "pole-" ~ name %}
+<div class="field{% if errors.get(name) %} has-error{% endif %}">
+  <label for="{{ fid }}">{{ label_text }}{% if required %} <span class="req" aria-hidden="true">*</span>{% endif %}</label>
+  <select id="{{ fid }}" name="{{ name }}"{% if required %} required{% endif %}{% if errors.get(name) %} aria-invalid="true" aria-describedby="{{ fid }}-chyba"{% endif %}>
+    {% if empty %}<option value="">{{ empty }}</option>{% endif %}
+    {% for value, text in options %}
+    <option value="{{ value }}"{% if values.get(name, '')|string == value|string %} selected{% endif %}>{{ text }}</option>
+    {% endfor %}
+  </select>
+  {% if help %}<small class="help">{{ help }}</small>{% endif %}
+  {% if errors.get(name) %}<small class="error" id="{{ fid }}-chyba">{{ errors.get(name) }}</small>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro checkbox(name, label_text, values, help="") -%}
+<div class="field field-check">
+  <label><input type="checkbox" name="{{ name }}" value="1"{% if values.get(name) %} checked{% endif %}> {{ label_text }}</label>
+  {% if help %}<small class="help">{{ help }}</small>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro semafor(color) -%}
+{% if color %}<span class="semafor semafor-{{ color|color_class }}">{{ color }}</span>{% else %}<span class="semafor semafor-seda">bez odporúčania</span>{% endif %}
+{%- endmacro %}
+
+{% macro priority(p) -%}
+<span class="prio prio-{{ p|priority_class }}">{{ p or "INFO" }}</span>
+{%- endmacro %}
+
+{% macro badge(text, cls="") -%}
+<span class="badge {{ cls }}">{{ text }}</span>
+{%- endmacro %}
+
+{% macro csrf() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+{%- endmacro %}
+
+{% macro pager(strana, pages, params) -%}
+{% if pages > 1 %}
+<nav class="pager" aria-label="Stránkovanie">
+  {% if strana > 1 %}<a class="btn btn-sm" href="?{{ params }}&strana={{ strana - 1 }}">← Novšie</a>{% endif %}
+  <span>Strana {{ strana }} z {{ pages }}</span>
+  {% if strana < pages %}<a class="btn btn-sm" href="?{{ params }}&strana={{ strana + 1 }}">Staršie →</a>{% endif %}
+</nav>
+{% endif %}
+{%- endmacro %}

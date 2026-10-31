@@ -1,0 +1,46 @@
+# Čo NEpatrí do kontextu zostavenia obrazu (menší kontext, žiadne tajomstvá v obraze).
+# Obraz kopíruje len requirements*.txt, vlaky/, referencia/ a data/ (pozri Dockerfile).
+
+# Git a vývojové prostredie
+.git
+.gitignore
+.venv
+venv
+.idea
+.vscode
+*.swp
+.DS_Store
+
+# Python medzisúbory a testy
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+tests
+
+# Tajomstvá a lokálna konfigurácia – NIKDY do obrazu
+.env
+.env.*
+*.pem
+*.key
+
+# Prevádzkové dáta (patria do zväzkov a záloh, nie do obrazu)
+data/vlaky.db*
+data/schranka
+data/odoslane
+data/zalohy
+data/import
+**/*.osm.pbf
+*.log
+
+# Nasadenie a dokumentácia (do obrazu netreba)
+Dockerfile
+.dockerignore
+docker-compose*.yml
+deploy
+docs
+PROMPT*.md
+README.md

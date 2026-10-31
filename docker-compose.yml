@@ -1,0 +1,249 @@
+# =============================================================================
+# Agent dispečer – produkčné nasadenie cez Docker Compose (VPS s Ubuntu 24.04 LTS)
+#
+#   cp .env.example .env && chmod 600 .env && nano .env   # vyplniť (heslá, doména, schránka …)
+#   docker compose build
+#   docker compose up -d        # db → init-db (jednorazovo) → web + agent → caddy
+#   docker compose ps           # stav a zdravie kontajnerov
+#   docker compose logs -f agent
+#
+# Navonok sú otvorené LEN porty 80/443 kontajnera caddy (automatické HTTPS). Databáza,
+# webová aplikácia aj agent sú len v privátnych sieťach Dockeru. Po zmene .env použi
+# "docker compose up -d" (nie "restart" – ten zmeny v .env nenačíta).
+#
+# Import siete z OpenStreetMap (nástroj, nespúšťa sa automaticky; pozri docs/PREVADZKA.md):
+#   docker compose --profile tools run --rm --user "$(id -u):$(id -g)" osm-import
+#
+# Podrobný návod: docs/PREVADZKA.md
+# =============================================================================
+
+name: vlaky
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# Spoločné nastavenia kontajnerov aplikácie (init-db, web, agent)
+x-app: &app
+  image: vlaky-app:latest
+  build:
+    context: .
+    target: runtime
+  env_file: .env
+  environment:
+    # Pripojenie k databáze sa skladá z POSTGRES_* (VLAKY_DATABASE_URL z .env sa v Dockeri nepoužije).
+    VLAKY_DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-vlaky}:${POSTGRES_PASSWORD:?Nastav POSTGRES_PASSWORD v .env}@db:5432/${POSTGRES_DB:-vlaky}"
+    VLAKY_SECRET_KEY: "${VLAKY_SECRET_KEY:?Nastav VLAKY_SECRET_KEY v .env (openssl rand -hex 32)}"
+    VLAKY_PUBLIC_URL: "${VLAKY_PUBLIC_URL:-https://${VLAKY_DOMAIN}}"
+  init: true
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging: *logging
+
+services:
+  # --- PostgreSQL 16 (len v internej sieti, bez portov na hostiteľovi) ----------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vlaky}
+      POSTGRES_USER: ${POSTGRES_USER:-vlaky}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Nastav POSTGRES_PASSWORD v .env}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - max_connections=100
+      - -c
+      - log_min_duration_statement=2000
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 256m
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    logging: *logging
+
+  # --- Jednorazovo: vytvorenie tabuliek a nahratie hraničných priechodov ---------------------
+  # Spúšťa sa automaticky pri každom "docker compose up" (je idempotentné); ručne:
+  #   docker compose run --rm init-db
+  init-db:
+    <<: *app
+    command: ["python", "-m", "vlaky", "init-db"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  # --- Webová aplikácia (mapa, fronta, odporúčania); dostupná len cez Caddy ------------------
+  web:
+    <<: *app
+    command: ["python", "-m", "vlaky", "web", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+    volumes:
+      - schranka:/app/data/schranka
+      - odoslane:/app/data/odoslane
+    networks:
+      - backend
+      - frontend
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1536M
+
+  # --- Agent dispečer (schránka, plánovanie, notifikácie, heartbeat) ------------------------
+  agent:
+    <<: *app
+    command: ["python", "-m", "vlaky", "agent"]
+    depends_on:
+      db:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+    volumes:
+      - schranka:/app/data/schranka
+      - odoslane:/app/data/odoslane
+    networks:
+      - backend
+      - egress
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "python", "-m", "vlaky", "health"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  # --- Caddy: reverse proxy, automatické HTTPS (Let's Encrypt) – JEDINÉ verejné porty -------
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      VLAKY_DOMAIN: ${VLAKY_DOMAIN:?Nastav VLAKY_DOMAIN v .env}
+      VLAKY_UPSTREAM: web:8000
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    networks:
+      - frontend
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+    logging: *logging
+
+  # --- Nástroj: import/obnova železničnej siete z OpenStreetMap (profil "tools") -------------
+  # 1. stiahni extrakt do /opt/vlaky/import/slovakia.osm.pbf (alebo nastav OSM_IMPORT_DIR)
+  # 2. docker compose --profile tools run --rm --user "$(id -u):$(id -g)" osm-import
+  # 3. docker compose build && docker compose up -d   (nová sieť sa "zapečie" do obrazu)
+  osm-import:
+    profiles: ["tools"]
+    image: vlaky-app-osm:latest
+    build:
+      context: .
+      target: osm-tools
+    command: ["python", "-m", "vlaky", "import-osm", "--pbf", "/import/slovakia.osm.pbf", "--out", "/app/data/siet"]
+    network_mode: none
+    volumes:
+      - ${OSM_IMPORT_DIR:-/opt/vlaky/import}:/import:ro
+      - ./data/siet:/app/data/siet
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 6G
+    logging: *logging
+
+volumes:
+  pgdata:
+  schranka:
+  odoslane:
+  caddy_data:
+  caddy_config:
+  caddy_logs:
+
+networks:
+  # caddy <-> web (s prístupom von – ACME/Let's Encrypt, odosielanie z webu)
+  frontend:
+  # databáza a aplikácia – BEZ prístupu na internet
+  backend:
+    internal: true
+  # agent -> internet (schránka, LLM, SMTP, Teams, SMS, heartbeat)
+  egress:

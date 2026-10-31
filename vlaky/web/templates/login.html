@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Prihlásenie{% endblock %}
+{% block body_class %}page-login{% endblock %}
+{% block main_class %}login-wrap{% endblock %}
+{% block content %}
+<section class="card login-card" aria-labelledby="login-nadpis">
+  <div class="login-brand"><img src="/static/img/ikona.svg" alt="" width="40" height="40">
+    <div><h1 id="login-nadpis">Agent dispečer</h1><p class="muted">{{ carrier }}</p></div>
+  </div>
+  {% if error %}<p class="flash flash-chyba" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="/login" class="stack" autocomplete="on">
+    <input type="hidden" name="csrf_token" value="{{ login_token }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <div class="field">
+      <label for="pole-username">Prihlasovacie meno</label>
+      <input id="pole-username" name="username" value="{{ username }}" autocomplete="username" required autofocus maxlength="80">
+    </div>
+    <div class="field">
+      <label for="pole-password">Heslo</label>
+      <input id="pole-password" name="password" type="password" autocomplete="current-password" required maxlength="200">
+    </div>
+    <button type="submit" class="btn btn-primary">Prihlásiť</button>
+  </form>
+  <p class="muted small">Prístup len pre oprávnených zamestnancov dispečingu. Každá akcia sa zaznamenáva do auditu.</p>
+</section>
+{% endblock %}
+{% block footer %}{% endblock %}

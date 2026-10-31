@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="csrf-token" content="{{ csrf_token }}">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>{% block title %}Agent dispečer{% endblock %} · Agent dispečer</title>
+<link rel="icon" href="/static/img/ikona.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
+<script src="/static/js/tema.js?v={{ asset_version }}"></script>
+{% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+<a class="skip-link" href="#obsah">Preskočiť na obsah</a>
+{% if user %}
+{% set nav = [
+  ("/", "Mapa", "view", ""),
+  ("/fronta", "Fronta", "view", counts.get("fronta")),
+  ("/odporucania", "Odporúčania", "view", counts.get("kriticke")),
+  ("/vlaky", "Vlaky", "view", ""),
+  ("/vyluky", "Výluky", "view", ""),
+  ("/hranice", "Hranice", "view", ""),
+  ("/rusnovodici", "Rušňovodiči", "view", ""),
+  ("/rusne", "Rušne", "view", ""),
+  ("/odovzdavka", "Odovzdávka", "view", ""),
+] %}
+<header class="topbar">
+  <a class="brand" href="/"><img src="/static/img/ikona.svg" alt="" width="26" height="26"><span>Agent dispečer</span></a>
+  <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="hlavna-navigacia">Menu</button>
+  <nav id="hlavna-navigacia" class="mainnav" aria-label="Hlavná navigácia">
+    <ul>
+    {% for href, label_text, perm, badge in nav %}
+      {% if user.can(perm) %}
+      <li><a href="{{ href }}"{% if (href == "/" and path == "/") or (href != "/" and path.startswith(href)) %} aria-current="page"{% endif %}>{{ label_text }}{% if badge %} <span class="nav-badge" aria-label="{{ badge }} položiek">{{ badge }}</span>{% endif %}</a></li>
+      {% endif %}
+    {% endfor %}
+      <li class="nav-more">
+        <details>
+          <summary>Správa</summary>
+          <ul>
+            {% if user.can("params") %}<li><a href="/nastavenia">Nastavenia</a></li>{% endif %}
+            {% if user.can("users") %}<li><a href="/pouzivatelia">Používatelia</a></li>{% endif %}
+            {% if user.can("audit") %}<li><a href="/audit">Audit</a></li>{% endif %}
+            <li><a href="/zdravie">Zdravie agenta</a></li>
+          </ul>
+        </details>
+      </li>
+    </ul>
+  </nav>
+  <div class="userbox">
+    <button type="button" class="btn btn-ghost btn-sm" id="btn-tema" aria-live="polite" title="Prepnúť tmavý / svetlý režim">Režim: automaticky</button>
+    <span class="who" title="{{ ROLE_LABEL.get(user.role, user.role) }}">{{ user.display }} <small>({{ ROLE_LABEL.get(user.role, user.role) }})</small></span>
+    <form method="post" action="/logout" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn btn-ghost btn-sm">Odhlásiť</button>
+    </form>
+  </div>
+</header>
+{% if shadow_mode %}<div class="banner banner-info" role="note">Tieňová prevádzka: odporúčania agenta idú len na tieňový zoznam. Agent iba odporúča – rozhoduje a koná dispečer.</div>{% endif %}
+{% if env != "prod" %}<div class="banner banner-test" role="note">Testovacie prostredie ({{ env }})</div>{% endif %}
+{% endif %}
+{% if flash %}<div class="flash flash-{{ flash.kind }}" role="{{ 'alert' if flash.kind == 'chyba' else 'status' }}">{{ flash.text }}</div>{% endif %}
+<main id="obsah" tabindex="-1" class="{% block main_class %}container{% endblock %}">
+{% block content %}{% endblock %}
+</main>
+{% block footer %}
+<footer class="footer">
+  <p>Agent dispečer len odporúča – rozhoduje a koná dispečer. Mapa a sieť: © OpenStreetMap contributors (ODbL). Časy sú v pásme {{ tz }}.</p>
+</footer>
+{% endblock %}
+<script src="/static/js/app.js?v={{ asset_version }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
