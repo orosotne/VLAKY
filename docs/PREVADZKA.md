@@ -175,7 +175,10 @@ sed -i "s/^VLAKY_POSITIONS_TOKEN=.*/VLAKY_POSITIONS_TOKEN=$(openssl rand -hex 32
 nano .env
 ```
 
-Každé nastavenie má v `.env.example` slovenský komentár. Na začiatok stačí:
+Každé nastavenie má v `.env.example` slovenský komentár. Web v produkcii (`VLAKY_ENV=prod`) odmietne
+štart, ak `VLAKY_SECRET_KEY` nemá aspoň 32 náhodných znakov alebo `VLAKY_PUBLIC_URL` nezačína `https://`
+(chyba je v `docker compose logs web`). Ukážkové dáta (`python -m vlaky demo`) a simulátor polohy sa
+v produkcii nespustia. Na začiatok stačí:
 
 | Nastavenie | Hodnota |
 |---|---|
@@ -499,9 +502,10 @@ bežiaca verzia sa nezmení) → `docker compose up -d` → počká, kým sú `w
 Aktualizuj mimo špičky, dispečing vopred upozorni (výpadok webu je zvyčajne pod minútu).
 Aj bez zmien v kóde spusti `update.sh` raz mesačne – zostaví obraz s aktuálnymi bezpečnostnými záplatami.
 
-> **Migrácie databázy:** `init-db` dnes len vytvára chýbajúce tabuľky. Zmeny existujúcich stĺpcov
-> vyžadujú migrácie (napr. Alembic) – kým ich aplikácia nemá, nová verzia s takou zmenou musí mať
-> vlastný postup v poznámkach k vydaniu.
+> **Migrácie databázy:** `init-db` (spúšťa sa aj pri štarte webu a agenta) vytvorí chýbajúce tabuľky
+> a do existujúcich tabuliek doplní nové stĺpce (s predvolenou hodnotou alebo prázdne). Zmeny typov,
+> premenovanie a mazanie stĺpcov vyžadujú migrácie (napr. Alembic) – kým ich aplikácia nemá, nová verzia
+> s takou zmenou musí mať vlastný postup v poznámkach k vydaniu.
 
 ### 10.2 Návrat na predchádzajúcu verziu (rollback)
 
