@@ -730,6 +730,13 @@ def process_mailbox(session: Session) -> dict:
     for email in pending:
         email_id = email.id
         try:
+            from .odpovede import handle_dispatcher_reply
+
+            if handle_dispatcher_reply(session, email):  # odpoveď dispečera na odporúčanie, nie prevádzková zmena
+                session.commit()
+                summary.setdefault("replies", 0)
+                summary["replies"] += 1
+                continue
             events = process_email(session, email)
             session.commit()
         except Exception as exc:

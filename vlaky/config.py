@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     daily_report_hour: int = 6                         # miestny čas
     shift_change_hours: str = "6,18"                   # odovzdávka služby (miestny čas)
     position_stale_minutes: int = 15
+    crew_alert_minutes: str = "90,60,30"               # upozornenia pred koncom pracovného času (min)
+    standing_alert_minutes: int = 20                   # vlak v jazde stojí dlhšie ako N min → upozornenie
+    retention_gps_days: int = 90                       # GDPR: surové polohy sa po N dňoch mažú
+    retention_email_days: int = 365                    # GDPR: obsah e-mailov sa po N dňoch vymaže (metadáta ostanú)
 
     # --- pozície ---
     positions_token: str = ""                          # token pre POST /api/pozicie (GPS brána, aplikácia)

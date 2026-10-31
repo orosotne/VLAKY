@@ -86,6 +86,13 @@ def recommendation_body(rec: Recommendation) -> str:
         lines += ["", "Pred odchodom (kontrolný zoznam): vlak aktivovaný a súpis vlaku ND + správa o zostave "
                       "zadané v KIS/PIS (inak ŽSR vlak nevypraví), pripravenosť vlaku v KIS, skúška bŕzd, "
                       "doklady (CIM / CIM/SMGS), rušňovodič s platnou znalosťou trate."]
+    drafts = (rec.path_proposal or {}).get("drafts") or {}
+    if drafts:
+        lines += ["", "KONCEPTY SPRÁV (agent ich neodosiela – skopírujte, upravte a odošlite sami):"]
+        for key in ("zsr_path_request", "customer"):
+            if drafts.get(key) and (key != "zsr_path_request" or (rec.path_proposal or {}).get("needs_new_path")):
+                lines += ["", "-" * 60, drafts[key]]
+        lines.append("-" * 60)
     lines += ["", f"Detail a potvrdenie: {s.public_url.rstrip('/')}/odporucania/{rec.id}",
               "", "Agent dispečer iba odporúča. Rozhoduje a koná dispečer. Správu nepreposielajte mimo firmy."]
     return "\n".join(lines)

@@ -488,6 +488,8 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
 
     path_proposal = _path_proposal(net, primary if not chosen or chosen.route == routes[0].name
                                    else alt_groutes[0], chosen, now, start_km if running else 0.0, rec)
+    if path_proposal:
+        path_proposal["drafts"] = _drafts(train, decision, chosen, path_proposal, now, deadline)
     windows_iso = {name: [[_dt(now, a).isoformat(), _dt(now, b).isoformat()] for a, b in wins]
                    for name, wins in rec.green_windows.items()}
     variants = _variants(rec, now)
@@ -668,6 +670,59 @@ def _path_proposal(net: Network, groute: GRoute, chosen: Optional[Evaluation], n
     return {"route": chosen.route, "km": round(groute.length_m / 1000.0 - start_km, 1),
             "stations": stations, "needs_new_path": chosen.needs_new_path, "request_window": window,
             "geometry_points": len(groute.nodes)}
+
+
+def _iso_fmt(iso: Optional[str]) -> str:
+    return fmt(datetime.fromisoformat(iso)) if iso else "—"
+
+
+def _drafts(train: Train, decision: str, chosen: Optional[Evaluation], pp: dict, now: datetime,
+            deadline: Optional[datetime]) -> dict:
+    """Koncepty správ pre externých adresátov (M11). Agent ich NIKDY neodosiela – len pripraví."""
+    st = pp.get("stations") or []
+    if not st or chosen is None:
+        return {}
+    cfg = settings()
+    first, last = st[0], st[-1]
+    via = ", ".join(x["name"] for x in st[1:-1] if x.get("type") == "station")
+    win = pp.get("request_window")
+    loco = train.locomotive.type if train.locomotive and train.locomotive.type else "[doplniť]"
+    trakcia = "elektrická" if (train.locomotive.traction if train.locomotive else train.traction) == "E" else "motorová"
+    zsr = "\n".join([
+        "KONCEPT – objednávka ad hoc trasy (IS KIS, produkt P5) – agent ju NEODOSIELA",
+        f"Dopravca: {cfg.carrier_name}",
+        f"Číslo vlaku: {train.number}   Druh vlaku: [doplniť, napr. Nex / Pn]   "
+        f"Dátum jazdy: {local(datetime.fromisoformat(first['dep'])).strftime('%d.%m.%Y') if first.get('dep') else '[doplniť]'}",
+        f"Východisková dopravňa: {first['name']}   odchod {_iso_fmt(first.get('dep'))}",
+        f"Cieľová dopravňa: {last['name']}   príchod {_iso_fmt(last.get('arr'))}",
+        f"Smerovanie cez: {via[:600] or '—'}",
+        f"Rušeň (rad HKV): {loco}   Trakcia: {trakcia}   Max. rýchlosť: {train.vmax_kmh:.0f} km/h",
+        f"Hmotnosť vlaku: {train.weight_t or '[doplniť]'} t   Dĺžka vlaku: {train.length_m or '[doplniť]'} m   "
+        f"Nebezpečný tovar (RID): {'áno' if train.rid else 'nie'}",
+        "Pobyty z dopravných dôvodov: [doplniť – napr. výmena rušňovodiča, skúška bŕzd]",
+        f"Požadovaný odchod v okne: {_iso_fmt(win[0])} – {_iso_fmt(win[1])}" if win else
+        "Požadovaný odchod: podľa návrhu vyššie",
+    ])
+    arr50 = _dt(now, chosen.arrival_p50)
+    arr90 = _dt(now, chosen.arrival_p90)
+    dep = _dt(now, chosen.depart)
+    phrase = {VYPRAVIT: f"odchádza o {fmt(dep)}", POKRACOVAT: "je na ceste",
+              POCKAT: f"pre obmedzenie na trati vyrazí o {fmt(dep)}",
+              ODSTAVIT: f"pre obmedzenie na trati vyrazí o {fmt(dep)}",
+              PRESMEROVAT: f"pôjde obchádzkovou trasou s odchodom o {fmt(dep)}"}.get(decision, "")
+    lines = [f"KONCEPT – informácia pre zákazníka {train.customer or ''} – agent ju NEODOSIELA", "",
+             "Dobrý deň,"]
+    if decision == ESKALOVAT:
+        lines.append(f"vlak č. {train.number} ({train.origin} → {train.destination}) pre obmedzenia na trati "
+                     f"nestihne dohodnutý termín. Navrhujeme nový termín: [doplniť].")
+    else:
+        lines.append(f"vlak č. {train.number} ({train.origin} → {train.destination}) {phrase}. Predpokladaný "
+                     f"príchod: {fmt(arr50)} (najneskôr približne {fmt(arr90)}).")
+        if deadline and arr50 > ensure_utc(deadline):
+            late_h = (arr50 - ensure_utc(deadline)).total_seconds() / 3600.0
+            lines.append(f"Oproti dohodnutému termínu {fmt(deadline)} očakávame meškanie približne {late_h:.1f} h.")
+    lines += ["", f"S pozdravom", f"dispečing {cfg.carrier_name}"]
+    return {"zsr_path_request": zsr, "customer": "\n".join(lines)}
 
 
 def _crew_info(shift: Optional[DriverShift], chosen: Optional[Evaluation], now: datetime, p: Params,

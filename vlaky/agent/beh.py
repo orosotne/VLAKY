@@ -117,6 +117,16 @@ def run_cycle(now: datetime | None = None, force_evaluate: bool = False) -> dict
     except Exception as exc:  # noqa: BLE001
         summary["errors"].append(f"objednávky: {exc!r}")
 
+    # 2c) stráženie: pracovný čas rušňovodičov (90/60/30 min), neplánované státie vlakov
+    try:
+        from .strazenie import crew_alerts, standing_alerts
+
+        with session_scope() as s:
+            summary["crew_alerts"] = crew_alerts(s, now)
+            summary["standing_alerts"] = standing_alerts(s, now)
+    except Exception as exc:  # noqa: BLE001
+        summary["errors"].append(f"stráženie: {exc!r}")
+
     # 3) súhrn, odovzdávka, denná správa (stav cyklu sa zapíše vopred, aby denná správa videla tento cyklus)
     with session_scope() as s:
         set_kv(s, "agent_last_cycle", {"ts": now.isoformat(), "errors": len(summary["errors"])})
@@ -193,6 +203,9 @@ def _periodic(now: datetime, summary: dict) -> None:
                           dedup_key=f"daily:{dkey}", channels=["email"])
             set_kv(s, "daily_report", {"date": dkey})
             purge_old(s)
+            from .strazenie import retention_purge
+
+            summary["retention"] = retention_purge(s, now)
 
 
 def run_agent(once: bool = False) -> int:

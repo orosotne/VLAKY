@@ -227,3 +227,13 @@ def test_navrh_posunu_nastupu_rusnovodica(session, fixed_now):
     rec = evaluate_train(session, t.id, fixed_now, "test")
     assert any("Posunúť nástup rušňovodiča" in r for r in rec.reasons)
     assert "suggested_start" in rec.crew
+
+
+def test_koncepty_sprav(session, fixed_now):
+    seed_borders(session)
+    t = _train(session, fixed_now, customer="Zákazník Z (fiktívny)", weight_t=1500, length_m=500)
+    rec = evaluate_train(session, t.id, fixed_now, "test")
+    drafts = rec.path_proposal["drafts"]
+    assert "objednávka ad hoc trasy" in drafts["zsr_path_request"] and "54321" in drafts["zsr_path_request"]
+    assert "Čadca" in drafts["zsr_path_request"] and "Košice" in drafts["zsr_path_request"]
+    assert "Zákazník Z" in drafts["customer"] and "NEODOSIELA" in drafts["customer"]
