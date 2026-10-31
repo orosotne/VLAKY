@@ -102,10 +102,11 @@ class Params:
     cost_unplanned_hold: float = 800.0
     cost_stuck: float = 3000.0
     cost_crew_relief: float = 1200.0
-    # Čata [min]
-    crew_max_duty_min: float = 720.0
-    crew_prep_min: float = 60.0
-    crew_relief_delay_min: float = 120.0
+    # Rušňovodič / čata [min]
+    crew_max_duty_min: float = 780.0      # max. 13 h pracovného času na rušni (zadanie dispečera)
+    crew_prep_min: float = 60.0           # nástup: prevzatie rušňa, skúška bŕzd (počíta sa do smeny)
+    crew_post_min: float = 30.0           # po príchode: odstavenie a odovzdanie rušňa (počíta sa do smeny)
+    crew_relief_delay_min: float = 120.0  # zdržanie pri mimoriadnej výmene rušňovodiča
     # Výpočet
     samples: int = 4000
     seed: int = 42
@@ -160,6 +161,41 @@ def break_even_wait_hours(p: Params) -> float:
     """
     diff = p.cost_wait_ready_per_h - p.cost_stabled_per_h
     return math.inf if diff <= 0 else p.cost_stable_fixed / diff
+
+
+def crew_check(shift_start: float, now: float, remaining_p50: float, remaining_p90: float,
+               p: Params) -> dict:
+    """Kontrola pracovnej doby rušňovodiča (limit crew_max_duty_min, predvolene 13 h).
+
+    shift_start   - začiatok zmeny (nástup, prevzatie rušňa) [min od t0]
+    now           - aktuálny čas [min od t0]
+    remaining_p50 - zostávajúci čas jazdy do cieľa alebo miesta výmeny, medián [min]
+    remaining_p90 - to isté, 90. percentil [min]
+
+    Do pracovného času sa ráta aj ukončenie po príchode (crew_post_min).
+    ČERVENÁ: aj pri bežnom priebehu (P50) by rušňovodič prekročil limit.
+    ORANŽOVÁ: pri zlom priebehu (P90) by prekročil limit, alebo by mu ostalo
+    menej ako crew_buffer_min - treba pripraviť výmenu.
+    """
+    limit = shift_start + p.crew_max_duty_min
+    end50 = now + remaining_p50 + p.crew_post_min
+    end90 = now + remaining_p90 + p.crew_post_min
+    if end50 > limit:
+        status = CERVENA
+    elif end90 > limit - p.crew_buffer_min:
+        status = ORANZOVA
+    else:
+        status = ZELENA
+    return {
+        "status": status,
+        "worked_min": now - shift_start,
+        "left_min": limit - now,
+        "end_p50": end50,
+        "end_p90": end90,
+        "limit": limit,
+        # najneskorší čas, keď musí nový rušňovodič prevziať vlak (vrátane odovzdania)
+        "relieve_by": limit - p.crew_post_min,
+    }
 
 
 def _lognormal(seg: Segment, z: float) -> float:
@@ -228,7 +264,8 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
                         t = w_end
                         moved = True
             t += travel
-        duty = t - duty_start
+        # Pracovný čas rušňovodiča: od nástupu (príprava pred odchodom) po odovzdanie rušňa.
+        duty = t + p.crew_post_min - duty_start
         relief = duty > p.crew_max_duty_min
         if relief:
             t += p.crew_relief_delay_min
@@ -441,6 +478,15 @@ def main() -> None:
     rec3 = recommend([primary, detour], now=6 * h, ready=6 * h + 30, deadline=deadline, p=p,
                      horizon_min=12 * h, step_min=10, allocated_departures=[5 * h + 30])
     _print("SCENÁR 3: pripravený až o 06:30, obchádzka je možná", rec3, shown)
+
+    # 4) Pracovná doba rušňovodiča (limit 13 h vrátane prípravy a odovzdania rušňa).
+    print("=" * 100)
+    print("SCENÁR 4: rušňovodič nastúpil o 04:00, je 14:00, do cieľa zostáva P50 2 h 10 min, "
+          "P90 2 h 50 min")
+    c = crew_check(shift_start=4 * h, now=14 * h, remaining_p50=130, remaining_p90=170, p=p)
+    print(f"  odpracované {c['worked_min'] / 60:.1f} h, do limitu {c['left_min'] / 60:.1f} h, "
+          f"limit {hhmm(c['limit'])}, koniec P50 {hhmm(c['end_p50'])}, P90 {hhmm(c['end_p90'])}")
+    print(f"  STAV: {c['status']} - vystriedať najneskôr o {hhmm(c['relieve_by'])}")
 
 
 if __name__ == "__main__":

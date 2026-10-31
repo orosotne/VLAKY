@@ -1,6 +1,6 @@
 # Časové rezervy a rozhodovanie: vypraviť, počkať, odstaviť, presmerovať
 
-Tento dokument vysvetľuje pravidlá, ktoré má aplikácia používať (sekcia 8 v `PROMPT.md`). Presne ich implementuje `referencia/rozhodovanie.py`. Všetky čísla sú **návrh na začiatok** a treba ich nastaviť podľa vašich dát (kapitola 8).
+Tento dokument vysvetľuje pravidlá, ktoré má aplikácia používať (sekcia 9 v `PROMPT.md`). Presne ich implementuje `referencia/rozhodovanie.py`. Všetky čísla sú **návrh na začiatok** a treba ich nastaviť podľa vašich dát (kapitola 9).
 
 ## Zhrnutie na jednu obrazovku
 
@@ -9,13 +9,14 @@ Tento dokument vysvetľuje pravidlá, ktoré má aplikácia používať (sekcia 
 | Rezerva pred výlukou | 30 min | Úsek s výlukou musí byť opustený aspoň 30 min pred jej začiatkom. |
 | Rezerva po výluke | 30 min | Do úseku vstúpiť najskôr 30 min po *plánovanom* konci výluky. |
 | Rezerva voči termínu | 60 min | Plánovaný príchod (medián) aspoň 60 min pred termínom zákazníka. |
-| Rezerva v smene čaty | 60 min | Aj „zlá“ jazda (90. percentil) skončí aspoň 60 min pred limitom smeny. |
+| Pracovný čas rušňovodiča | max. 13 h | Od nástupu (príprava) po odovzdanie rušňa. |
+| Rezerva do limitu 13 h | 60 min | Aj „zlá“ jazda (90. percentil) skončí aspoň 60 min pred limitom. |
 | Spoľahlivosť pre ZELENÚ | 90 % | Aspoň 90 zo 100 takýchto jázd príde včas. |
 | Bod zlomu čakať/odstaviť | 5 h | Pri dlhšom čakaní je lacnejšie vlak odstaviť (pri vzorových nákladoch). |
 
 **Semafor:** ZELENÁ = vypraviť · ORANŽOVÁ = len s potvrdením dispečera · ČERVENÁ = nevypravovať.
 
-**Rozhodnutia:** VYPRAVIŤ teraz · POČKAŤ (vlak stojí pripravený) · ODSTAVIŤ (dlhšie čakanie, čata sa uvoľní) · PRESMEROVAŤ (iná trasa) · ESKALOVAŤ (nič nie je bezpečné → ŽSR a zákazník).
+**Rozhodnutia:** VYPRAVIŤ teraz · POČKAŤ (vlak stojí pripravený) · ODSTAVIŤ (dlhšie čakanie, rušňovodič sa uvoľní) · PRESMEROVAŤ (iná trasa) · ESKALOVAŤ (nič nie je bezpečné → ŽSR a zákazník).
 
 ---
 
@@ -35,12 +36,14 @@ Pevná rezerva (napr. vždy 60 min) je na jednej trati zbytočne veľká a na in
 | Pred výlukou (`buffer_before_closure_min`) | 30 min | Výluka začína načas a ŽSR nepustí vlak do úseku, ktorý by nestihol opustiť. Meškanie vlaku pred úsekom by inak znamenalo státie pred výlukou. | 90. percentil odchýlky príchodu vlakov k úseku oproti plánu. |
 | Po výluke (`buffer_after_closure_min`) | 30 min | Výluky sa niekedy predĺžia, po výluke býva pomalá jazda a čakajú aj iné vlaky. | Rozdelenie skutočného konca výluk oproti plánu (P90) + čas na rozjazd prevádzky. |
 | Termín (`deadline_buffer_min`) | 60 min | Rezerva na koniec cesty (vlečka, posun, prevzatie zákazníkom). | P90 meškania na danej relácii. |
-| Čata (`crew_buffer_min`) | 60 min | Vlak nesmie zostať stáť bez rušňovodiča – to je jedna z najdrahších situácií. | P90 skutočnej dĺžky smien na relácii. |
+| Limit pracovného času rušňovodiča (`crew_max_duty_min`) | 780 min (13 h) | Rušňovodič nesmie prekročiť 13 h pracovného času na rušni (od nástupu po odovzdanie rušňa). | Podľa predpisov a kolektívnej zmluvy; overiť, čo presne sa započítava. |
+| Rezerva do limitu (`crew_buffer_min`) | 60 min | Vlak nesmie zostať stáť bez rušňovodiča – to je jedna z najdrahších situácií. | P90 skutočnej dĺžky zmien na relácii. |
+| Ukončenie po príchode (`crew_post_min`) | 30 min | Odstavenie a odovzdanie rušňa sa ráta do pracovného času. | Podľa vašich interných noriem. |
 | Tolerancia trasy (`path_tolerance_min`) | 15 min | Do akej odchýlky od pridelenej trasy ešte nie je potrebná nová trasa. | Podľa pravidiel ŽSR a vašej praxe. |
 | Lehota na novú trasu (`new_path_lead_min`) | 180 min | Ad hoc trasu nemožno získať okamžite. | Podľa lehôt ŽSR a skutočných časov vybavenia vašich žiadostí. |
-| Príprava čaty (`crew_prep_min`) | 60 min | Prevzatie rušňa, skúška bŕzd a ďalšie úkony pred odchodom – započítava sa do smeny. | Podľa vašich interných noriem. |
+| Príprava rušňovodiča (`crew_prep_min`) | 60 min | Prevzatie rušňa, skúška bŕzd a ďalšie úkony pred odchodom – započítava sa do pracovného času. | Podľa vašich interných noriem. |
 
-**Úkony počas jazdy** (skúška bŕzd, technická prehliadka vozňov, výmena rušňa alebo čaty, úkony na hraničnom priechode) zadávajte ako súčasť jazdnej doby dotknutého úseku. Ich typické trvanie (P50/P90) treba nastaviť podľa vašich noriem a histórie. Zdroje a orientačné hodnoty sú v `docs/02_ZAVEDENIE_SYSTEMU.md`.
+**Úkony počas jazdy** (preberanie na hraničnom priechode, skúška bŕzd, technická prehliadka vozňov, výmena rušňa alebo rušňovodiča) zadávajte ako súčasť jazdnej doby dotknutého úseku. Ich typické trvanie (P50/P90) treba nastaviť podľa vašich noriem a histórie. Zdroje a orientačné hodnoty sú v `docs/02_ZAVEDENIE_SYSTEMU.md`.
 
 ## 3. Semafor
 
@@ -49,14 +52,14 @@ Aplikácia vyhodnotí každú variantu (odchod v čase X po trase Y):
 - **ČERVENÁ** (nevypravovať), ak platí čokoľvek z tohto:
   - P(včas) < 70 %,
   - P(neplánovaného zadržania pred výlukou) > 10 %,
-  - P(prekročenia smeny čaty) > 10 %,
+  - P(prekročenia 13 h pracovného času rušňovodiča) > 10 %,
   - pred úsekom s výlukou nie je kde čakať (hrozí zablokovanie trate),
   - je porušené tvrdé obmedzenie (trakcia, dĺžka vlaku, nápravové zaťaženie, rozchod, znalosť trate…).
 - **ZELENÁ** (odporúčané), ak platí všetko:
   - P(včas) ≥ 90 %,
   - P(zadržania pred výlukou) ≤ 2 %,
   - medián príchodu je aspoň 60 min pred termínom,
-  - v smene čaty ostáva aspoň 60 min (pri 90. percentile),
+  - rušňovodičovi ostáva aspoň 60 min do limitu 13 h (pri 90. percentile),
   - dáta o polohe a výlukách sú čerstvé.
 - **ORANŽOVÁ:** všetko ostatné. Dá sa vypraviť len s výslovným potvrdením dispečera, ktorý vidí dôvody.
 
@@ -75,14 +78,14 @@ flowchart TD
     F -- "iná trasa" --> J["PRESMEROVAŤ, objednať novú trasu"]
 ```
 
-**Očakávaný náklad varianty** = čakanie alebo odstavenie + jazda (čas × sadzba) + očakávaná pokuta za meškanie + riziko neplánovaného zadržania + riziko zablokovania trate + riziko mimoriadnej výmeny čaty + poplatky (nová trasa, dlhšia trasa).
+**Očakávaný náklad varianty** = čakanie alebo odstavenie + jazda (čas × sadzba) + očakávaná pokuta za meškanie + riziko neplánovaného zadržania + riziko zablokovania trate + riziko mimoriadnej výmeny rušňovodiča + poplatky (nová trasa, dlhšia trasa).
 
-Aplikácia tak vždy porovnáva **istotu** (P(včas), riziko výluky a čaty) s **cenou** (koľko stojí čakanie, obchádzka alebo meškanie). Spoľahlivejšej ZELENEJ variante dá prednosť, aj keď je o niečo drahšia.
+Aplikácia tak vždy porovnáva **istotu** (P(včas), riziko výluky a pracovného času rušňovodiča) s **cenou** (koľko stojí čakanie, obchádzka alebo meškanie). Spoľahlivejšej ZELENEJ variante dá prednosť, aj keď je o niečo drahšia.
 
 ## 5. Čakať, alebo odstaviť? (bod zlomu)
 
 - **Počkať** = vlak stojí pripravený (rušeň, vozne, obsadená koľaj, platná skúška bŕzd). Stojí to `cost_wait_ready_per_h` za hodinu.
-- **Odstaviť** = presun na odstavnú koľaj, uvoľnenie čaty, neskôr nová skúška bŕzd a nová trasa. Jednorazovo `cost_stable_fixed`, potom už len `cost_stabled_per_h` za hodinu.
+- **Odstaviť** = presun na odstavnú koľaj, uvoľnenie rušňovodiča, neskôr nová skúška bŕzd a nová trasa. Jednorazovo `cost_stable_fixed`, potom už len `cost_stabled_per_h` za hodinu.
 
 Odstaviť sa oplatí, ak čakanie potrvá dlhšie ako
 
@@ -101,7 +104,19 @@ Pri výluke na trase aplikácia ukáže **okná bezpečného odchodu**, napríkl
 
 **Bod, odkiaľ niet návratu:** idúci vlak sa nepustí za poslednú dopravňu, kde môže bezpečne čakať (dosť dlhá koľaj), ak nie je isté, že úsek s výlukou stihne opustiť. Lepšie je počkať v stanici s vhodnou koľajou ako zostať stáť na trati alebo v malej dopravni a blokovať ju.
 
-## 7. Fiktívny príklad (vypočítaný referenčnou implementáciou)
+## 7. Pracovný čas rušňovodiča (limit 13 h)
+
+- **Čo sa ráta:** od nástupu na zmenu (prevzatie rušňa, príprava, skúška bŕzd – predvolene 60 min pred odchodom) cez jazdu a čakanie až po odstavenie a odovzdanie rušňa po príchode (predvolene 30 min). Či sa rátajú aj presuny rušňovodiča (napr. cesta na hraničnú stanicu), nastaví dopravca podľa predpisov a kolektívnej zmluvy.
+- **Limit:** 13 h (`crew_max_duty_min` = 780 min), nastaviteľný.
+- **Semafor rušňovodiča:**
+  - ČERVENÁ – limit by prekročil už pri bežnom priebehu jazdy (P50) → výmenu treba naplánovať hneď,
+  - ORANŽOVÁ – limit by prekročil pri horšom priebehu (P90) alebo by mu zostalo menej ako 60 min → pripraviť výmenu,
+  - ZELENÁ – aj pri horšom priebehu ostane aspoň 60 min.
+- **Výstup:** „vystriedať najneskôr o HH:MM“ a návrh dopravne, kde je výmena možná a kam sa náhradný rušňovodič stihne dopraviť.
+- **Pri preberaní na hranici:** ak vlak mešká, rušňovodič na hranici čaká a míňa pracovný čas. Aplikácia preto pri zmene avíza navrhne posunúť nástup rušňovodiča tak, aby mu na jazdu zostal dostatok času.
+- **Pravidlo pre vypravenie:** vlak sa nikdy neodporučí vypraviť (ZELENÁ), ak by rušňovodič limit prekročil. Mimoriadnu výmenu rušňovodiča počas jazdy rozhodovací model započíta ako náklad a zdržanie.
+
+## 8. Fiktívny príklad (vypočítaný referenčnou implementáciou)
 
 > Výluka, časy aj náklady sú **vymyslené**. Ide len o ilustráciu výpočtu. Spustenie: `python3 referencia/rozhodovanie.py`.
 
@@ -131,18 +146,28 @@ Vlak Košice → Žilina, termín u zákazníka **18:00**. Výluka **Poprad-Tatr
 | Trasa | Odchod | Rozhodnutie | Stav | P(včas) | Príchod P50 / P90 | Očak. náklad |
 |---|---|---|---|---|---|---|
 | hlavná | 12:30 | ODSTAVIŤ | ORANŽOVÁ | 97 % | 17:21 / 17:41 | 2 483 € |
-| **obchádzka** | **09:00** | **PRESMEROVAŤ** | **ZELENÁ** | 100 % | 14:33 / 15:01 | **2 553 €** |
+| **obchádzka** | **09:00** | **PRESMEROVAŤ** | **ZELENÁ** | 100 % | 14:33 / 15:01 | **2 552 €** |
 
-→ **PRESMEROVAŤ** cez obchádzku o 09:00. Je síce o 70 € drahšia, ale ZELENÁ a vlak príde takmer o 3 hodiny skôr. Pravidlo „ZELENÁ má prednosť, ak je drahšia najviac o 10 %“ tu rozhodlo v prospech spoľahlivosti.
+→ **PRESMEROVAŤ** cez obchádzku o 09:00. Je síce o 69 € drahšia, ale ZELENÁ a vlak príde takmer o 3 hodiny skôr. Pravidlo „ZELENÁ má prednosť, ak je drahšia najviac o 10 %“ tu rozhodlo v prospech spoľahlivosti.
 
-## 8. Kalibrácia z histórie (postup)
+**Scenár 4 – pracovný čas rušňovodiča**
 
-1. **Zbierať dáta od prvého dňa:** plán verzus skutočnosť po úsekoch (príchod, odchod, prejazd), príčiny zdržaní, skutočné začiatky a konce výluk, dĺžky smien, trvanie úkonov.
+Rušňovodič nastúpil o 04:00, teraz je 14:00. Do cieľa zostáva bežne 2 h 10 min, v horšom prípade 2 h 50 min; odovzdanie rušňa trvá 30 min.
+
+| Odpracované | Do limitu 13 h | Limit | Koniec P50 | Koniec P90 | Stav |
+|---|---|---|---|---|---|
+| 10,0 h | 3,0 h | 17:00 | 16:40 | 17:20 | ORANŽOVÁ |
+
+→ Pri bežnom priebehu to stihne (16:40), pri horšom nie (17:20). Aplikácia upozorní: **pripraviť výmenu, vystriedať najneskôr o 16:30** (17:00 mínus 30 min na odovzdanie rušňa).
+
+## 9. Kalibrácia z histórie (postup)
+
+1. **Zbierať dáta od prvého dňa:** plán verzus skutočnosť po úsekoch a hraničných priechodoch (príchod, odchod, prejazd, prevzatie), príčiny zdržaní, skutočné začiatky a konce výluk, skutočný pracovný čas rušňovodičov, trvanie úkonov.
 2. **Po 4 – 8 týždňoch** (alebo aspoň 30 jazdách na úseku) vypočítať P50 a P90 zdržaní po úsekoch, hraničných priechodoch, dňoch v týždni a denných dobách.
 3. **Mesačne navrhnúť nové hodnoty** rezerv a zdržaní. Schvaľuje ich vedúci dispečingu a platia od dátumu (audit).
 4. **Kontrola kalibrácie:** zo ZELENÝCH rozhodnutí má prísť včas aspoň 90 % vlakov. Ak je to menej, rezervy sú malé. Ak takmer 100 % a vlaky často zbytočne čakajú, rezervy sú príliš veľké.
-5. **Náklady:** vzorové sadzby v `PROMPT.md` nahradiť skutočnými (rušeň, čata, vozne, zmluvné pokuty). Bez nich je porovnanie variantov len orientačné.
+5. **Náklady:** vzorové sadzby v `PROMPT.md` nahradiť skutočnými (rušeň, rušňovodič, vozne, zmluvné pokuty). Bez nich je porovnanie variantov len orientačné.
 
-## 9. Čo rozhoduje dopravca a čo ŽSR
+## 10. Čo rozhoduje dopravca a čo ŽSR
 
 Dopravca rozhoduje o **pripravenosti** vlaku, o tom, či vlak **použije pridelenú trasu**, či požiada o **novú trasu** alebo o **zrušenie trasy**, a o tom, či vlak **odstaví**. Samotnú jazdu vlaku po sieti, poradie vlakov a povolenie odchodu riadi **ŽSR**. Aplikácia preto odporúča kroky dopravcu a pripravuje podklady na dohodu so ŽSR a so zákazníkom. Riadenie dopravy nenahrádza.

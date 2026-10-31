@@ -11,8 +11,8 @@ from dataclasses import fields
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from rozhodovanie import (  # noqa: E402
-    CERVENA, ODSTAVIT, POCKAT, PRESMEROVAT, VYPRAVIT, ZELENA, ESKALOVAT,
-    Closure, Params, Route, Segment, break_even_wait_hours, evaluate, recommend)
+    CERVENA, ODSTAVIT, ORANZOVA, POCKAT, PRESMEROVAT, VYPRAVIT, ZELENA, ESKALOVAT,
+    Closure, Params, Route, Segment, break_even_wait_hours, crew_check, evaluate, recommend)
 
 FAST = dict(samples=300)
 # Takmer deterministické zdržanie (medián 0,01 min) - na testy presných časov.
@@ -100,6 +100,25 @@ class TestRozhodovanie(unittest.TestCase):
         rec = recommend([main, alt], now=0, ready=240, deadline=900, p=p, horizon_min=240)
         self.assertEqual(rec.decision, PRESMEROVAT)
         self.assertTrue(rec.chosen.needs_new_path)
+
+    def test_pracovna_doba_rusnovodica_13h(self):
+        p = Params()
+        self.assertEqual(p.crew_max_duty_min, 13 * 60)
+        # nástup 04:00 -> limit 17:00; ukončenie po príchode 30 min sa ráta do smeny
+        ok = crew_check(240, 600, remaining_p50=120, remaining_p90=150, p=p)      # P90 koniec 13:00
+        self.assertEqual(ok["status"], ZELENA)
+        warn = crew_check(240, 840, remaining_p50=130, remaining_p90=170, p=p)    # P90 koniec 17:20
+        self.assertEqual(warn["status"], ORANZOVA)
+        self.assertEqual(warn["relieve_by"], 1020 - 30)
+        over = crew_check(240, 840, remaining_p50=160, remaining_p90=200, p=p)    # P50 koniec 17:10
+        self.assertEqual(over["status"], CERVENA)
+
+    def test_dlha_jazda_prekroci_smenu(self):
+        # Jazda 12 h + príprava 1 h + ukončenie 0,5 h > 13 h -> mimoriadna výmena = ČERVENÁ
+        r = Route("A-B", (Segment("A-B", 720, 1, 3),))
+        ev = evaluate(r, depart=60, ready=60, deadline=5000, p=Params(**FAST))
+        self.assertEqual(ev.p_crew_relief, 1)
+        self.assertEqual(ev.status, CERVENA)
 
     def test_nic_bezpecne_eskalovat(self):
         r = Route("A-B", (Segment("A-B", 600, 5, 20),))

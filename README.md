@@ -2,11 +2,15 @@
 
 Návrh aplikácie pre dispečera nákladného železničného dopravcu. Aplikácia má:
 
-- v reálnom čase ukazovať, kde sú vlaky na Slovensku,
-- priebežne čítať e-maily (výluky, trasy, zmeny) a viesť z nich register,
+- na **živej mape Slovenska** ukazovať, kde presne sú vlaky na trati,
+- sledovať **preberanie vlakov na vstupných hraničných priechodoch SR** (Kúty, Rajka, Štúrovo, Čadca, Čierna nad Tisou a ďalšie),
+- priebežne čítať e-maily (výluky, trasy, zmeny, avíza) a viesť z nich register,
+- strážiť **pracovný čas rušňovodiča (najviac 13 h)** a včas navrhnúť výmenu,
 - navrhovať najvhodnejší spôsob prepravy z A do B s ohľadom na výluky a meškania,
 - vyhodnocovať, či vlak stihne termín,
 - odporúčať, kedy vlak **vypraviť**, kedy **počkať**, **odstaviť** alebo **presmerovať**.
+
+Celý popis toho, čo bude softvér robiť (bez technických detailov), je v [`docs/00_CO_BUDE_SOFTVER_ROBIT.md`](docs/00_CO_BUDE_SOFTVER_ROBIT.md).
 
 Repozitár zatiaľ obsahuje **zadanie (prompt), podklady na zavedenie a spustiteľnú referenciu rozhodovacích pravidiel**, nie hotovú aplikáciu.
 
@@ -14,6 +18,7 @@ Repozitár zatiaľ obsahuje **zadanie (prompt), podklady na zavedenie a spustite
 
 | Súbor | Na čo slúži |
 |---|---|
+| [`docs/00_CO_BUDE_SOFTVER_ROBIT.md`](docs/00_CO_BUDE_SOFTVER_ROBIT.md) | **Čo bude softvér robiť** – celý príbeh vlaku od objednávky po doručenie, zrozumiteľne. |
 | [`PROMPT.md`](PROMPT.md) | **Hlavný prompt** pre AI nástroj na vývoj softvéru alebo pre dodávateľa: kompletné zadanie aplikácie. |
 | [`PROMPT_ASISTENT.md`](PROMPT_ASISTENT.md) | Kratší prompt pre AI asistenta na každodennú prácu hneď teraz (e-maily → výluky → semafor vlakov). |
 | [`docs/01_CO_POTREBUJEM.md`](docs/01_CO_POTREBUJEM.md) | Kontrolný zoznam podkladov, prístupov a rozhodnutí. |
