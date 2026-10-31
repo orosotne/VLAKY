@@ -230,6 +230,9 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 .issues-title { margin: .2rem 0; font-weight: 700; }
 .issues-warn { color: var(--orange); }
 .reject-form { margin-top: 1rem; padding-top: .8rem; border-top: 1px dashed var(--border); }
+.auto-item { border-top: 1px solid var(--border); padding: .7rem 0; }
+.auto-head { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.reject-inline input { min-width: 14rem; }
 .event-form .grid-2 { gap: 0 .8rem; }
 
 /* ------------------------------------------------------------------ odporúčanie */
@@ -340,6 +343,19 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 .vm.ring-oranzova .vm-dot { border-color: #f08c00; }
 .vm.ring-cervena .vm-dot { border-color: #e03131; }
 .vm.anchor .vm-label { font-style: italic; }
+.vm.estimate { opacity: .72; }
+.vm.estimate .vm-dot { border-style: dashed; }
+.vm.estimate .vm-label { font-style: italic; }
+.tb-layers { position: relative; }
+.tb-layers > summary { list-style: none; }
+.tb-layers > summary::-webkit-details-marker { display: none; }
+.tb-layers-box { position: absolute; z-index: 20; top: 110%; left: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: .5rem .7rem; box-shadow: var(--shadow); display: grid; gap: .35rem; min-width: 17rem; font-size: .88rem; }
+.lg-route { background: #00b4d8; }
+.lg-detour { background: #f57c00; }
+.lg-trail { background: #6a1b9a; }
+.lg-place { background: #2e7d32; }
+.lg-siding { background: #8d6e63; }
+.lg-estimate { opacity: .7; border: 2px dashed #fff; }
 .vm.selected .vm-label { outline: 2px solid #0b5cad; }
 .vm:focus-visible { outline: 3px solid var(--focus); border-radius: 6px; }
 .hm { display: flex; align-items: center; gap: 4px; pointer-events: auto; }

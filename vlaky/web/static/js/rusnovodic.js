@@ -1,55 +1,85 @@
-/* Aplikácia rušňovodiča: hlásenia (nástup, pripravený, odchod, problém) a poloha každých 30 s. */
+/* Aplikácia rušňovodiča: hlásenia (nástup, pripravený, odchod, problém) a poloha každých 30 s.
+   Token odkazu je vo fragmente URL (#t=…) – server ho v adrese nikdy nedostane (nie je v záznamoch servera);
+   posiela sa len v tele požiadaviek. Uloží sa v zariadení, aby aplikácia fungovala aj po otvorení z plochy. */
 (function () {
   'use strict';
   var KEY = 'vlaky-rusnovodic-token';
   var root = document.getElementById('rusnovodic');
+  if (!root) { return; }
 
   if ('serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('/rusnovodic-sw.js', { scope: '/rusnovodic' }).catch(function () { /* bez offline režimu */ });
   }
 
-  // ------------------------------------------------------------ neplatný odkaz: ponúknuť uložený odkaz
-  if (!root) {
-    var invalid = document.getElementById('rusnovodic-neplatny');
-    var stored = '';
-    try { stored = localStorage.getItem(KEY) || ''; } catch (e) { stored = ''; }
-    if (invalid && stored) {
-      if (invalid.getAttribute('data-token') === stored) {
-        try { localStorage.removeItem(KEY); } catch (e) { /* nič */ }
-      } else {
-        var box = document.getElementById('ulozeny-odkaz');
-        var btn = document.getElementById('btn-ulozeny');
-        if (box && btn) {
-          box.hidden = false;
-          btn.addEventListener('click', function () { window.location.href = '/rusnovodic?t=' + encodeURIComponent(stored); });
-        }
-      }
+  function store(t) { try { if (t) { localStorage.setItem(KEY, t); } else { localStorage.removeItem(KEY); } } catch (e) { /* bez úložiska */ } }
+  function stored() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
+
+  /** Token z fragmentu (#t=…), zo starého tvaru odkazu (?t=…) alebo uložený v zariadení. */
+  function takeToken() {
+    var t = '';
+    var m = (window.location.hash || '').match(/[#&]t=([^&]+)/);
+    if (m) { t = decodeURIComponent(m[1]); }
+    var q = new URLSearchParams(window.location.search).get('t');
+    if (!t && q) { t = q; }
+    if (t) {
+      store(t);
+      if (window.history && window.history.replaceState) { window.history.replaceState(null, '', window.location.pathname); }
+      return t;
     }
-    return;
+    return stored();
   }
 
-  var token = root.getAttribute('data-token');
-  try { localStorage.setItem(KEY, token); } catch (e) { /* bez úložiska */ }
+  var token = takeToken();
   var statusEl = document.getElementById('driver-status');
   var gpsStatus = document.getElementById('gps-status');
 
+  function section(id, show) { var e = document.getElementById(id); if (e) { e.hidden = !show; } }
   function show(text, error) {
     statusEl.textContent = text;
     statusEl.classList.toggle('err', !!error);
   }
-
   function post(url, body) {
     return fetch(url, {
-      method: 'POST', credentials: 'omit',
+      method: 'POST', credentials: 'omit', cache: 'no-store',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body)
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (data) {
-        if (!r.ok) { throw new Error(data.detail || ('Chyba ' + r.status)); }
+        if (!r.ok) { var err = new Error(data.detail || ('Chyba ' + r.status)); err.status = r.status; throw err; }
         return data;
       });
     });
   }
+  function invalid() {
+    store('');
+    section('driver-loading', false);
+    section('rusnovodic', false);
+    section('rusnovodic-chyba', false);
+    section('rusnovodic-neplatny', true);
+  }
+
+  function load() {
+    if (!token) { invalid(); return; }
+    section('driver-loading', true);
+    section('rusnovodic-chyba', false);
+    post('/api/rusnovodic/info', { t: token }).then(function (info) {
+      document.getElementById('d-cislo').textContent = info.train.number;
+      document.getElementById('d-relacia').textContent = info.train.relation;
+      document.getElementById('d-rusnovodic').textContent = info.driver_name
+        ? info.driver_name + (info.shift_start_text ? ' · nástup ' + info.shift_start_text : '') : '';
+      document.getElementById('d-platnost').textContent = info.valid_until_text || '—';
+      document.title = 'Vlak ' + info.train.number + ' · Agent dispečer';
+      section('driver-loading', false);
+      section('rusnovodic', true);
+    }).catch(function (err) {
+      if (err.status === 403) { invalid(); return; }
+      section('driver-loading', false);
+      section('rusnovodic-chyba', true);
+    });
+  }
+  var retry = document.getElementById('btn-znova');
+  if (retry) { retry.addEventListener('click', load); }
+  load();
 
   // ------------------------------------------------------------ hlásenia
   root.querySelectorAll('[data-typ]').forEach(function (btn) {
@@ -66,6 +96,7 @@
         if (typ === 'problem') { document.getElementById('problem-text').value = ''; }
         if (navigator.vibrate) { navigator.vibrate(80); }
       }).catch(function (err) {
+        if (err.status === 403) { invalid(); return; }
         show('Neodoslané: ' + err.message + ' Skúste znova alebo volajte dispečing.', true);
       }).then(function () { btn.disabled = false; });
     });
@@ -91,6 +122,7 @@
       gpsStatus.textContent = 'Poloha odoslaná o ' + when + ' (presnosť ' + (body.accuracy_m || '?') + ' m' +
         (data.nearest_station ? ', pri ' + data.nearest_station : '') + ').';
     }).catch(function (err) {
+      if (err.status === 403) { stopGps(); invalid(); return; }
       gpsStatus.textContent = 'Polohu sa nepodarilo odoslať: ' + err.message;
     });
   }

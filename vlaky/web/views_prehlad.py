@@ -19,7 +19,7 @@ from ..db import session_scope
 from ..models import (Email, ExtractedEvent, Recommendation, ShiftHandoverReport, Train)
 from .auth import csrf_form, require
 from .common import EVENT_KIND, FormReader, REC_STATE, TRAIN_STATUS, log, parse_iso, redirect, render
-from .data import alerts, borders_list, train_rows
+from .data import alerts, auto_applied_unconfirmed, borders_list, train_rows
 from .prepocet import evaluate_all_bg
 
 router = APIRouter()
@@ -36,8 +36,8 @@ def dashboard(request: Request, user=Depends(view)):
         borders = borders_list(s)
         alert_list = alerts(s)
     config = {"tz": cfg.timezone, "staleMinutes": cfg.position_stale_minutes, "role": user.role,
-              "canOperate": user.can("operate"), "borders": borders, "tiles": "osm",
-              "statusLabels": TRAIN_STATUS}
+              "canOperate": user.can("operate"), "borders": borders, "tileUrl": (cfg.map_tile_url or "").strip(),
+              "tileAttribution": cfg.map_tile_attribution or "", "statusLabels": TRAIN_STATUS}
     return render(request, "dashboard.html", {"trains": trains, "borders": borders, "alerts": alert_list,
                                               "config": config, "wall": request.query_params.get("nastenka") == "1",
                                               "page_class": "page-dashboard"}, user=user)
@@ -158,16 +158,30 @@ def _queue_items(s) -> list:
     return [{"event": e, "email": emails.get(e.email_id), "fields": event_fields(e.data or {})} for e in events]
 
 
+def _auto_items(s) -> list:
+    """Udalosti zapísané automaticky, ktorých výluka je stále „návrh“ – dispečer ich má overiť."""
+    rows = auto_applied_unconfirmed(s)
+    email_ids = {ev.email_id for ev, _c in rows if ev.email_id}
+    emails = {m.id: m for m in s.scalars(select(Email).where(Email.id.in_(email_ids)))} if email_ids else {}
+    return [{"event": ev, "closure": c, "email": emails.get(ev.email_id)} for ev, c in rows]
+
+
+def _confirmable(ev: ExtractedEvent) -> bool:
+    return ev.status == "navrh" or (ev.status == "aplikovane" and ev.confirmed_at is None)
+
+
 @router.get("/fronta", response_class=HTMLResponse)
 def queue_page(request: Request, user=Depends(view)):
     with session_scope() as s:
         items = _queue_items(s)
+        auto_items = _auto_items(s)
         total = s.scalar(select(func.count(ExtractedEvent.id)).where(ExtractedEvent.needs_confirmation.is_(True),
                                                                       ExtractedEvent.status == "navrh")) or 0
         recent = list(s.scalars(select(ExtractedEvent).where(ExtractedEvent.status != "navrh",
                                                              ExtractedEvent.confirmed_at.is_not(None))
                                 .order_by(ExtractedEvent.confirmed_at.desc()).limit(15)))
-        return render(request, "fronta.html", {"items": items, "total": total, "recent": recent,
+        return render(request, "fronta.html", {"items": items, "total": total + len(auto_items), "recent": recent,
+                                               "auto_items": auto_items,
                                                "threshold": settings().confirm_threshold}, user=user)
 
 
@@ -182,7 +196,7 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
         ev = s.get(ExtractedEvent, event_id)
         if ev is None:
             raise HTTPException(404, "Udalosť neexistuje.")
-        if ev.status != "navrh":
+        if not _confirmable(ev):
             return redirect("/fronta", "Udalosť už bola spracovaná.", "info")
         data = dict(ev.data or {})
         kind = ev.kind
@@ -223,7 +237,7 @@ def queue_reject(event_id: int, request: Request, background: BackgroundTasks, u
         ev = s.get(ExtractedEvent, event_id)
         if ev is None:
             raise HTTPException(404, "Udalosť neexistuje.")
-        if ev.status != "navrh":
+        if not _confirmable(ev):
             return redirect("/fronta", "Udalosť už bola spracovaná.", "info")
     try:
         posta = _posta()

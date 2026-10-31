@@ -4,7 +4,6 @@ from __future__ import annotations
 import math
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -13,10 +12,11 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..cas import ensure_utc, fmt, local, now_utc, tz
 from ..config import settings
-from ..models import (AgentHealth, BorderCrossing, Closure, DriverShift, ExtractedEvent, Handover, Notification,
-                      PositionReport, Recommendation, Train)
+from ..models import (AgentHealth, BorderCrossing, Closure, DriverShift, ExtractedEvent, Handover, LocationInfo,
+                      Notification, PositionReport, Recommendation, Train)
 from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, POSITION_SOURCE, TRAIN_STATUS, crew_color,
                      current_params, iso, log, parse_iso)
+from .trasy import RouteInfo, build_route_info, detour_info, estimate_position, hours_window, trail_feature
 
 URGENCY = {"ČERVENÁ": 0, "ORANŽOVÁ": 1, None: 2, "ZELENÁ": 3}
 PRIORITY_RANK = {"KRITICKÉ": 0, "DÔLEŽITÉ": 1, "INFO": 2}
@@ -52,15 +52,6 @@ def train_spec(train: Train):
                      systems=systems, length_m=train.length_m)
 
 
-@dataclass
-class RouteInfo:
-    edges: frozenset
-    coords: list               # [[lon, lat], ...]
-    length_km: float
-    minutes: float
-    stations: list             # [{"name", "type", "km", "min"}]
-
-
 _ROUTES: "OrderedDict[tuple, Optional[RouteInfo]]" = OrderedDict()
 _ROUTES_LOCK = threading.Lock()
 _ROUTES_MAX = 512
@@ -70,6 +61,25 @@ def _route_key(train: Train) -> tuple:
     spec = train_spec(train)
     return (train.origin or "", train.destination or "", tuple(train.via or ()), spec.traction, spec.gauge,
             spec.vmax_kmh, spec.systems)
+
+
+def primary_route_name(train: Train) -> str:
+    """Názov hlavnej trasy tak, ako ho používa plánovač (vlaky/planovanie/planovac.py)."""
+    return f"{train.origin} – {train.destination}"
+
+
+def chosen_route(train: Train, rec: Optional[Recommendation]) -> Optional[RouteInfo]:
+    """Trasa zvolenej varianty: obchádzka z návrhu trasy (PRESMEROVAŤ), inak hlavná trasa."""
+    chosen = (rec.chosen if rec is not None else None) or {}
+    proposal = (rec.path_proposal if rec is not None else None) or {}
+    name = chosen.get("route") or proposal.get("route") or ""
+    if name and name != primary_route_name(train) and len(proposal.get("stations") or []) >= 2:
+        net = get_network()
+        if net is not None:
+            info = detour_info(net, train_spec(train), proposal, name)
+            if info is not None:
+                return info
+    return route_info(train)
 
 
 def route_info(train: Train, compute: bool = True) -> Optional[RouteInfo]:
@@ -88,10 +98,7 @@ def route_info(train: Train, compute: bool = True) -> Optional[RouteInfo]:
     try:
         r = net.route(train.origin, train.destination, train_spec(train), via=[v for v in (train.via or []) if v])
         if r is not None:
-            info = RouteInfo(frozenset(r.edges), net.geometry(r), round(r.length_m / 1000.0, 1),
-                             round(r.minutes, 1),
-                             [{"name": st.name, "type": st.type, "km": km, "min": mins}
-                              for st, km, mins in r.stations])
+            info = build_route_info(net, r, primary_route_name(train))
     except Exception:  # noqa: BLE001
         log.exception("Trasu vlaku %s sa nepodarilo vypočítať", train.number)
         info = None
@@ -177,6 +184,7 @@ def closure_feature(c: Closure, spans: list, now: datetime) -> dict:
             "len_elektricka": bool(c.electric_only or c.kind == "trakcne_vedenie"), "rychlost": c.speed_kmh,
             "zdroj": c.source, "cislo": c.external_ref, "poznamka": c.note,
             "aktivna": active_now, "najblizsie_od": iso(nxt), "pomala": c.kind == "pomala_jazda",
+            "nepotvrdena": c.status == "navrh", "udalost_id": c.source_event_id,
             "intervaly": [[iso(a), iso(b)] for a, b in spans[:20]],
         },
     }
@@ -399,6 +407,16 @@ def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = 
         deadline = ensure_utc(t.deadline_utc)
         slack = round((deadline - arr50).total_seconds() / 60.0) if deadline and arr50 else None
         running = t.status in ("v_jazde", "prevzaty", "odstaveny")
+        estimate = None
+        last = positions.get(t.id, [None])[0]
+        if t.status == "v_jazde" and pos is not None and not pos["stale"] and last is not None:
+            info = route_info(t)
+            if info is not None:
+                try:
+                    estimate = estimate_position(info, last, pos["age_min"], cfg.position_stale_minutes,
+                                                 (rec.path_proposal if rec is not None else None) or {})
+                except Exception:  # noqa: BLE001 – odhad je len doplnok
+                    log.exception("Odhad polohy vlaku %s zlyhal", t.number)
         route = route_info(t) if closure_sets else None
         route_closures = []
         if route is not None:
@@ -432,7 +450,7 @@ def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = 
             "locomotive": ({"id": t.locomotive.id, "number": t.locomotive.number, "type": t.locomotive.type,
                             "traction": t.locomotive.traction} if t.locomotive else None),
             "driver": driver, "ready_utc": iso(t.ready_utc), "planned_departure_utc": iso(t.planned_departure_utc),
-            "deadline_utc": iso(t.deadline_utc), "position": pos,
+            "deadline_utc": iso(t.deadline_utc), "position": pos, "estimate": estimate,
             "anchor": None if pos is not None else _anchor(t, ho),
             "recommendation": _rec_dict(rec), "color": color, "display_color": "SIVÁ" if stale else (color or "SIVÁ"),
             "stale": stale, "eta_p50": iso(arr50), "eta_p90": iso(arr90), "slack_min": slack,
@@ -457,6 +475,26 @@ def train_detail(s: Session, train_id: int, now: Optional[datetime] = None) -> O
     return rows[0] if rows else None
 
 
+# ---------------------------------------------------------------- fronta na potvrdenie
+def auto_applied_unconfirmed(s: Session, limit: int = 100) -> list:
+    """Udalosti zapísané automaticky (bez potvrdenia), ktorých výluka je stále len „návrh“."""
+    q = (select(ExtractedEvent, Closure).join(Closure, Closure.source_event_id == ExtractedEvent.id)
+         .where(ExtractedEvent.status == "aplikovane", ExtractedEvent.confirmed_at.is_(None),
+                Closure.status == "navrh")
+         .order_by(ExtractedEvent.created_at, ExtractedEvent.id).limit(limit))
+    return list(s.execute(q).all())
+
+
+def pending_queue_count(s: Session) -> int:
+    waiting = s.scalar(select(func.count(ExtractedEvent.id)).where(
+        ExtractedEvent.needs_confirmation.is_(True), ExtractedEvent.status == "navrh")) or 0
+    auto = s.scalar(select(func.count(func.distinct(ExtractedEvent.id)))
+                    .select_from(ExtractedEvent).join(Closure, Closure.source_event_id == ExtractedEvent.id)
+                    .where(ExtractedEvent.status == "aplikovane", ExtractedEvent.confirmed_at.is_(None),
+                           Closure.status == "navrh")) or 0
+    return waiting + auto
+
+
 # ---------------------------------------------------------------- upozornenia (pre dashboard)
 def alerts(s: Session, now: Optional[datetime] = None, limit: int = 30) -> list:
     """Upozornenia: notifikácie agenta (24 h) + odvodené (fronta, stará poloha, pracovný čas, heartbeat)."""
@@ -465,8 +503,7 @@ def alerts(s: Session, now: Optional[datetime] = None, limit: int = 30) -> list:
     params = current_params(s, now)
     out: list = []
 
-    queue = s.scalar(select(func.count(ExtractedEvent.id)).where(
-        ExtractedEvent.needs_confirmation.is_(True), ExtractedEvent.status == "navrh")) or 0
+    queue = pending_queue_count(s)
     if queue:
         out.append({"priority": "DÔLEŽITÉ", "ts": iso(now), "text": f"Na potvrdenie čaká {queue} "
                     f"{'udalosť' if queue == 1 else 'udalosti' if queue < 5 else 'udalostí'} z e-mailov.",
@@ -544,6 +581,56 @@ def max_ids(s: Session) -> dict:
         "notifikacia": s.scalar(select(func.max(Notification.id))) or 0,
         "vyluka": f"{cl[0] or 0}:{cl[2] or 0}:{iso(cl[1]) or ''}",
     }
+
+
+# ---------------------------------------------------------------- vrstvy mapy: miesta na čakanie/odstavenie, vlečky
+def _point(lon: float, lat: float, props: dict) -> dict:
+    return {"type": "Feature", "geometry": {"type": "Point", "coordinates": [round(lon, 6), round(lat, 6)]},
+            "properties": props}
+
+
+def waiting_places_geojson(s: Session) -> dict:
+    """Zriaďovacie stanice (OSM) + dopravne z evidencie dispečingu (LocationInfo) s možnosťou čakať/odstaviť."""
+    net = get_network()
+    features: dict = {}
+    if net is not None:
+        for st in net.stations:
+            if st.type == "yard" and st.name:
+                features.setdefault(st.name, _point(st.lon, st.lat, {
+                    "name": st.name, "druh": "zriaďovacia stanica", "zdroj": "OpenStreetMap",
+                    "can_wait": None, "can_stable": None, "can_change_crew": None, "max_train_length_m": None,
+                    "note": "", "overene": False}))
+    for li in s.scalars(select(LocationInfo).where((LocationInfo.can_wait.is_(True)) |
+                                                   (LocationInfo.can_stable.is_(True)))):
+        st = net.find_station(li.station) if net is not None else None
+        if st is None:
+            continue
+        props = {"name": st.name, "druh": "dopravňa", "zdroj": "evidencia dispečingu", "can_wait": li.can_wait,
+                 "can_stable": li.can_stable, "can_change_crew": li.can_change_crew,
+                 "max_train_length_m": li.max_train_length_m, "note": li.note or "", "overene": True}
+        if st.name in features:
+            features[st.name]["properties"].update({k: v for k, v in props.items() if k != "druh"})
+        else:
+            features[st.name] = _point(st.lon, st.lat, props)
+    return {"type": "FeatureCollection", "features": list(features.values())}
+
+
+def sidings_geojson() -> dict:
+    net = get_network()
+    if net is None:
+        return {"type": "FeatureCollection", "features": []}
+    return {"type": "FeatureCollection", "features": [
+        _point(st.lon, st.lat, {"name": st.name or "vlečka", "druh": "odbočenie vlečky"})
+        for st in net.stations if st.type == "spur_junction"]}
+
+
+def train_trail(s: Session, train: Train, hours: float, now: Optional[datetime] = None) -> dict:
+    since, until = hours_window(now or now_utc(), hours)
+    points = list(s.scalars(select(PositionReport).where(PositionReport.train_id == train.id,
+                                                         PositionReport.ts_utc >= since,
+                                                         PositionReport.ts_utc <= until)
+                            .order_by(PositionReport.ts_utc, PositionReport.id)))
+    return trail_feature(train.id, train.number, points, since, until)
 
 
 def jsonable(value: Any) -> Any:

@@ -34,12 +34,23 @@
           <option value="">Všetky priechody</option>
           {% for b in borders %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
         </select>
+        <label for="f-zakaznik" class="visually-hidden">Zákazník</label>
+        <select id="f-zakaznik"><option value="">Všetci zákazníci</option></select>
+        <label for="f-relacia" class="visually-hidden">Relácia</label>
+        <select id="f-relacia"><option value="">Všetky relácie</option></select>
       </div>
       <div class="tb-group tb-slider">
         <label for="f-cas">Výluky:</label>
         <input id="f-cas" type="range" min="0" max="3" step="1" value="0" aria-valuetext="teraz">
         <output id="f-cas-out" for="f-cas">teraz</output>
       </div>
+      <details class="tb-layers">
+        <summary class="btn btn-sm">Vrstvy</summary>
+        <div class="tb-layers-box">
+          <label><input type="checkbox" id="v-miesta"> Miesta na čakanie a odstavenie</label>
+          <label><input type="checkbox" id="v-vlecky"> Vlečky</label>
+        </div>
+      </details>
       <div class="tb-group">
         <button type="button" class="btn btn-sm" id="btn-noc" aria-pressed="false" title="Nočný režim (N)">Nočný režim</button>
         <button type="button" class="btn btn-sm" id="btn-nastenka" title="Celá obrazovka pre nástenný monitor (F)">Celá obrazovka</button>
@@ -63,6 +74,10 @@
           <li><span class="lg-dot dot-zelena"></span> ZELENÁ <span class="lg-dot dot-oranzova"></span> ORANŽOVÁ <span class="lg-dot dot-cervena"></span> ČERVENÁ</li>
           <li><span class="lg-dot dot-seda"></span> poloha stará ({{ config.staleMinutes }}+ min) alebo chýba – ETA neistá</li>
           <li><span class="lg-border"></span> hraničný priechod (PPS = pohraničná prechodová stanica)</li>
+          <li><span class="lg-dot dot-seda lg-estimate"></span> odhad polohy medzi správami (prerušovaná spojnica od poslednej správy)</li>
+          <li><span class="lg-line lg-route"></span> trasa vybraného vlaku · <span class="lg-line lg-detour"></span> obchádzka (zvolená varianta)</li>
+          <li><span class="lg-line lg-trail"></span> stopa za 24 h</li>
+          <li><span class="lg-dot lg-place"></span> miesto na čakanie/odstavenie · <span class="lg-dot lg-siding"></span> vlečka</li>
         </ul>
       </details>
     </div>

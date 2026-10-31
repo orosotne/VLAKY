@@ -115,8 +115,42 @@
   </div>
 </article>
 {% else %}
-<section class="card"><p>Fronta je prázdna – všetky udalosti z e-mailov sú spracované.</p></section>
+{% if not auto_items %}<section class="card"><p>Fronta je prázdna – všetky udalosti z e-mailov sú spracované.</p></section>{% endif %}
 {% endfor %}
+
+{% if auto_items %}
+<section class="card" id="automaticky" aria-labelledby="h-automaticky">
+  <h2 id="h-automaticky">Zapísané automaticky – výluka čaká na overenie ({{ auto_items|length }})</h2>
+  <p class="muted small">Tieto udalosti agent zapísal bez potvrdenia (vysoká istota). Výluka je v registri v stave „návrh“ – plánovač s ňou počíta konzervatívne. Potvrďte ju, alebo udalosť zamietnite (zápis sa vráti späť).</p>
+  {% for item in auto_items %}
+  {% set ev = item.event %}{% set c = item.closure %}{% set mail = item.email %}
+  <article class="auto-item" id="udalost-{{ ev.id }}">
+    <div class="auto-head">
+      <strong>{{ EVENT_KIND.get(ev.kind, ev.kind) }}</strong> <span class="muted small">#{{ ev.id }}</span>
+      <span class="badge badge-warn">nepotvrdená</span>
+      <span class="badge">istota {{ ev.confidence|pct }}</span>
+    </div>
+    <p><strong>{{ c.from_station }} – {{ c.to_station }}</strong> · {{ CLOSURE_KIND.get(c.kind, c.kind) }} · {{ c.start_utc|t }} – {{ c.end_utc|t }}{% if c.daily_from %} (denne {{ c.daily_from }}–{{ c.daily_to }}){% endif %}</p>
+    {% if mail %}
+    <details><summary class="small">Originál e-mailu: {{ mail.subject }} ({{ mail.sender }}, {{ mail.received_at|t }})</summary>
+      <pre class="email-body">{{ mail.body_text }}</pre>
+    </details>
+    {% endif %}
+    {% if user.can("operate") %}
+    <div class="inline-fields">
+      <form method="post" action="/fronta/{{ ev.id }}/potvrdit" class="inline">{{ m.csrf() }}<input type="hidden" name="akcia" value="potvrdit"><button type="submit" class="btn btn-primary">Potvrdiť</button></form>
+      <form method="post" action="/fronta/{{ ev.id }}/zamietnut" class="inline-fields reject-inline">{{ m.csrf() }}
+        <label for="dovod-a-{{ ev.id }}" class="visually-hidden">Dôvod zamietnutia</label>
+        <input id="dovod-a-{{ ev.id }}" name="dovod" required maxlength="1000" placeholder="dôvod zamietnutia">
+        <button type="submit" class="btn btn-danger">Zamietnuť</button>
+      </form>
+      <a class="btn btn-ghost" href="/vyluky#vyluka-{{ c.id }}">Register výluk</a>
+    </div>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
 
 {% if recent %}
 <section class="card">

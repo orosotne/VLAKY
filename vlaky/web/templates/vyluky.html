@@ -24,12 +24,12 @@
       <td class="nowrap">{{ c.start_utc|t }} – {{ c.end_utc|t }}{% if row.active %} <span class="badge badge-bad">platí teraz</span>{% elif row.next %}<div class="small muted">najbližšie {{ row.next|t }}</div>{% endif %}</td>
       <td>{% if c.daily_from %}{{ c.daily_from }}–{{ c.daily_to }}{% else %}—{% endif %}</td>
       <td class="small">{% if c.electric_only or c.kind == "trakcne_vedenie" %}len elektrická trakcia{% elif c.kind == "pomala_jazda" %}max {{ c.speed_kmh|num }} km/h{% else %}všetky vlaky{% endif %}</td>
-      <td><span class="badge status-{{ c.status }}">{{ CLOSURE_STATUS.get(c.status, c.status) }}</span>{% if c.version and c.version > 1 %} <span class="muted small">v{{ c.version }}</span>{% endif %}</td>
-      <td class="small">{{ c.source }}{% if c.source_event_id %} <a href="/fronta">#{{ c.source_event_id }}</a>{% endif %}</td>
+      <td><span class="badge status-{{ c.status }}">{{ CLOSURE_STATUS.get(c.status, c.status) }}</span>{% if c.status == "navrh" %} <span class="badge badge-warn">nepotvrdená</span>{% endif %}{% if c.version and c.version > 1 %} <span class="muted small">v{{ c.version }}</span>{% endif %}</td>
+      <td class="small">{{ "e-mail" if c.source == "email" else ("ručne" if c.source == "manual" else c.source) }}{% if c.source_event_id %} <a href="/fronta#udalost-{{ c.source_event_id }}">udalosť #{{ c.source_event_id }}</a>{% endif %}</td>
       <td class="actions-cell">
         {% if user.can("operate") and c.status != "zrusene" %}
         <a class="btn btn-sm" href="/vyluky/{{ c.id }}/upravit">Upraviť</a>
-        {% if c.status == "navrh" %}<form method="post" action="/vyluky/{{ c.id }}/overit" class="inline">{{ m.csrf() }}<button type="submit" class="btn btn-sm btn-primary">Overiť</button></form>{% endif %}
+        {% if c.status == "navrh" %}<form method="post" action="/vyluky/{{ c.id }}/overit" class="inline">{{ m.csrf() }}<button type="submit" class="btn btn-sm btn-primary">Potvrdiť</button></form>{% endif %}
         <form method="post" action="/vyluky/{{ c.id }}/zrusit" class="inline" data-confirm="Naozaj zrušiť výluku {{ c.from_station }} – {{ c.to_station }}?">{{ m.csrf() }}<input type="hidden" name="dovod" value=""><button type="submit" class="btn btn-sm btn-danger">Zrušiť</button></form>
         {% endif %}
       </td>

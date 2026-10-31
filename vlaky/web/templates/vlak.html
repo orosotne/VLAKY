@@ -10,6 +10,7 @@
     <a class="btn" href="/vlaky/{{ t.id }}/upravit">Upraviť</a>
     <form method="post" action="/vlaky/{{ t.id }}/prepocitat" class="inline">{{ m.csrf() }}<button type="submit" class="btn btn-primary">Prepočítať</button></form>
     <form method="post" action="/vlaky/{{ t.id }}/odkaz" class="inline">{{ m.csrf() }}<button type="submit" class="btn">Odkaz pre rušňovodiča</button></form>
+    <form method="post" action="/vlaky/{{ t.id }}/odkaz/zrusit" class="inline" data-confirm="Zrušiť všetky doteraz vydané odkazy pre rušňovodiča vlaku {{ t.number }}?">{{ m.csrf() }}<button type="submit" class="btn btn-ghost">Zrušiť odkazy pre rušňovodiča</button></form>
     {% endif %}
     <a class="btn btn-ghost" href="/?vlak={{ t.id }}">Na mape</a>
   </div>
@@ -18,7 +19,8 @@
 {% if driver_link %}
 <section class="card link-card" aria-labelledby="h-odkaz">
   <h2 id="h-odkaz">Odkaz pre rušňovodiča (platí 24 h)</h2>
-  <p>Pošlite odkaz rušňovodičovi sami (napr. SMS). Agent rušňovodičom nič neposiela. Na stránke zaznamená nástup, pripravenosť, odchod a problém a môže zdieľať polohu.</p>
+  <p>Pošlite odkaz rušňovodičovi sami (napr. SMS). Agent rušňovodičom nič neposiela. Na stránke zaznamená nástup, pripravenosť, odchod a problém a môže zdieľať polohu.
+    Kód odkazu je za znakom „#“, preto sa nedostane do záznamov servera. Pri strate telefónu alebo zmene rušňovodiča použite „Zrušiť odkazy pre rušňovodiča“.</p>
   <div class="inline-fields">
     <label for="odkaz" class="visually-hidden">Odkaz</label>
     <input id="odkaz" type="text" readonly value="{{ driver_link }}" class="mono">

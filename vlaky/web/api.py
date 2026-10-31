@@ -19,11 +19,11 @@ from sqlalchemy import func, select, text
 from ..cas import now_utc
 from ..config import settings
 from ..db import session_scope
-from ..models import Handover, Train
+from ..models import Handover, Recommendation, Train
 from .auth import require
 from .common import iso, log, parse_iso
-from .data import (alerts, borders_list, closures_geojson, get_network, max_ids, route_info, train_detail,
-                   train_rows)
+from .data import (alerts, borders_list, chosen_route, closures_geojson, get_network, max_ids, sidings_geojson,
+                   train_detail, train_rows, train_trail, waiting_places_geojson)
 from .pozicie import PositionIn, RunningEventIn, UnknownStation, ingest_position, ingest_running_event
 
 router = APIRouter()
@@ -63,19 +63,34 @@ def api_train(train_id: int, user=Depends(view)):
 
 @router.get("/api/vlaky/{train_id}/trasa")
 def api_train_route(train_id: int, user=Depends(view)):
+    """Trasa vlaku: zvolená varianta posledného odporúčania (pri PRESMEROVAŤ obchádzka), inak hlavná trasa."""
     with session_scope() as s:
         train = s.get(Train, train_id)
         if train is None:
             raise HTTPException(404, "Vlak neexistuje.")
-        info = route_info(train)
+        rec = s.scalar(select(Recommendation).where(Recommendation.train_id == train_id)
+                       .order_by(Recommendation.id.desc()))
+        info = chosen_route(train, rec)
         number = train.number
     if info is None:
         raise HTTPException(404, "Trasa sa nenašla (dopravňa nie je v registri siete alebo trasa nie je "
                                  "uskutočniteľná pre trakciu a rozchod vlaku).")
     return JSONResponse({"type": "Feature", "geometry": {"type": "LineString", "coordinates": info.coords},
                          "properties": {"train_id": train_id, "number": number, "length_km": info.length_km,
-                                        "minutes": info.minutes, "stations": info.stations}},
-                        media_type="application/geo+json", headers={"Cache-Control": "private, max-age=300"})
+                                        "minutes": info.minutes, "stations": info.stations, "name": info.name,
+                                        "variant": info.variant, "via": info.via}},
+                        media_type="application/geo+json", headers={"Cache-Control": "private, max-age=60"})
+
+
+@router.get("/api/vlaky/{train_id}/stopa")
+def api_train_trail(train_id: int, hodiny: float = 24, user=Depends(view)):
+    """Stopa vlaku: polohy za posledných `hodiny` hodín (1 – 72) ako LineString (priradené ku koľaji)."""
+    with session_scope() as s:
+        train = s.get(Train, train_id)
+        if train is None:
+            raise HTTPException(404, "Vlak neexistuje.")
+        feature = train_trail(s, train, hodiny)
+    return JSONResponse(feature, media_type="application/geo+json")
 
 
 # ---------------------------------------------------------------- sieť
@@ -134,6 +149,21 @@ def api_stations(q: str = "", vsetky: bool = False, limit: int = 15, user=Depend
         if len(out) >= max(1, min(limit, 30)):
             break
     return out
+
+
+@router.get("/api/siet/miesta")
+def api_waiting_places(user=Depends(view)):
+    """Vrstva „Miesta na čakanie a odstavenie“: zriaďovacie stanice + evidencia dispečingu (LocationInfo)."""
+    with session_scope() as s:
+        fc = waiting_places_geojson(s)
+    return JSONResponse(fc, media_type="application/geo+json", headers={"Cache-Control": "private, max-age=60"})
+
+
+@router.get("/api/siet/vlecky")
+def api_sidings(user=Depends(view)):
+    """Vrstva „Vlečky“: odbočenia vlečiek zo siete (OSM)."""
+    return JSONResponse(sidings_geojson(), media_type="application/geo+json",
+                        headers={"Cache-Control": "private, max-age=3600"})
 
 
 @router.get("/api/hranice")

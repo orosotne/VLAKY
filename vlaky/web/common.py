@@ -32,7 +32,34 @@ MAPLIBRE_JS = f"https://unpkg.com/maplibre-gl@{MAPLIBRE_VERSION}/dist/maplibre-g
 MAPLIBRE_CSS = f"https://unpkg.com/maplibre-gl@{MAPLIBRE_VERSION}/dist/maplibre-gl.css"
 MAPLIBRE_JS_SRI = "sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj"
 MAPLIBRE_CSS_SRI = "sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V"
-OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+
+
+def tile_csp_source(url: str) -> str:
+    """Zdroj pre CSP (img-src, connect-src) z URL šablóny dlaždíc; relatívna URL = 'self' (vráti "").
+
+    „https://{s}.tile.example.org/{z}/{x}/{y}.png“ → „https://*.tile.example.org“. Nepodporovaný tvar → "",
+    dlaždice potom CSP zablokuje a mapa sa zobrazí bez podkladu (ako offline).
+    """
+    from urllib.parse import urlsplit
+
+    url = (url or "").strip()
+    if not url:
+        return ""
+    parts = urlsplit(url)
+    if not parts.scheme and not parts.netloc:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.netloc or "@" in parts.netloc:
+        return ""
+    host = parts.netloc
+    if "{" in host or "}" in host:
+        labels = host.split(".")
+        if len(labels) >= 3 and "{" in labels[0] and not any("{" in x or "}" in x for x in labels[1:]):
+            host = "*." + ".".join(labels[1:])
+        else:
+            return ""
+    if not re.fullmatch(r"[A-Za-z0-9*.\-]+(:\d{1,5})?", host):
+        return ""
+    return f"{parts.scheme}://{host}"
 
 DONE_TRAIN_STATES = ("ukonceny", "zruseny", "odovzdany")
 
@@ -318,12 +345,13 @@ def nav_counts(user) -> dict:
     from sqlalchemy import func
 
     from ..db import session_scope
-    from ..models import ExtractedEvent, Recommendation
+    from ..models import Recommendation
+
+    from .data import pending_queue_count
 
     try:
         with session_scope() as s:
-            queue = s.scalar(select(func.count(ExtractedEvent.id)).where(
-                ExtractedEvent.needs_confirmation.is_(True), ExtractedEvent.status == "navrh")) or 0
+            queue = pending_queue_count(s)
             critical = s.scalar(select(func.count(Recommendation.id)).where(
                 Recommendation.state == "nove", Recommendation.priority == "KRITICKÉ")) or 0
         return {"fronta": queue, "kriticke": critical}

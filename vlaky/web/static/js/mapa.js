@@ -8,7 +8,8 @@
   if (!cfgEl) { return; }
   var CFG = JSON.parse(cfgEl.textContent || '{}');
   var TZ = CFG.tz || 'Europe/Bratislava';
-  var TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  var TILE_URL = String(CFG.tileUrl || '');
+  var TILE_ATTRIBUTION = String(CFG.tileAttribution || '');
   var SK_BOUNDS = [[16.83, 47.73], [22.57, 49.62]];
   var HOURS = [0, 6, 24, 48];
   var HOURS_LABEL = ['teraz', '+6 h', '+24 h', '+48 h'];
@@ -20,6 +21,7 @@
   var state = {
     trains: [], byId: {}, selected: null, following: null, hours: 0, ids: null, closures: EMPTY_FC,
     borders: CFG.borders || [], stations: [], view: null, routeFor: null, pending: {}, timer: null,
+    trailFor: null, trailLoaded: 0, layers: { miesta: null, vlecky: null },
     firstLoad: true, focusParam: null
   };
 
@@ -78,6 +80,18 @@
     box.hidden = !text;
   }
 
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  /** Rastrové dlaždice podkladovej mapy (šablóna {s} sa rozvinie na a, b, c). */
+  function tileUrls() {
+    if (!TILE_URL) { return []; }
+    return TILE_URL.indexOf('{s}') !== -1 ? ['a', 'b', 'c'].map(function (x) { return TILE_URL.replace('{s}', x); }) : [TILE_URL];
+  }
+  function relationOf(t) { return t.origin + ' → ' + t.destination; }
+
   /** Skrátený názov PPS pre štítok na mape (celý text je v titulku). */
   function shortPps(text) {
     var t = String(text || '').split(/[;(]/)[0].trim();
@@ -86,6 +100,7 @@
 
   /** Kde je vlak na mape: poloha (na koľaji) alebo kotva (pri hranici / vo východiskovej stanici). */
   function posOf(t) {
+    if (t.estimate) { return { lngLat: [t.estimate.lon, t.estimate.lat], anchor: false, estimate: true }; }
     if (t.position) { return { lngLat: [t.position.lon, t.position.lat], anchor: false }; }
     if (t.anchor) { return { lngLat: [t.anchor.lon, t.anchor.lat], anchor: true, label: t.anchor.label }; }
     return null;
@@ -96,6 +111,8 @@
   var fStav = document.getElementById('f-stav');
   var fFarba = document.getElementById('f-farba');
   var fHranica = document.getElementById('f-hranica');
+  var fZakaznik = document.getElementById('f-zakaznik');
+  var fRelacia = document.getElementById('f-relacia');
   function passes(t) {
     var q = (fQ && fQ.value || '').trim().toLowerCase();
     if (q && String(t.number).toLowerCase().indexOf(q) === -1) { return false; }
@@ -108,9 +125,32 @@
       var ok = (t.entry_border && String(t.entry_border.id) === b) || (t.exit_border && String(t.exit_border.id) === b);
       if (!ok) { return false; }
     }
+    if (fZakaznik && fZakaznik.value && (t.customer || '') !== fZakaznik.value) { return false; }
+    if (fRelacia && fRelacia.value && relationOf(t) !== fRelacia.value) { return false; }
     return true;
   }
   function visibleTrains() { return state.trains.filter(passes); }
+
+  /** Doplní možnosti filtrov zákazník a relácia podľa aktuálnych vlakov (výber sa zachová). */
+  function refreshFilterOptions() {
+    [[fZakaznik, function (t) { return t.customer || ''; }, 'Všetci zákazníci'],
+     [fRelacia, relationOf, 'Všetky relácie']].forEach(function (cfg) {
+      var sel = cfg[0];
+      if (!sel) { return; }
+      var values = {};
+      state.trains.forEach(function (t) { var v = cfg[1](t); if (v) { values[v] = true; } });
+      var current = sel.value;
+      if (current) { values[current] = true; }
+      var keys = Object.keys(values).sort(function (a, b) { return a.localeCompare(b, 'sk'); });
+      var signature = keys.join('\n');
+      if (sel.getAttribute('data-sig') === signature) { return; }
+      sel.setAttribute('data-sig', signature);
+      sel.textContent = '';
+      sel.appendChild(el('option', { value: '' }, [cfg[2]]));
+      keys.forEach(function (k) { sel.appendChild(el('option', { value: k }, [k])); });
+      sel.value = current;
+    });
+  }
 
   // ------------------------------------------------------------ obsah okna (popup) vlaku
   function popupContent(t) {
@@ -135,24 +175,91 @@
     rows.push(['Nasledujúca dopravňa', t.next_station ? t.next_station.name + ' (' + fmt(t.next_station.arr) + ')' : (p && p.nearest_station ? 'pri ' + p.nearest_station : '—')]);
     rows.push(['Najbližšie riziko', t.risk || '—']);
     rows.push(['Posledná správa', p ? fmt(p.ts, true) + ' · ' + p.source_text + ' (pred ' + fmtMin(p.age_min) + ')' : 'žiadna poloha']);
+    if (t.estimate) {
+      rows.push(['Poloha', 'odhad – posledná správa pred ' + fmtMin(p ? p.age_min : t.estimate.minutes) + '; +' +
+        t.estimate.km.toFixed(1).replace('.', ',') + ' km podľa ' + (t.estimate.method === 'plán' ? 'plánu odporúčania' : 'poslednej rýchlosti') +
+        ' (' + t.estimate.speed_kmh + ' km/h)' + (t.estimate.capped && t.estimate.next_station ? ', najďalej po ' + t.estimate.next_station : '')]);
+    }
     var dl = el('dl');
     rows.forEach(function (row) { dl.appendChild(el('dt', null, [row[0]])); dl.appendChild(el('dd', null, [row[1]])); });
     var note = null;
-    if (pos && pos.anchor) { note = el('p', { class: 'odhad small' }, ['Bez polohy – zobrazené ' + (pos.label || 'približne') + '.']); }
+    if (pos && pos.estimate) { note = el('p', { class: 'odhad small' }, ['Odhad polohy – posledná správa pred ' + fmtMin(p ? p.age_min : 0) + '.']); }
+    else if (pos && pos.anchor) { note = el('p', { class: 'odhad small' }, ['Bez polohy – zobrazené ' + (pos.label || 'približne') + '.']); }
     else if (t.stale) { note = el('p', { class: 'odhad small' }, ['Poloha je staršia ako ' + CFG.staleMinutes + ' min – ETA je neistá.']); }
     else if (p && !p.snapped) { note = el('p', { class: 'odhad small' }, ['Poloha mimo koľaje' + (p.off_track_m ? ' (' + Math.round(p.off_track_m) + ' m)' : '') + '.']); }
     var follow = el('button', { type: 'button', class: 'btn btn-sm btn-primary' }, [state.following === t.id ? 'Nesledovať' : 'Sledovať vlak']);
     follow.addEventListener('click', function () { if (state.following === t.id) { stopFollow(); } else { startFollow(t.id); } });
+    var trailBtn = el('button', { type: 'button', class: 'btn btn-sm', 'aria-pressed': state.trailFor === t.id ? 'true' : 'false' }, ['Stopa 24 h']);
+    trailBtn.addEventListener('click', function () { toggleTrail(t.id); });
+    var routeNote = null;
+    if (state.routeVariant && state.routeVariant.id === t.id && state.routeVariant.variant === 'obchadzka') {
+      routeNote = el('p', { class: 'small odhad' }, ['Zvolená varianta: ' + (state.routeVariant.name || 'obchádzka') + ' (na mape oranžovo).']);
+    }
     var actions = el('div', { class: 'pop-actions' }, [
-      follow,
+      follow, trailBtn,
       el('a', { class: 'btn btn-sm', href: '/vlaky/' + t.id }, ['Detail vlaku']),
       r.id ? el('a', { class: 'btn btn-sm', href: '/odporucania/' + r.id }, ['Odporúčanie']) : null
     ]);
     return el('div', { class: 'pop' }, [
       el('h3', null, ['Vlak ' + t.number + ' ', semaforBadge(t.color)]),
       r.decision ? el('p', { class: 'small' }, [el('strong', null, [r.decision + ': ']), r.summary || '']) : null,
-      dl, note, actions
+      dl, note, routeNote, actions
     ]);
+  }
+
+  /** Prerušované spojnice posledná správa → odhad polohy. */
+  function estimateLines(list) {
+    return { type: 'FeatureCollection', features: (list || []).filter(function (t) { return t.estimate && t.estimate.from; }).map(function (t) {
+      return { type: 'Feature', geometry: { type: 'LineString', coordinates: [t.estimate.from, [t.estimate.lon, t.estimate.lat]] }, properties: { id: t.id } };
+    }) };
+  }
+
+  function yesNo(v) { return v === true || v === 'true' ? 'áno' : (v === false || v === 'false' ? 'nie' : 'neoverené'); }
+
+  /** Obsah okna pre miesto na čakanie/odstavenie alebo vlečku. */
+  function placeContent(p) {
+    var rows = [];
+    if (p.druh) { rows.push(['Druh', p.druh]); }
+    if (p.zdroj) { rows.push(['Zdroj', p.zdroj]); }
+    if (p.can_wait !== undefined) {
+      rows.push(['Čakanie', yesNo(p.can_wait)], ['Odstavenie', yesNo(p.can_stable)], ['Výmena rušňovodiča', yesNo(p.can_change_crew)]);
+      rows.push(['Max. dĺžka vlaku', p.max_train_length_m ? Math.round(Number(p.max_train_length_m)) + ' m' : 'neuvedená']);
+    }
+    if (p.note) { rows.push(['Poznámka', p.note]); }
+    var dl = el('dl');
+    rows.forEach(function (r) { dl.appendChild(el('dt', null, [r[0]])); dl.appendChild(el('dd', null, [r[1]])); });
+    return el('div', { class: 'pop' }, [el('h3', null, [p.name || '']), dl,
+      p.can_wait !== undefined ? el('p', { class: 'small muted' }, ['Údaje dopraví upravíte na stránke Dopravne.']) : null]);
+  }
+
+  function isTrue(v) { return v === true || v === 'true'; }
+
+  /** Obsah okna výluky (aj s potvrdením výluky v stave „návrh“). */
+  function closureContent(p) {
+    var children = [
+      el('h3', null, [(p.druh_text || 'Výluka') + ' ', isTrue(p.nepotvrdena) ? el('span', { class: 'badge badge-warn' }, ['nepotvrdená']) : null]),
+      el('p', null, [el('strong', null, [p.od_stanice + ' – ' + p.do_stanice])]),
+      el('dl', null, [
+        el('dt', null, ['Platnosť']), el('dd', null, [fmt(p.zaciatok, true) + ' – ' + fmt(p.koniec, true)]),
+        p.denne_od ? el('dt', null, ['Denne']) : null, p.denne_od ? el('dd', null, [p.denne_od + '–' + p.denne_do]) : null,
+        el('dt', null, ['Stav']), el('dd', null, [(isTrue(p.aktivna) ? 'platí teraz' : 'najbližšie od ' + fmt(p.najblizsie_od, true)) + ' · ' + (p.stav_text || p.stav)]),
+        el('dt', null, ['Dopad']), el('dd', null, [isTrue(p.pomala) ? 'pomalá jazda ' + (p.rychlost || '?') + ' km/h' : (isTrue(p.len_elektricka) ? 'len elektrická trakcia' : 'všetky vlaky')]),
+        p.cislo ? el('dt', null, ['Číslo']) : null, p.cislo ? el('dd', null, [p.cislo]) : null,
+        p.zdroj ? el('dt', null, ['Zdroj']) : null, p.zdroj ? el('dd', null, [p.zdroj === 'email' ? 'e-mail' + (p.udalost_id ? ' (udalosť #' + p.udalost_id + ')' : '') : (p.zdroj === 'manual' ? 'ručne' : p.zdroj)]) : null
+      ])
+    ];
+    var actions = [el('a', { class: 'btn btn-sm', href: '/vyluky#vyluka-' + p.id }, ['Register výluk'])];
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    if (isTrue(p.nepotvrdena) && CFG.canOperate && csrf && csrf.content) {
+      var form = el('form', { method: 'post', action: '/vyluky/' + p.id + '/overit', class: 'inline' }, [
+        el('input', { type: 'hidden', name: 'csrf_token', value: csrf.content }),
+        el('input', { type: 'hidden', name: 'spat', value: '/' }),
+        el('button', { type: 'submit', class: 'btn btn-sm btn-primary' }, ['Potvrdiť'])
+      ]);
+      actions.unshift(form);
+    }
+    children.push(el('div', { class: 'pop-actions' }, actions));
+    return el('div', { class: 'pop' }, children);
   }
 
   // ============================================================ MapLibre
@@ -177,19 +284,18 @@
     this.tileOk = false;
     this.tileErrors = 0;
     this.offline = false;
+    this.pendingTrail = null;
+    this.pendingLayers = {};
+    this.hasTiles = tileUrls().length > 0;
+    var sources = {};
+    var layers = [{ id: 'pozadie', type: 'background', paint: { 'background-color': '#dfe5ea' } }];
+    if (this.hasTiles) {
+      sources.osm = { type: 'raster', tiles: tileUrls(), tileSize: 256, maxzoom: 19, attribution: escapeHtml(TILE_ATTRIBUTION) };
+      layers.push({ id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-saturation': -0.4 } });
+    }
     var map = this.map = new maplibregl.Map({
       container: container,
-      style: {
-        version: 8,
-        sources: {
-          osm: { type: 'raster', tiles: [TILE_URL], tileSize: 256, maxzoom: 19,
-                 attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' }
-        },
-        layers: [
-          { id: 'pozadie', type: 'background', paint: { 'background-color': '#dfe5ea' } },
-          { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-saturation': -0.4 } }
-        ]
-      },
+      style: { version: 8, sources: sources, layers: layers },
       bounds: SK_BOUNDS,
       fitBoundsOptions: { padding: 24 },
       minZoom: 5, maxZoom: 17,
@@ -214,8 +320,12 @@
         self.setOffline(false);
       }
     });
-    setTimeout(function () { if (!self.tileOk) { self.setOffline(true); } }, 12000);
-    if (navigator.onLine === false) { setTimeout(function () { if (!self.tileOk) { self.setOffline(true); } }, 1500); }
+    if (this.hasTiles) {
+      setTimeout(function () { if (!self.tileOk) { self.setOffline(true); } }, 12000);
+      if (navigator.onLine === false) { setTimeout(function () { if (!self.tileOk) { self.setOffline(true); } }, 1500); }
+    } else {
+      setStatus('Mapový podklad nie je nastavený (VLAKY_MAP_TILE_URL) – zobrazuje sa železničná sieť bez podkladu.');
+    }
 
     map.on('load', function () { self.onLoad(); });
     map.on('zoom', function () { self.zoomClasses(); });
@@ -227,6 +337,7 @@
   MapLibreView.prototype.setOffline = function (off) {
     if (this.offline === off) { return; }
     this.offline = off;
+    if (!this.hasTiles) { return; }
     if (this.loaded || this.map.getLayer('osm')) {
       this.map.setLayoutProperty('osm', 'visibility', off ? 'none' : 'visible');
     }
@@ -245,9 +356,25 @@
       paint: { 'line-color': lineColor(dark),
                'line-width': ['interpolate', ['linear'], ['zoom'], 6, ['case', ['==', ['get', 'u'], 'main'], 1.8, 1.0],
                               10, ['case', ['==', ['get', 'u'], 'main'], 3.2, 2.0], 14, 5] } });
+    map.addSource('stopa', { type: 'geojson', data: EMPTY_FC });
+    map.addLayer({ id: 'stopa', type: 'line', source: 'stopa', layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#6a1b9a', 'line-width': 4, 'line-opacity': 0.75 } });
     map.addSource('trasa', { type: 'geojson', data: EMPTY_FC });
     map.addLayer({ id: 'trasa', type: 'line', source: 'trasa', layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#00b4d8', 'line-width': 7, 'line-opacity': 0.55 } });
+      paint: { 'line-color': ['case', ['==', ['get', 'variant'], 'obchadzka'], '#f57c00', '#00b4d8'],
+               'line-width': 7, 'line-opacity': 0.55 } });
+    map.addSource('odhady', { type: 'geojson', data: EMPTY_FC });
+    map.addLayer({ id: 'odhady', type: 'line', source: 'odhady',
+      paint: { 'line-color': '#37474f', 'line-width': 2.5, 'line-dasharray': [1.5, 1.5], 'line-opacity': 0.8 } });
+    map.addSource('miesta', { type: 'geojson', data: EMPTY_FC });
+    map.addLayer({ id: 'miesta', type: 'circle', source: 'miesta', layout: { visibility: 'none' },
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 4, 12, 8],
+               'circle-color': ['case', ['get', 'overene'], '#2e7d32', '#81c784'],
+               'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+    map.addSource('vlecky', { type: 'geojson', data: EMPTY_FC });
+    map.addLayer({ id: 'vlecky', type: 'circle', source: 'vlecky', layout: { visibility: 'none' },
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 6], 'circle-color': '#8d6e63',
+               'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
     map.addSource('vyluky', { type: 'geojson', data: EMPTY_FC });
     map.addLayer({ id: 'vyluky-obrys', type: 'line', source: 'vyluky', paint: { 'line-color': '#ffffff', 'line-width': 9, 'line-opacity': 0.6 } });
     map.addLayer({ id: 'vyluky-neskor', type: 'line', source: 'vyluky', filter: ['!', ['get', 'aktivna']],
@@ -258,6 +385,11 @@
     map.addLayer({ id: 'stanice', type: 'circle', source: 'stanice', minzoom: 9,
       paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2.5, 14, 5], 'circle-color': '#ffffff',
                'circle-stroke-color': '#3c4650', 'circle-stroke-width': 1.5 } });
+    ['miesta', 'vlecky'].forEach(function (layer) {
+      map.on('click', layer, function (e) { self.placePopup(e); });
+      map.on('mouseenter', layer, function () { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', layer, function () { map.getCanvas().style.cursor = ''; });
+    });
     ['vyluky-teraz', 'vyluky-neskor'].forEach(function (layer) {
       map.on('click', layer, function (e) { self.closurePopup(e); });
       map.on('mouseenter', layer, function () { map.getCanvas().style.cursor = 'pointer'; });
@@ -265,10 +397,39 @@
     });
     this.loaded = true;
     this.setDark(dark);
-    if (this.offline) { map.setLayoutProperty('osm', 'visibility', 'none'); }
+    if (this.offline && this.hasTiles) { map.setLayoutProperty('osm', 'visibility', 'none'); }
     if (this.pendingClosures) { this.setClosures(this.pendingClosures); }
     if (this.pendingRoute !== null) { this.showRoute(this.pendingRoute); }
+    if (this.pendingTrail !== null) { this.showTrail(this.pendingTrail); }
+    Object.keys(this.pendingLayers).forEach(function (name) {
+      var l = self.pendingLayers[name];
+      self.setLayer(name, l.fc, l.visible);
+    });
     this.setStations(state.stations);
+    this.setEstimates(this.lastTrains || []);
+  };
+
+  MapLibreView.prototype.setLayer = function (name, fc, visible) {
+    if (!this.loaded) { this.pendingLayers[name] = { fc: fc, visible: visible }; return; }
+    if (fc) { this.map.getSource(name).setData(fc); }
+    this.map.setLayoutProperty(name, 'visibility', visible ? 'visible' : 'none');
+  };
+
+  MapLibreView.prototype.placePopup = function (e) {
+    var f = e.features && e.features[0];
+    if (!f) { return; }
+    new maplibregl.Popup({ offset: 8, maxWidth: '320px' }).setLngLat(e.lngLat).setDOMContent(placeContent(f.properties || {})).addTo(this.map);
+  };
+
+  MapLibreView.prototype.setEstimates = function (list) {
+    this.lastTrains = list;
+    if (!this.loaded) { return; }
+    this.map.getSource('odhady').setData(estimateLines(list));
+  };
+
+  MapLibreView.prototype.showTrail = function (feature) {
+    if (!this.loaded) { this.pendingTrail = feature; return; }
+    this.map.getSource('stopa').setData(feature && feature.geometry ? { type: 'FeatureCollection', features: [feature] } : EMPTY_FC);
   };
 
   MapLibreView.prototype.zoomClasses = function () {
@@ -283,9 +444,12 @@
     map.getContainer().classList.toggle('night', dark);
     if (!this.loaded) { return; }
     map.setPaintProperty('pozadie', 'background-color', dark ? '#0b0f14' : '#dfe5ea');
-    map.setPaintProperty('osm', 'raster-brightness-max', dark ? 0.32 : 1);
-    map.setPaintProperty('osm', 'raster-saturation', dark ? -0.85 : -0.4);
-    map.setPaintProperty('osm', 'raster-contrast', dark ? 0.15 : 0);
+    if (this.hasTiles) {
+      map.setPaintProperty('osm', 'raster-brightness-max', dark ? 0.32 : 1);
+      map.setPaintProperty('osm', 'raster-saturation', dark ? -0.85 : -0.4);
+      map.setPaintProperty('osm', 'raster-contrast', dark ? 0.15 : 0);
+    }
+    map.setPaintProperty('odhady', 'line-color', dark ? '#cfd8dc' : '#37474f');
     map.setPaintProperty('trate', 'line-color', lineColor(dark));
     map.setPaintProperty('trate-vedlajsie', 'line-color', lineColor(dark));
     map.setPaintProperty('stanice', 'circle-color', dark ? '#0b0f14' : '#ffffff');
@@ -349,20 +513,7 @@
   MapLibreView.prototype.closurePopup = function (e) {
     var f = e.features && e.features[0];
     if (!f) { return; }
-    var p = f.properties || {};
-    var box = el('div', { class: 'pop' }, [
-      el('h3', null, [(p.druh_text || 'Výluka') + ' ']),
-      el('p', null, [el('strong', null, [p.od_stanice + ' – ' + p.do_stanice])]),
-      el('dl', null, [
-        el('dt', null, ['Platnosť']), el('dd', null, [fmt(p.zaciatok, true) + ' – ' + fmt(p.koniec, true)]),
-        p.denne_od ? el('dt', null, ['Denne']) : null, p.denne_od ? el('dd', null, [p.denne_od + '–' + p.denne_do]) : null,
-        el('dt', null, ['Stav']), el('dd', null, [(p.aktivna === true || p.aktivna === 'true' ? 'platí teraz' : 'najbližšie od ' + fmt(p.najblizsie_od, true)) + ' · ' + (p.stav_text || p.stav)]),
-        el('dt', null, ['Dopad']), el('dd', null, [p.pomala === true || p.pomala === 'true' ? 'pomalá jazda ' + (p.rychlost || '?') + ' km/h' : ((p.len_elektricka === true || p.len_elektricka === 'true') ? 'len elektrická trakcia' : 'všetky vlaky')]),
-        p.cislo ? el('dt', null, ['Číslo']) : null, p.cislo ? el('dd', null, [p.cislo]) : null
-      ]),
-      el('div', { class: 'pop-actions' }, [el('a', { class: 'btn btn-sm', href: '/vyluky#vyluka-' + p.id }, ['Register výluk'])])
-    ]);
-    new maplibregl.Popup({ offset: 8, maxWidth: '340px' }).setLngLat(e.lngLat).setDOMContent(box).addTo(this.map);
+    new maplibregl.Popup({ offset: 8, maxWidth: '340px' }).setLngLat(e.lngLat).setDOMContent(closureContent(f.properties || {})).addTo(this.map);
   };
 
   MapLibreView.prototype.trainElement = function (t) {
@@ -384,6 +535,7 @@
     var c = 'vm c-' + cls;
     if (t.stale) { c += ' stale'; if (t.color) { c += ' ring-' + COLOR_CLASS[t.color]; } }
     if (pos && pos.anchor) { c += ' anchor'; }
+    if (pos && pos.estimate) { c += ' estimate'; }
     if (state.selected === t.id) { c += ' selected'; }
     e.className = c;
     e.setAttribute('data-id', t.id);
@@ -391,16 +543,18 @@
     if (pos && pos.anchor) {
       label += t.handover && t.handover.avizo_eta ? ' · ETA ' + fmt(t.handover.avizo_eta) : ' · bez polohy';
     }
+    if (pos && pos.estimate) { label += ' · odhad'; }
     e.querySelector('.vm-label').textContent = label;
     var dot = e.querySelector('.vm-dot');
-    var bearing = t.position ? t.position.bearing : null;
-    if (bearing !== null && bearing !== undefined && t.position.moving !== false) {
+    var bearing = t.estimate ? t.estimate.bearing : (t.position ? t.position.bearing : null);
+    if (bearing !== null && bearing !== undefined && (t.estimate || t.position.moving !== false)) {
       dot.classList.remove('no-dir');
       dot.querySelector('svg').style.transform = 'rotate(' + bearing + 'deg)';
     } else {
       dot.classList.add('no-dir');
     }
-    e.setAttribute('aria-label', 'Vlak ' + t.number + ', ' + (t.color || 'bez odporúčania') + (t.stale ? ', poloha neistá' : '') + (pos && pos.anchor ? ', bez polohy' : ''));
+    e.setAttribute('aria-label', 'Vlak ' + t.number + ', ' + (t.color || 'bez odporúčania') + (t.stale ? ', poloha neistá' : '') +
+      (pos && pos.anchor ? ', bez polohy' : '') + (pos && pos.estimate ? ', poloha je odhad' : ''));
     e.title = 'Vlak ' + t.number + ' – ' + t.relation;
   }
 
@@ -429,6 +583,7 @@
     Object.keys(this.markers).forEach(function (id) {
       if (!seen[id]) { self.markers[id].remove(); delete self.markers[id]; }
     });
+    this.setEstimates(list);
   };
 
   MapLibreView.prototype.openPopup = function (t) {
@@ -477,6 +632,9 @@
     this.borders = [];
     this.closures = EMPTY_FC;
     this.route = null;
+    this.trail = null;
+    this.layerData = {};
+    this.layerVisible = {};
     this.popupEl = null;
     this.popupId = null;
     this.cy0 = 48.7;
@@ -579,6 +737,13 @@
   };
   CanvasView.prototype.setDark = function () { this.draw(); };
   CanvasView.prototype.showRoute = function (feature) { this.route = feature; this.draw(); };
+  CanvasView.prototype.showTrail = function (feature) { this.trail = feature; this.draw(); };
+  CanvasView.prototype.setEstimates = function () { this.draw(); };
+  CanvasView.prototype.setLayer = function (name, fc, visible) {
+    if (fc) { this.layerData[name] = fc; }
+    this.layerVisible[name] = visible;
+    this.draw();
+  };
   CanvasView.prototype.focus = function (lngLat, zoom) {
     this.cx = lngLat[0];
     this.cy = lngLat[1];
@@ -664,13 +829,33 @@
       ctx.font = '14px system-ui, sans-serif';
       ctx.fillText('Načítavam železničnú sieť…', 16, 28);
     }
+    if (this.trail && this.trail.geometry) {
+      ctx.beginPath();
+      this.strokeGeom(ctx, this.trail.geometry);
+      ctx.strokeStyle = 'rgba(106, 27, 154, .75)';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    }
     if (this.route && this.route.geometry) {
       ctx.beginPath();
       this.strokeGeom(ctx, this.route.geometry);
-      ctx.strokeStyle = 'rgba(0, 180, 216, .6)';
+      ctx.strokeStyle = (this.route.properties || {}).variant === 'obchadzka' ? 'rgba(245, 124, 0, .6)' : 'rgba(0, 180, 216, .6)';
       ctx.lineWidth = 7;
       ctx.stroke();
     }
+    [['miesta', '#2e7d32', 5], ['vlecky', '#8d6e63', 4]].forEach(function (cfgL) {
+      var fc = self.layerData[cfgL[0]];
+      if (!fc || !self.layerVisible[cfgL[0]]) { return; }
+      ctx.fillStyle = cfgL[1];
+      (fc.features || []).forEach(function (f) {
+        var c = f.geometry && f.geometry.coordinates;
+        if (!c) { return; }
+        var pt = self.project(c[0], c[1]);
+        ctx.beginPath();
+        ctx.arc(pt[0], pt[1], cfgL[2], 0, Math.PI * 2);
+        ctx.fill();
+      });
+    });
     (this.closures.features || []).forEach(function (f) {
       if (!f.geometry) { return; }
       var p = f.properties || {};
@@ -700,8 +885,22 @@
     });
     ctx.font = '700 12px system-ui, sans-serif';
     this.trains.forEach(function (t) {
+      if (!t.estimate || !t.estimate.from) { return; }
+      var a = self.project(t.estimate.from[0], t.estimate.from[1]);
+      var b = self.project(t.estimate.lon, t.estimate.lat);
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = dark ? '#cfd8dc' : '#37474f';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    this.trains.forEach(function (t) {
       var pos = posOf(t);
       if (!pos) { return; }
+      ctx.globalAlpha = pos.estimate ? 0.65 : 1;
       var p = self.project(pos.lngLat[0], pos.lngLat[1]);
       var cls = COLOR_CLASS[t.display_color] || 'seda';
       ctx.beginPath();
@@ -710,11 +909,11 @@
       ctx.fill();
       ctx.lineWidth = 3;
       ctx.strokeStyle = t.stale && t.color ? DOT_COLOR[COLOR_CLASS[t.color]] : '#ffffff';
-      if (t.stale) { ctx.setLineDash([3, 2]); }
+      if (t.stale || pos.estimate) { ctx.setLineDash([3, 2]); }
       ctx.stroke();
       ctx.setLineDash([]);
-      var bearing = t.position ? t.position.bearing : null;
-      if (bearing !== null && bearing !== undefined && t.position.moving !== false) {
+      var bearing = t.estimate ? t.estimate.bearing : (t.position ? t.position.bearing : null);
+      if (bearing !== null && bearing !== undefined && (t.estimate || t.position.moving !== false)) {
         ctx.save();
         ctx.translate(p[0], p[1]);
         ctx.rotate(bearing * Math.PI / 180);
@@ -724,7 +923,7 @@
         ctx.fill();
         ctx.restore();
       }
-      var label = t.number + (pos.anchor ? ' (bez polohy)' : '');
+      var label = t.number + (pos.anchor ? ' (bez polohy)' : '') + (pos.estimate ? ' · odhad' : '');
       var w = ctx.measureText(label).width + 8;
       ctx.fillStyle = 'rgba(255,255,255,.94)';
       ctx.fillRect(p[0] + 13, p[1] - 9, w, 18);
@@ -735,6 +934,7 @@
         ctx.lineWidth = 2;
         ctx.strokeRect(p[0] + 13, p[1] - 9, w, 18);
       }
+      ctx.globalAlpha = 1;
     });
   };
 
@@ -886,8 +1086,33 @@
   function loadRoute(id) {
     state.routeFor = id;
     api('/api/vlaky/' + id + '/trasa').then(function (feature) {
-      if (state.routeFor === id && state.view) { state.view.showRoute(feature); }
+      if (state.routeFor !== id || !state.view) { return; }
+      var props = feature.properties || {};
+      state.routeVariant = { id: id, variant: props.variant, name: props.name };
+      state.view.showRoute(feature);
+      if (props.variant === 'obchadzka' && state.view.popupId === id && state.byId[id]) { state.view.openPopup(state.byId[id]); }
     }).catch(function () { if (state.view) { state.view.showRoute(null); } });
+  }
+
+  /** Stopa vlaku za 24 h (pri sledovaní vlaku sa obnovuje s novými polohami). */
+  function loadTrail(id) {
+    state.trailFor = id;
+    state.trailLoaded = Date.now();
+    api('/api/vlaky/' + id + '/stopa?hodiny=24').then(function (feature) {
+      if (state.trailFor !== id || !state.view) { return; }
+      state.view.showTrail(feature);
+      if (!feature.geometry) { setStatus('Vlak ' + ((state.byId[id] || {}).number || '') + ' nemá za posledných 24 h dosť polôh na stopu.'); setTimeout(function () { setStatus(''); }, 5000); }
+    }).catch(function () { if (state.view) { state.view.showTrail(null); } });
+  }
+  function toggleTrail(id) {
+    if (state.trailFor === id) {
+      state.trailFor = null;
+      if (state.view) { state.view.showTrail(null); }
+    } else {
+      loadTrail(id);
+    }
+    var t = state.byId[id];
+    if (t && state.view && state.view.popupId === id) { state.view.openPopup(t); }
   }
   function startFollow(id) {
     state.following = id;
@@ -895,12 +1120,18 @@
     var banner = document.getElementById('follow-banner');
     if (banner) { banner.hidden = false; document.getElementById('follow-num').textContent = t ? t.number : ''; }
     if (t && posOf(t)) { state.view.focus(posOf(t).lngLat, 11); }
+    loadTrail(id);
     if (t) { state.view.openPopup(t); }
   }
   function stopFollow() {
+    var wasFollowing = state.following;
     state.following = null;
     var banner = document.getElementById('follow-banner');
     if (banner) { banner.hidden = true; }
+    if (wasFollowing !== null && state.trailFor === wasFollowing) {
+      state.trailFor = null;
+      if (state.view) { state.view.showTrail(null); }
+    }
     var t = state.selected !== null ? state.byId[state.selected] : null;
     if (t && state.view && (state.view.popupId === t.id)) { state.view.openPopup(t); }
   }
@@ -918,6 +1149,7 @@
     state.trains = data.vlaky || [];
     state.byId = {};
     state.trains.forEach(function (t) { state.byId[t.id] = t; });
+    refreshFilterOptions();
     var list = redrawTrains();
     renderTable(list);
     renderGantt(list);
@@ -926,6 +1158,7 @@
     if (state.following && state.byId[state.following]) {
       var p = posOf(state.byId[state.following]);
       if (p) { state.view.focus(p.lngLat); }
+      if (state.trailFor === state.following && Date.now() - state.trailLoaded > 30000) { loadTrail(state.following); }
     }
     if (state.firstLoad) {
       state.firstLoad = false;
@@ -990,7 +1223,7 @@
 
   // ============================================================ ovládanie
   function bindControls() {
-    [fQ, fStav, fFarba, fHranica].forEach(function (f) {
+    [fQ, fStav, fFarba, fHranica, fZakaznik, fRelacia].forEach(function (f) {
       if (!f) { return; }
       f.addEventListener(f.tagName === 'INPUT' ? 'input' : 'change', function () {
         var list = redrawTrains();
@@ -1009,6 +1242,18 @@
         if (pick) { selectTrain(pick.id, true); }
       });
     }
+    [['miesta', 'v-miesta', '/api/siet/miesta'], ['vlecky', 'v-vlecky', '/api/siet/vlecky']].forEach(function (l) {
+      var box = document.getElementById(l[1]);
+      if (!box) { return; }
+      box.addEventListener('change', function () {
+        if (!box.checked) { state.view.setLayer(l[0], null, false); return; }
+        if (state.layers[l[0]]) { state.view.setLayer(l[0], state.layers[l[0]], true); return; }
+        api(l[2]).then(function (fc) {
+          state.layers[l[0]] = fc;
+          state.view.setLayer(l[0], fc, box.checked);
+        }).catch(function () { box.checked = false; setStatus('Vrstvu sa nepodarilo načítať.'); });
+      });
+    });
     var slider = document.getElementById('f-cas');
     var out = document.getElementById('f-cas-out');
     if (slider) {

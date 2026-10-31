@@ -1,6 +1,7 @@
 """Stránky registrov: vlaky, výluky, hraničné priechody a preberania, rušňovodiči a zmeny, rušne."""
 from __future__ import annotations
 
+import importlib
 from datetime import timedelta
 from typing import Optional
 
@@ -12,16 +13,16 @@ from sqlalchemy.orm import selectinload
 from ..audit import audit
 from ..cas import ensure_utc, now_utc
 from ..db import session_scope
-from ..models import (AuditLog, BorderCrossing, Closure, Driver, DriverShift, Handover, Locomotive, Path,
-                      PositionReport, Recommendation, Train)
+from ..models import (AuditLog, BorderCrossing, Closure, Driver, DriverShift, ExtractedEvent, Handover, Locomotive,
+                      Path, PositionReport, Recommendation, Train)
 from .auth import csrf_form, require
 from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, LOCO_SYSTEMS, TRAIN_STATUS, FormReader,
                      NetworkUnavailable,
-                     crew_color, current_params, input_dt, iso, redirect, render, resolve_station,
-                     station_or_error)
+                     crew_color, current_params, input_dt, iso, log, redirect, render, resolve_station,
+                     safe_next, station_or_error)
 from .data import closure_edges, closure_spans, latest_recommendations
 from .prepocet import evaluate_all_bg, evaluate_train_bg, evaluate_train_now
-from .rusnovodic import driver_link
+from .rusnovodic import driver_link, revoke_driver_links, token_version
 
 router = APIRouter()
 view = require("view")
@@ -246,9 +247,22 @@ def train_driver_link(train_id: int, request: Request, user=Depends(operate), fo
             raise HTTPException(404, "Vlak neexistuje.")
         if t.status in DONE_TRAIN_STATES:
             return redirect(f"/vlaky/{train_id}", "Pre ukončený alebo zrušený vlak sa odkaz nevytvára.", "chyba")
-        link = driver_link(t)
-        audit(s, user.username, "driver_link", "train", t.id, number=t.number, valid_h=24)
+        link = driver_link(s, t)
+        audit(s, user.username, "driver_link", "train", t.id, number=t.number, valid_h=24,
+              version=token_version(s, t.id))
     return _train_detail(request, train_id, user, link=link)
+
+
+@router.post("/vlaky/{train_id}/odkaz/zrusit")
+def train_driver_link_revoke(train_id: int, request: Request, user=Depends(operate), form=Depends(csrf_form)):
+    """Zruší všetky vydané odkazy pre rušňovodiča tohto vlaku (napr. stratený telefón, iný rušňovodič)."""
+    with session_scope() as s:
+        t = s.get(Train, train_id)
+        if t is None:
+            raise HTTPException(404, "Vlak neexistuje.")
+        version = revoke_driver_links(s, t.id)
+        audit(s, user.username, "driver_link_revoke", "train", t.id, number=t.number, version=version)
+    return redirect(f"/vlaky/{train_id}", "Odkazy pre rušňovodiča boli zrušené. Ak treba, vytvorte nový odkaz.")
 
 
 # ================================================================ VÝLUKY (M4)
@@ -398,18 +412,40 @@ def closure_cancel(closure_id: int, request: Request, background: BackgroundTask
 @router.post("/vyluky/{closure_id}/overit")
 def closure_verify(closure_id: int, request: Request, background: BackgroundTasks, user=Depends(operate),
                    form=Depends(csrf_form)):
+    """Overenie výluky v stave „návrh“. Výluka z e-mailu sa potvrdí cez spracovanie pošty (potvrdí aj udalosť)."""
+    back = safe_next(str(form.get("spat") or ""), "/vyluky")
     with session_scope() as s:
         c = s.get(Closure, closure_id)
         if c is None:
             raise HTTPException(404, "Výluka neexistuje.")
         if c.status != "navrh":
-            return redirect("/vyluky", f"Výluka je v stave „{CLOSURE_STATUS.get(c.status, c.status)}“.", "info")
-        c.status = "overene"
-        c.version = (c.version or 1) + 1
-        audit(s, user.username, "closure_verify", "closure", c.id, version=c.version)
+            return redirect(back, f"Výluka je v stave „{CLOSURE_STATUS.get(c.status, c.status)}“.", "info")
+        event = s.get(ExtractedEvent, c.source_event_id) if c.source_event_id else None
+        event_id = event.id if event is not None and event.confirmed_at is None and \
+            event.status in ("navrh", "aplikovane") else None
+        if event_id is None:
+            c.status = "overene"
+            c.version = (c.version or 1) + 1
+            audit(s, user.username, "closure_verify", "closure", c.id, version=c.version)
+    if event_id is not None:
+        try:
+            posta = importlib.import_module("vlaky.posta.spracovanie")
+            with session_scope() as s:
+                ev = posta.confirm_event(s, event_id, user.username)
+                result = (ev.validation or {}).get("apply_result") or {}
+                c = s.get(Closure, closure_id)
+                if c is not None and c.status != "overene":
+                    error = result.get("error") or "výluka zostala v stave návrh"
+                    return redirect(f"/fronta#udalost-{event_id}", f"Výluku sa nepodarilo potvrdiť: {error}", "chyba")
+                audit(s, user.username, "closure_verify", "closure", closure_id, event_id=event_id)
+        except (ImportError, NotImplementedError, AttributeError):
+            return redirect(back, "Spracovanie e-mailov (modul posta) zatiaľ nie je k dispozícii.", "chyba")
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Potvrdenie výluky %s zlyhalo", closure_id)
+            return redirect(back, f"Výluku sa nepodarilo potvrdiť: {str(exc)[:300]}", "chyba")
     if request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"overená výluka #{closure_id}")
-    return redirect("/vyluky", "Výluka overená.")
+    return redirect(back, "Výluka potvrdená (overené).")
 
 
 # ================================================================ HRANICE A PREBERANIE (M6)

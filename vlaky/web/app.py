@@ -19,33 +19,37 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..config import settings
 from .auth import CsrfError, LoginLimiter, NotAuthenticated, PermissionDenied, optional_user
-from .common import STATIC_DIR, log, render
+from .common import STATIC_DIR, log, render, tile_csp_source
 
 DEFAULT_SECRET = "zmen-ma-v-produkcii"
 
-CSP = "; ".join([
-    "default-src 'self'",
-    "script-src 'self' https://unpkg.com",
-    "style-src 'self' https://unpkg.com",
-    "img-src 'self' data: blob: https://tile.openstreetmap.org",
-    "connect-src 'self' https://tile.openstreetmap.org",
-    "worker-src 'self' blob:",
-    "child-src blob:",
-    "font-src 'self'",
-    "manifest-src 'self'",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-])
+def build_csp(tile_source: str = "") -> str:
+    """Content-Security-Policy: len vlastný pôvod + unpkg.com (MapLibre) + pôvod mapových dlaždíc."""
+    tiles = f" {tile_source}" if tile_source else ""
+    return "; ".join([
+        "default-src 'self'",
+        "script-src 'self' https://unpkg.com",
+        "style-src 'self' https://unpkg.com",
+        f"img-src 'self' data: blob:{tiles}",
+        f"connect-src 'self'{tiles}",
+        "worker-src 'self' blob:",
+        "child-src blob:",
+        "font-src 'self'",
+        "manifest-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    ])
 
 
 class SecurityHeadersMiddleware:
     """Bezpečnostné hlavičky pre každú odpoveď (čisté ASGI – nebráni streamovaniu SSE)."""
 
-    def __init__(self, app: ASGIApp, hsts: bool) -> None:
+    def __init__(self, app: ASGIApp, hsts: bool, csp: str) -> None:
         self.app = app
         self.hsts = hsts
+        self.csp = csp.encode()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -57,7 +61,7 @@ class SecurityHeadersMiddleware:
                 headers = list(message.get("headers", []))
                 names = {k.lower() for k, _ in headers}
                 extra = [
-                    (b"content-security-policy", CSP.encode()),
+                    (b"content-security-policy", self.csp),
                     (b"x-content-type-options", b"nosniff"),
                     (b"x-frame-options", b"DENY"),
                     (b"referrer-policy", b"strict-origin-when-cross-origin"),
@@ -115,7 +119,9 @@ def create_app(auto_evaluate: bool = True) -> FastAPI:
     app.state.auto_evaluate = auto_evaluate
 
     app.add_middleware(GZipMiddleware, minimum_size=1024)
-    app.add_middleware(SecurityHeadersMiddleware, hsts=settings().public_url.lower().startswith("https://"))
+    cfg = settings()
+    app.add_middleware(SecurityHeadersMiddleware, hsts=cfg.public_url.lower().startswith("https://"),
+                       csp=build_csp(tile_csp_source(cfg.map_tile_url)))
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     from . import api, auth, rusnovodic, views_evidencia, views_prehlad, views_sprava

@@ -5,6 +5,7 @@ Odkaz vytvorí dispečer vo webe a rušňovodičovi ho pošle sám (agent rušň
 from __future__ import annotations
 
 import hashlib
+from datetime import timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Request
@@ -17,8 +18,8 @@ from ..audit import audit
 from ..cas import fmt, now_utc
 from ..config import settings
 from ..db import session_scope
-from ..models import DriverShift, Train
-from .common import DONE_TRAIN_STATES, STATIC_DIR, log, render
+from ..models import DriverShift, KeyValue, Train
+from .common import DONE_TRAIN_STATES, STATIC_DIR, TRAIN_STATUS, iso, log, render
 from .pozicie import DriverPositionIn, ingest_position
 from .prepocet import evaluate_train_bg
 
@@ -30,47 +31,95 @@ def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings().secret_key, salt="vlaky.rusnovodic.v1")
 
 
-def make_driver_token(train: Train) -> str:
-    return _serializer().dumps({"n": train.number, "id": train.id})
+def _version_key(train_id: int) -> str:
+    return f"driver_token_ver:{train_id}"
 
 
-def driver_link(train: Train) -> str:
-    return f"{settings().public_url.rstrip('/')}/rusnovodic?t={make_driver_token(train)}"
+def token_version(s, train_id: int) -> int:
+    """Aktuálna verzia odkazov pre vlak (po zrušení odkazov sa zvýši – staršie odkazy prestanú platiť)."""
+    kv = s.scalar(select(KeyValue).where(KeyValue.key == _version_key(train_id)))
+    try:
+        return int((kv.value or {}).get("v", 0)) if kv is not None else 0
+    except (TypeError, ValueError, AttributeError):
+        return 0
+
+
+def revoke_driver_links(s, train_id: int) -> int:
+    """Zruší všetky doteraz vydané odkazy pre vlak (zvýši verziu). Vráti novú verziu."""
+    key = _version_key(train_id)
+    version = token_version(s, train_id) + 1
+    kv = s.scalar(select(KeyValue).where(KeyValue.key == key))
+    if kv is None:
+        s.add(KeyValue(key=key, value={"v": version}))
+    else:
+        kv.value = {"v": version}
+    s.flush()
+    return version
+
+
+def make_driver_token(train: Train, version: int = 0) -> str:
+    return _serializer().dumps({"n": train.number, "id": train.id, "v": int(version)})
+
+
+def driver_link(s, train: Train) -> str:
+    """Odkaz s tokenom vo fragmente URL (#t=…) – prehliadač ho neposiela serveru, nedostane sa do logov."""
+    token = make_driver_token(train, token_version(s, train.id))
+    return f"{settings().public_url.rstrip('/')}/rusnovodic#t={token}"
 
 
 def verify_driver_token(token: str) -> Optional[dict]:
-    """Vráti {"n": číslo vlaku, "id": id vlaku} alebo None (neplatný / starší ako 24 h)."""
-    if not token:
+    """Vráti {"n": číslo vlaku, "id": id vlaku, "v": verzia, "ts": vydanie} alebo None (neplatný / > 24 h)."""
+    if not token or len(token) > 600:
         return None
     try:
-        data = _serializer().loads(token, max_age=TOKEN_MAX_AGE)
+        data, issued = _serializer().loads(token, max_age=TOKEN_MAX_AGE, return_timestamp=True)
     except (BadSignature, SignatureExpired):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("n"), str) or not isinstance(data.get("id"), int):
         return None
-    return data
+    return {**data, "ts": issued}
 
 
 def _train_for_token(s, data: dict) -> Optional[Train]:
     t = s.get(Train, data["id"])
     if t is None or t.number != data["n"] or t.status in DONE_TRAIN_STATES:
         return None
+    if int(data.get("v", 0) or 0) != token_version(s, t.id):
+        return None  # odkaz bol zrušený dispečerom
     return t
 
 
 @router.get("/rusnovodic", response_class=HTMLResponse)
-def driver_page(request: Request, t: str = ""):
-    data = verify_driver_token(t)
+def driver_page(request: Request):
+    """Stránka rušňovodiča. Token sa sem neposiela – JS ho vezme z fragmentu URL (#t=…) a pošle v tele požiadavky."""
+    return render(request, "rusnovodic.html", {})
+
+
+class TokenIn(BaseModel):
+    t: str = Field(min_length=10, max_length=600)
+
+
+@router.post("/api/rusnovodic/info")
+def driver_info(body: TokenIn):
+    data = verify_driver_token(body.t)
+    if data is None:
+        return _forbidden()
     with session_scope() as s:
-        train = _train_for_token(s, data) if data else None
+        train = _train_for_token(s, data)
         if train is None:
-            return render(request, "rusnovodic.html", {"valid": False, "token": t}, status_code=403 if t else 200)
-        shift = s.scalar(select(DriverShift).where(DriverShift.train_id == train.id,
-                                                   DriverShift.status != "ukoncena")
-                         .order_by(DriverShift.start_utc.desc()))
-        ctx = {"valid": True, "token": t, "train": train, "shift": shift,
-               "driver_name": shift.driver.name if shift and shift.driver else ""}
-        return render(request, "rusnovodic.html", ctx)
+            return _forbidden()
+        shift = s.scalar(select(DriverShift).where(DriverShift.train_id == train.id, DriverShift.status != "ukoncena")
+                         .order_by(DriverShift.start_utc.desc(), DriverShift.id.desc()))
+        valid_until = data["ts"] + timedelta(seconds=TOKEN_MAX_AGE)
+        return {"ok": True, "train": {"number": train.number, "origin": train.origin,
+                                      "destination": train.destination,
+                                      "relation": f"{train.origin} → {train.destination}",
+                                      "status": train.status, "status_text": TRAIN_STATUS.get(train.status, "")},
+                "driver_name": shift.driver.name if shift and shift.driver else "",
+                "shift_status": shift.status if shift else None,
+                "shift_start": iso(shift.start_utc) if shift else None,
+                "shift_start_text": fmt(shift.start_utc) if shift else "",
+                "valid_until": iso(valid_until), "valid_until_text": fmt(valid_until)}
 
 
 class ReportIn(BaseModel):
