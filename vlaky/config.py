@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     secret_key: str = "zmen-ma-v-produkcii"            # podpisovanie session cookies
     public_url: str = "http://localhost:8000"          # odkazy v správach pre dispečera
     carrier_name: str = "[NÁZOV DOPRAVCU]"
+    demo_password: str = ""                            # len pre `python -m vlaky demo` (ukážkové účty)
     forwarded_allow_ips: str = "127.0.0.1"             # IP reverse proxy, ktorej sa verí X-Forwarded-For
     # mapový podklad (v prevádzke vlastné dlaždice alebo komerčný poskytovateľ – verejné OSM dlaždice
     # nie sú určené na nepretržitú prevádzku); {z}/{x}/{y} šablóna rastrových dlaždíc

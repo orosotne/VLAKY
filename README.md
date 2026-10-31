@@ -49,7 +49,7 @@ python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
 ```
 
 ```bash
-export VLAKY_DEMO_PASSWORD='ukazka-heslo-2026' VLAKY_SECRET_KEY="$(openssl rand -hex 32)" VLAKY_POSITIONS_TOKEN="$(openssl rand -hex 16)"
+cp .env.demo .env
 ```
 
 ```bash
@@ -64,7 +64,7 @@ python -m vlaky agent --once
 python -m vlaky web --port 8000
 ```
 
-Potom otvor http://127.0.0.1:8000 a prihlás sa ako `dispecer` s heslom z `VLAKY_DEMO_PASSWORD`. Agent spracuje ukážkové e-maily zo schránky `data/schranka` a správy pre dispečera uloží do `data/odoslane`. Polohu vlakov v jazde posúva `python -m vlaky simulate`.
+Potom otvor http://127.0.0.1:8000 a prihlás sa ako `dispecer` s heslom `ukazka-heslo-2026` (nastavené v `.env.demo`). Agent spracuje ukážkové e-maily zo schránky `data/schranka` a správy pre dispečera uloží do `data/odoslane`. Polohu vlakov v jazde posúva `python -m vlaky simulate`.
 
 **Na serveri (VPS):** Docker Compose s PostgreSQL, webom, agentom a Caddy (HTTPS) – postup krok za krokom je v [`docs/PREVADZKA.md`](docs/PREVADZKA.md).
 

@@ -51,7 +51,7 @@ def seed_demo(reset: bool = False, now: datetime | None = None, copy_emails: boo
     if reset:
         _reset_db()
     now = now or now_utc()
-    pw = os.environ.get("VLAKY_DEMO_PASSWORD") or secrets.token_urlsafe(12)
+    pw = os.environ.get("VLAKY_DEMO_PASSWORD") or settings().demo_password or secrets.token_urlsafe(12)
     lines = ["UKÁŽKOVÉ DÁTA (FIKTÍVNE) pripravené."]
     with session_scope() as s:
         seed_borders(s)
