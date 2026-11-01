@@ -395,14 +395,27 @@ def closure_update(closure_id: int, request: Request, background: BackgroundTask
             return render(request, "vyluka_form.html", {"closure": c, "values": reader.values(),
                                                         "errors": reader.errors}, user=user, status_code=422)
         changes = _diff(c, values)
+        if c.until_revoked and values.get("end_utc") and c.end_utc is not None and \
+                abs(values["end_utc"] - ensure_utc(c.end_utc)) >= timedelta(minutes=1):
+            # dispečer zadal skutočný koniec výluky „do odvolania“ – inak by ho agent posúval ďalej (technický
+            # koniec) a potvrdenie udalosti by ho prepísalo
+            values = {**values, "until_revoked": False}
+            changes["until_revoked"] = [True, False]
         if changes:
             for k, v in values.items():
                 setattr(c, k, v)
             c.version = (c.version or 1) + 1
             audit(s, user.username, "closure_update", "closure", c.id, version=c.version, changes=changes)
+        event = s.get(ExtractedEvent, c.source_event_id) if c.source_event_id else None
+        pending_id = event.id if event is not None and event.confirmed_at is None and \
+            event.status in ("navrh", "aplikovane") else None
     if changes and request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"zmena výluky #{closure_id}")
-    return redirect("/vyluky", "Výluka uložená." if changes else "Bez zmien.")
+    msg = "Výluka uložená." if changes else "Bez zmien."
+    if changes and pending_id is not None:
+        msg += (f" Výluka z e-mailu ešte čaká na potvrdenie (udalosť #{pending_id}) – pri potvrdení ostanú vaše "
+                "úpravy, nie údaje z e-mailu.")
+    return redirect("/vyluky", msg)
 
 
 @router.post("/vyluky/{closure_id}/zrusit")
@@ -420,16 +433,36 @@ def closure_cancel(closure_id: int, request: Request, background: BackgroundTask
         if reason:
             c.note = (c.note + "\n" if c.note else "") + f"Zrušená: {reason}"
         audit(s, user.username, "closure_cancel", "closure", c.id, reason=reason, version=c.version)
+        # návrh „navrh“ udalosti z e-mailu, ktorá ešte čaká na potvrdenie: zrušenie v registri = zamietnutie
+        # udalosti (inak by ju neskoršie potvrdenie vo fronte potichu znova zapísalo)
+        event = s.get(ExtractedEvent, c.source_event_id) if c.source_event_id else None
+        pending_id = event.id if event is not None and event.status == "navrh" else None
+    msg = "Výluka zrušená."
+    if pending_id is not None:
+        try:
+            posta = importlib.import_module("vlaky.posta.spracovanie")
+            with session_scope() as s:
+                posta.reject_event(s, pending_id, user.username,
+                                   reason="zrušené v registri výluk" + (f": {reason}" if reason else ""))
+            msg = f"Výluka zrušená; udalosť #{pending_id} z e-mailu, ktorá čakala na potvrdenie, je zamietnutá."
+        except Exception:  # noqa: BLE001 – výluka je zrušená, udalosť ostáva vo fronte
+            log.exception("Zamietnutie udalosti %s po zrušení výluky %s zlyhalo", pending_id, closure_id)
+            msg = (f"Výluka zrušená. Udalosť #{pending_id} z e-mailu ostala vo fronte – zamietnite ju tam, "
+                   "inak by ju potvrdenie znova zapísalo.")
     if request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"zrušená výluka #{closure_id}")
-    return redirect("/vyluky", "Výluka zrušená.")
+    return redirect("/vyluky", msg)
 
 
 @router.post("/vyluky/{closure_id}/overit")
 def closure_verify(closure_id: int, request: Request, background: BackgroundTasks, user=Depends(operate),
                    form=Depends(csrf_form)):
-    """Overenie výluky v stave „návrh“. Výluka z e-mailu sa potvrdí cez spracovanie pošty (potvrdí aj udalosť)."""
+    """Overenie výluky v stave „návrh“. Výluka z e-mailu sa potvrdí cez spracovanie pošty (potvrdí aj udalosť).
+
+    Úpravy, ktoré dispečer urobil v zázname v registri, potvrdenie zachová (údaje z e-mailu ich neprepíšu).
+    """
     back = safe_next(str(form.get("spat") or ""), "/vyluky")
+    kept = False
     with session_scope() as s:
         c = s.get(Closure, closure_id)
         if c is None:
@@ -437,8 +470,11 @@ def closure_verify(closure_id: int, request: Request, background: BackgroundTask
         if c.status != "navrh":
             return redirect(back, f"Výluka je v stave „{CLOSURE_STATUS.get(c.status, c.status)}“.", "info")
         event = s.get(ExtractedEvent, c.source_event_id) if c.source_event_id else None
-        event_id = event.id if event is not None and event.confirmed_at is None and \
-            event.status in ("navrh", "aplikovane") else None
+        applied = ((event.validation or {}).get("apply_result") or {}) if event is not None else {}
+        # udalosť z e-mailu, ktorú ešte treba potvrdiť (aj potvrdená, ktorej zápis zlyhal – potvrdí sa znova)
+        event_id = event.id if event is not None and (
+            (event.confirmed_at is None and event.status in ("navrh", "aplikovane"))
+            or (event.status == "potvrdene" and applied.get("ok") is False)) else None
         if event_id is None:
             c.status = "overene"
             c.version = (c.version or 1) + 1
@@ -449,8 +485,9 @@ def closure_verify(closure_id: int, request: Request, background: BackgroundTask
             with session_scope() as s:
                 ev = posta.confirm_event(s, event_id, user.username)
                 result = (ev.validation or {}).get("apply_result") or {}
+                kept = bool((ev.validation or {}).get("register_kept"))
                 c = s.get(Closure, closure_id)
-                if c is not None and c.status != "overene":
+                if result.get("ok") is False or (c is not None and c.status != "overene"):
                     error = result.get("error") or "výluka zostala v stave návrh"
                     return redirect(f"/fronta#udalost-{event_id}", f"Výluku sa nepodarilo potvrdiť: {error}", "chyba")
                 audit(s, user.username, "closure_verify", "closure", closure_id, event_id=event_id)
@@ -461,7 +498,8 @@ def closure_verify(closure_id: int, request: Request, background: BackgroundTask
             return redirect(back, f"Výluku sa nepodarilo potvrdiť: {str(exc)[:300]}", "chyba")
     if request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"overená výluka #{closure_id}")
-    return redirect(back, "Výluka potvrdená (overené).")
+    return redirect(back, "Výluka potvrdená (overené)" + (" – vaše úpravy v registri výluk ostali zachované."
+                                                         if kept else "."))
 
 
 # ================================================================ HRANICE A PREBERANIE (M6)

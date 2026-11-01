@@ -148,14 +148,54 @@ def parse_event_edits(form, data: dict) -> tuple:
     return edits, errors
 
 
+def confirmed_register_edits(val: dict) -> list:
+    """Polia, ktoré pri potvrdení ostali podľa úprav dispečera v registri výluk (nie podľa e-mailu)."""
+    return [FIELD_LABELS.get(k, k).lower() for k in (val.get("register_kept") or [])]
+
+
+def _apply_failed(ev: ExtractedEvent) -> bool:
+    """Potvrdená udalosť, ktorej zápis do registra zlyhal (napr. avízo pre vlak, ktorý ešte nie je v systéme)."""
+    result = (ev.validation or {}).get("apply_result") if isinstance(ev.validation, dict) else None
+    return ev.status == "potvrdene" and isinstance(result, dict) and result.get("ok") is False
+
+
+def _failed_events(s, limit: int = 50) -> list:
+    rows = s.scalars(select(ExtractedEvent).where(ExtractedEvent.status == "potvrdene")
+                     .order_by(ExtractedEvent.created_at, ExtractedEvent.id).limit(500))
+    return [e for e in rows if _apply_failed(e)][:limit]
+
+
+def _register_notes(s, ev: ExtractedEvent) -> list:
+    """Úpravy záznamu výluky, ktoré dispečer urobil v registri výluk – potvrdenie ich zachová (nie údaje z e-mailu)."""
+    try:
+        edits = _posta().register_edits(s, ev)
+    except Exception:  # noqa: BLE001 – len informácia, fronta sa zobrazí aj bez nej
+        log.exception("Úpravy v registri pre udalosť %s sa nepodarilo zistiť", ev.id)
+        return []
+    return [{"label": FIELD_LABELS.get(col, col), "mail": _shown(mail_value), "register": _shown(row_value)}
+            for col, (mail_value, row_value) in edits.items()]
+
+
+def _shown(value: Any) -> str:
+    if isinstance(value, datetime):
+        return local(value).strftime("%d.%m.%Y %H:%M")
+    if isinstance(value, bool):
+        return "áno" if value else "nie"
+    if value is None or value == "":
+        return "—"
+    return str(value)
+
+
 def _queue_items(s) -> list:
     events = list(s.scalars(select(ExtractedEvent).where(ExtractedEvent.needs_confirmation.is_(True),
                                                          ExtractedEvent.status == "navrh")
                             .order_by(ExtractedEvent.created_at, ExtractedEvent.id).limit(50)))
+    events += _failed_events(s)
     email_ids = {e.email_id for e in events if e.email_id}
     emails = {m.id: m for m in s.scalars(select(Email).options(selectinload(Email.attachments))
                                          .where(Email.id.in_(email_ids)))} if email_ids else {}
-    return [{"event": e, "email": emails.get(e.email_id), "fields": event_fields(e.data or {})} for e in events]
+    return [{"event": e, "email": emails.get(e.email_id), "fields": event_fields(e.data or {}),
+             "failed": _apply_failed(e), "register": _register_notes(s, e)} for e in events]
 
 
 def _auto_items(s) -> list:
@@ -163,11 +203,12 @@ def _auto_items(s) -> list:
     rows = auto_applied_unconfirmed(s)
     email_ids = {ev.email_id for ev, _c in rows if ev.email_id}
     emails = {m.id: m for m in s.scalars(select(Email).where(Email.id.in_(email_ids)))} if email_ids else {}
-    return [{"event": ev, "closure": c, "email": emails.get(ev.email_id)} for ev, c in rows]
+    return [{"event": ev, "closure": c, "email": emails.get(ev.email_id), "register": _register_notes(s, ev)}
+            for ev, c in rows]
 
 
 def _confirmable(ev: ExtractedEvent) -> bool:
-    return ev.status == "navrh" or (ev.status == "aplikovane" and ev.confirmed_at is None)
+    return ev.status == "navrh" or (ev.status == "aplikovane" and ev.confirmed_at is None) or _apply_failed(ev)
 
 
 @router.get("/fronta", response_class=HTMLResponse)
@@ -177,6 +218,7 @@ def queue_page(request: Request, user=Depends(view)):
         auto_items = _auto_items(s)
         total = s.scalar(select(func.count(ExtractedEvent.id)).where(ExtractedEvent.needs_confirmation.is_(True),
                                                                       ExtractedEvent.status == "navrh")) or 0
+        total += sum(1 for it in items if it["failed"])
         recent = list(s.scalars(select(ExtractedEvent).where(ExtractedEvent.status != "navrh",
                                                              ExtractedEvent.confirmed_at.is_not(None))
                                 .order_by(ExtractedEvent.confirmed_at.desc()).limit(15)))
@@ -213,7 +255,10 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
     try:
         posta = _posta()
         with session_scope() as s:
-            posta.confirm_event(s, event_id, user.username, edits=edits or None)
+            ev = posta.confirm_event(s, event_id, user.username, edits=edits or None)
+            val = ev.validation if isinstance(ev.validation, dict) else {}
+            result = val.get("apply_result") or {}
+            kept = confirmed_register_edits(val)
     except (ImportError, NotImplementedError, AttributeError):
         log.warning("Modul posta.spracovanie nie je k dispozícii")
         return redirect("/fronta", "Spracovanie e-mailov (modul posta) zatiaľ nie je k dispozícii – udalosť "
@@ -223,8 +268,15 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
         return redirect(f"/fronta#udalost-{event_id}", f"Udalosť sa nepodarilo potvrdiť: {str(exc)[:300]}", "chyba")
     if request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"potvrdená udalosť z e-mailu #{event_id}")
-    msg = "Udalosť potvrdená" + (f" s úpravami ({', '.join(edits)})." if edits else ".")
-    return redirect("/fronta", msg)
+    if result.get("ok") is False:
+        # zápis zlyhal (napr. vlak ešte nie je v systéme) – udalosť ostáva vo fronte, po náprave sa potvrdí znova
+        return redirect(f"/fronta#udalost-{event_id}", "Udalosť je potvrdená, ale do registra sa nezapísala: "
+                        f"{str(result.get('error') or 'neznáma chyba')[:300]} Po odstránení príčiny ju potvrďte znova.",
+                        "chyba")
+    msg = "Udalosť potvrdená" + (f" s úpravami ({', '.join(edits)})" if edits else "")
+    if kept:
+        msg += f"; ponechané úpravy z registra výluk ({', '.join(kept)})"
+    return redirect("/fronta", msg + ".")
 
 
 @router.post("/fronta/{event_id}/zamietnut")

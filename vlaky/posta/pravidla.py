@@ -164,6 +164,9 @@ _REASON_RE = re.compile(r"\bz\s+dovodu\s+|\bz\s+duvodu\s+|\bdovod\w*(?:\s+\w+){0
                         r"|\bduvod\w*(?:\s+\w+){0,2}\s*:\s*")
 _REASON_END = re.compile(r"[,;.\n(]|\s(?:sa|bude|budu|je|su|zavadza|zavadzaju|plati|v\s+useku|od\s+\d)\b")
 _OLD_PERIOD = re.compile(r"povodn|puvodn|doterajs|predchadzajuc|predosl|stary\b|stareho|povodne")
+# dátum, ktorý nie je termínom výluky: pôvodný deň presunu („z 12.11. na 13.11.“), dátum vydania či rozhodnutia
+_NOT_TERM_DATE = re.compile(r"(?:^|[\s(])(?:z|zo|ze)\s+(?:termin\w*\s+)?$|(?:zo|ze)\s+dn[ae]\s*$|povodn|puvodn|doterajs"
+                            r"|vydan|vydavan|rozhodnut|v\s+\w+\s+dn[ae]\s*$")
 _ENUM_RE = re.compile(r"^\s*(?:\d{1,2}[.)]|[a-z]\)|[-•*]|•)\s+")
 
 
@@ -472,6 +475,22 @@ class _Ctx:
                 out.append(one_line(self.text[t.start:t.end], 40))
         return out
 
+    def unused_dates(self, start: int, end: int) -> list[str]:
+        """Dátumy v časti textu, ktoré nepatria k žiadnemu obdobiu (napr. ďalší deň zoznamu, ktorý sa nespracoval).
+
+        Nepočíta pôvodný deň presunu („z 12.11. na 13.11.“) ani dátum vydania či rozhodnutia („zo dňa 2.11.“)."""
+        spans = [(p.pos, p.end_pos) for p in self.periods]
+        out = []
+        for t in self.toks:
+            if t.kind != "date" or not (start <= t.start < end):
+                continue
+            if any(a <= t.start and t.end <= b for a, b in spans):
+                continue
+            if _NOT_TERM_DATE.search(self.f[max(start, t.start - 30):t.start]):
+                continue
+            out.append(one_line(self.text[t.start:t.end], 40))
+        return out
+
     def is_old_period(self, p: Period) -> bool:
         """Obdobie označené ako pôvodné („Pôvodný termín: …“) – pri zmene neplatí."""
         ls = self.f.rfind("\n", 0, p.pos) + 1
@@ -662,6 +681,11 @@ class RuleExtractor:
             if loose:          # čas v tom istom odseku, ktorý sa nikam nepriradil – termín nemusí byť úplný
                 penalties += 0.1
                 notes.append("V texte je čas " + ", ".join(f"„{x}“" for x in loose[:3]) +
+                             ", ktorý sa nepodarilo priradiť k obdobiu – overte termín.")
+            loose_days = c.unused_dates(*blk) if blk else []
+            if loose_days:     # deň v tom istom odseku bez obdobia (napr. ďalšia noc zoznamu) – termín nemusí byť úplný
+                penalties += 0.1
+                notes.append("V texte je dátum " + ", ".join(f"„{x}“" for x in loose_days[:3]) +
                              ", ktorý sa nepodarilo priradiť k obdobiu – overte termín.")
         a, b = (bs, be) if not single else (0, len(c.text))
         ref = c.first_group(_CLOSURE_REF_RES, a, b) or (c.first_group(_CLOSURE_REF_RES, 0, len(c.text))

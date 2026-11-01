@@ -135,17 +135,36 @@ def _forwarded_from_message(inner: Message, how: str) -> ForwardedMessage:
                             subject=header_text(_header(inner, "Subject"))[:500], how=how)
 
 
-_HEADER_LINE = re.compile(rb"^[A-Za-z][A-Za-z0-9-]{1,40}:[ \t]")
+_HEADER_LINE = re.compile(rb"^[A-Za-z][A-Za-z0-9-]{1,40}:(?:[ \t]|$)")
+# hlavičky, ktoré má skutočný e-mail (okrem From) – „Vlak:/Dátum:/From: Bratislava/To: Kúty“ e-mail nie je
+_MAIL_HEADERS = (b"date:", b"subject:", b"message-id:", b"received:", b"mime-version:")
 
 
 def _embedded_message(filename: str, ctype: str, data: bytes) -> Optional[Message]:
     """Priložený e-mail, ktorého text sa spracuje (textová príloha začínajúca hlavičkami e-mailu, napr. .eml
-    poslaný ako text/plain) – inak None. Overuje sa rovnako ako príloha message/rfc822."""
+    poslaný ako text/plain) – inak None. Overuje sa rovnako ako príloha message/rfc822.
+
+    E-mail je to len vtedy, keď text začína skutočným blokom hlavičiek (až po prvý prázdny riadok sú len
+    hlavičky a ich pokračovania): hlavička From s adresou (s „@“) a aspoň jedna z hlavičiek Date, Subject,
+    Message-ID, Received, MIME-Version. Textový výpis trasy s riadkami „From: Bratislava“ e-mailom nie je."""
     if prilohy.detect_kind(filename, ctype, data[:8]) != "txt":
         return None                   # iné typy sa na text neprevádzajú (napr. .eml ako application/octet-stream)
-    lines = [ln for ln in data[:4096].replace(b"\r\n", b"\n").split(b"\n")[:12] if ln.strip()]
-    heads = [ln for ln in lines if _HEADER_LINE.match(ln)]
-    if len(heads) < 3 or not any(ln.lower().startswith(b"from:") for ln in heads):
+    text = data[:16384].replace(b"\r\n", b"\n").lstrip(b"\n")
+    block = text.split(b"\n\n", 1)[0].split(b"\n")
+    if block and block[0].startswith(b"From ") and not _HEADER_LINE.match(block[0]):
+        block = block[1:]             # oddeľovač schránky mbox („From adresa dátum“)
+    heads: list[bytes] = []
+    for ln in block:
+        if ln[:1] in (b" ", b"\t") and heads:
+            heads[-1] += b" " + ln.strip().lower()     # pokračovanie predchádzajúcej hlavičky
+            continue
+        if not _HEADER_LINE.match(ln):
+            return None               # v bloku je riadok, ktorý nie je hlavičkou – nejde o e-mail
+        heads.append(ln.lower())
+    from_lines = [ln for ln in heads if ln.startswith(b"from:")]
+    if not from_lines or not any(ln.startswith(h) for ln in heads for h in _MAIL_HEADERS):
+        return None
+    if not any(_ADDRESS_RE.search(ln[5:].decode("utf-8", "replace")) for ln in from_lines):
         return None
     try:
         return message_from_bytes(data, policy=policy.default)
