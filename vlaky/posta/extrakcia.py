@@ -106,6 +106,10 @@ def _same(fieldname: str, a, b) -> bool:  # noqa: ANN001
 
 
 def _match_score(r: ExtractedItem, lm: ExtractedItem) -> int:
+    if r.kind == "ine" and "skoncenie_mimoriadnosti" in r.evidence:
+        # oznámenie o skončení mimoriadnosti: mimoriadnosť či zrušenie od LLM je tá istá udalosť (ostáva „iné“ s
+        # nezhodou druhu) – nesmie z nej vzniknúť nová mimoriadnosť so záznamom „navrh“ do odvolania
+        return 1 if lm.kind in ("mimoriadnost", "vyluka_zrusenie") else 0
     if _FAMILY.get(r.kind) != _FAMILY.get(lm.kind):
         return 0
     fam = _FAMILY.get(r.kind)

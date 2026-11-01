@@ -91,3 +91,24 @@ def test_mr1_preposlana_sprava_nie_je_citacia(cfg):
             "Liptovský Mikuláš 20.11.2026 od 8:00 do 14:00.\n")
     (it,) = rules(body, subject="FW: ROV c. 1142/2026 Poprad-Tatry - Liptovsky Mikulas")
     assert (it.data["start"], it.data["end"]) == (iso(2026, 11, 20, 7), iso(2026, 11, 20, 13))
+
+
+# ====================================================================== oprava po kontrole – správanie bez zmeny
+def test_pomala_jazda_ktora_sa_zrusi_po_oprave_je_pomala_jazda(cfg):
+    """Poistka: „zavádza sa pomalá jazda …, ktorá sa zruší po oprave“ (budúce zrušenie) je nová pomalá jazda."""
+    items = rules("Pre poruchu koľaje sa od 03.11.2026 12:00 zavádza pomalá jazda 30 km/h v úseku Kysak – Košice, ktorá "
+                  "sa zruší po oprave.", subject="TLG c. 46/2026")
+    assert [i.kind for i in items] == ["pomala_jazda"] and items[0].data["speed_kmh"] == 30
+
+
+def test_zrusenie_vyluky_podla_cisla_v_tele(cfg):
+    """Poistka: „Výluka podľa ROV č. 1142/2026 sa ruší. Oznámené TLG č. 50/2026.“ – zrušenie ROV č. 1142/2026."""
+    (it,) = rules("Výluka podľa ROV č. 1142/2026 sa ruší. Oznámené TLG č. 50/2026.", subject="Zrusenie vyluky")
+    assert it.kind == "vyluka_zrusenie" and it.data["external_ref"] == "1142/2026"
+
+
+def test_rocny_zoznam_v_tom_istom_roku_ostava_chronologicky(cfg):
+    """MR6 poistka: ročný plán „10.1. a 28.12.2026“ prijatý v decembri 2025 – 10.1.2026 (nie 2027), bez upozornenia."""
+    items = rules(f"{SEC} 10.1. a 28.12.2026 od 8:00 do 14:00.", received=utc(2025, 12, 15, 9))
+    assert terms(items) == [(iso(2026, 1, 10, 7), iso(2026, 1, 10, 13)), (iso(2026, 12, 28, 7), iso(2026, 12, 28, 13))]
+    assert all(i.confidence == 0.85 for i in items)

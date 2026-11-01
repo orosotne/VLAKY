@@ -30,6 +30,9 @@ _ISO_RE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?:[t ](\d{1,2}):(\d{2})(?:
 _DAYRANGE_RE = re.compile(
     r"(?<![\d.,/:])(\d{1,2})\.?\s?-\s?(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
 _DATE_RE = re.compile(r"(?<![\d.,/:])(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
+# druhý dátum hneď za lomkou („v noci 12.11.2026/13.11.2026“, „12.11./13.11.2026“) – _DATE_RE ho nevezme (lomka
+# pred ním), bez neho by sa „13.11“ prečítalo ako čas 13:11; platí len za iným dátumom
+_SLASH_DATE_RE = re.compile(r"/(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
 # noc z jedného dňa na druhý: „z 12. na 13.11.2026“, „12./13.11.2026“, „z 12. na 13. novembra 2026“ – obdobie
 # začína prvým dňom (skupiny: deň, deň, mesiac číslom, mesiac slovom, rok)
 _NIGHT_RE = re.compile(r"(?<![\d.,/:])(\d{1,2})\s?\.\s?(?:na\s+|/\s?)(\d{1,2})\s?\.\s?(?:(\d{1,2})\s?\.|(" + _MONTH_ALT
@@ -38,6 +41,9 @@ _NIGHT_GAP = re.compile(r"^\s*(?:na|/)\s*$")
 # noc je to len vtedy, keď ju text tak označuje („v noci“, „nočná“) alebo okno za ňou prechádza cez polnoc;
 # „presúva sa z 12.11. na 13.11.“ je presun termínu na nový deň (nie noc)
 _NIGHT_MARK = re.compile(r"\bnoc")
+# označenie noci ďalej pred dňami, ak sú medzi nimi len ďalšie dátumy noci („v nociach od 30.11./1.12. do 2./3.12.“)
+_NIGHT_MARK_FAR = re.compile(r"\bnoc\w*")
+_NIGHT_CHAIN = re.compile(r"(?:[\s\d./,;–-]|\b(?:z|zo|od|do|az|a|aj|na)\b)*\Z")
 _SHIFT_MARK = re.compile(r"\b(?:presuv|presun|posuv|posun|preklad|preloz|odklad|odloz|meni\b|menia\b|zmeni\b)\w*"
                          r"\s+(?:sa\s+)?zo?\s+(?:termin\w*\s+|dna\s+)?$")
 _WINDOW_RE = re.compile(r"(?<![\d.:,])(\d{1,2})\s?[:.]\s?(\d{2})(?!\d)(?:\s?(?:hod\b\.?|h\b\.?))?\s*(?:-+|do|az)\s*"
@@ -162,6 +168,11 @@ def _is_night(folded: str, start: int, end: int, slash: bool) -> bool:
     Presun termínu („presúva sa / mení sa / preložená z 12.11. na 13.11.“) nocou nie je – platí nový deň.
     """
     marked = bool(_NIGHT_MARK.search(folded, max(0, start - 25), start))
+    if not marked:
+        far = None
+        for far in _NIGHT_MARK_FAR.finditer(folded, max(0, start - 70), start):
+            pass
+        marked = far is not None and bool(_NIGHT_CHAIN.match(folded, far.end(), start))
     if not slash and not marked and _SHIFT_MARK.search(folded[max(0, start - 50):start]):
         return False
     return marked or _crosses_midnight(folded, end)
@@ -363,6 +374,18 @@ def scan(folded: str, ref: date) -> list[Temporal]:
         taken.append((m.start(), m.end()))
         _add_bare(folded, toks, taken, m.start(), d, bool(y), allow_range=True)
 
+    for m in _SLASH_DATE_RE.finditer(folded):
+        a, b = m.start(1), m.end()
+        if _overlaps(taken, a, b) or not any(t.kind == "date" and _NIGHT_GAP.match(folded[t.end:a]) for t in toks):
+            continue
+        dd, mon = int(m.group(1)), int(m.group(2))
+        y = _year(m.group(3))
+        d = (_mkdate(y, mon, dd) if y else _infer_year(mon, dd, ref)) if 1 <= mon <= 12 else None
+        if d is None:
+            continue
+        toks.append(Temporal("date", a, b, d, year_given=bool(y), month_day=None if y else (dd, mon)))
+        taken.append((a, b))
+
     for m in _DATE_NAME_RE.finditer(folded):
         if _overlaps(taken, m.start(), m.end()):
             continue
@@ -395,7 +418,7 @@ def scan(folded: str, ref: date) -> list[Temporal]:
         taken.append((m.start(), m.end()))
 
     toks.sort(key=lambda t: t.start)
-    _fix_years(folded, toks)
+    _fix_years(folded, toks, ref)
     return _merge(folded, _night_pairs(folded, toks))
 
 
@@ -429,14 +452,17 @@ def _night_pairs(folded: str, toks: list[Temporal]) -> list[Temporal]:
 _LIST_ROLLOVER_DAYS = 62
 
 
-def _fix_years(folded: str, toks: list[Temporal]) -> None:
+def _fix_years(folded: str, toks: list[Temporal], ref: date) -> None:
     """Dátum bez roka pred „do <dátum s rokom>“ prevezme rok z druhého dátumu (10.11.–14.11.2026), rovnako
     v zozname („28.12. a 2.1.2027“).
 
     Zoznam sa berie chronologicky (neskorší mesiac pred skorším = prelom roka), sprava doľava, takže rok prejde
     celým zoznamom („12./13.11., 13./14.11. a 14./15.11.2026“). Ak by tak medzi dňami zoznamu vyšlo viac ako
-    ~2 mesiace („3.12. a 27.11.2026“ → 3.12.2025), zoznam nie je chronologický: deň dostane rok dátumu za ním, rok
-    sa považuje za doplnený a obdobie dostane príznak ``zle_poradie`` („overte termín“)."""
+    ~2 mesiace, zoznam nie je chronologický: deň, ktorý by bol dávno pred prijatím e-mailu (``ref``), dostane
+    nasledujúci rok, ak tak leží tesne za dátumom za ním („3.12. a 27.11.2026“ → 3.12.2026, nie 3.12.2025; „2.1.
+    a 28.12.2026“ → 2.1.2027), inak ostane chronologický; rok sa považuje za doplnený a obdobie dostane príznak
+    ``zle_poradie`` („overte termín“). Dlhý chronologický zoznam v tom istom roku (ročný plán „10.1. a 28.12.2026“
+    prijatý v decembri 2025) sa nemení."""
     for i in range(len(toks) - 1, -1, -1):
         t = toks[i]
         if t.kind != "date" or t.year_given or not t.month_day:
@@ -447,12 +473,15 @@ def _fix_years(folded: str, toks: list[Temporal]) -> None:
                 dd, mon = t.month_day
                 y = u.day.year - (1 if mon > u.day.month else 0)
                 d = _mkdate(y, mon, dd)
+                nxt = _mkdate(y + 1, mon, dd)
+                late = d is not None and nxt is not None and d < ref - timedelta(days=30) \
+                    and 0 <= (nxt - u.day).days <= _LIST_ROLLOVER_DAYS
                 if u.unordered:                   # zoznam so zlým poradím – rok ostáva doplnený
                     t.day = d or t.day
                     t.unordered = True
-                elif d is not None and y < u.day.year and (u.day - d).days > _LIST_ROLLOVER_DAYS \
+                elif d is not None and (u.day - d).days > _LIST_ROLLOVER_DAYS and (y < u.day.year or late) \
                         and _LIST_GAP.match(folded[t.end:u.start]):
-                    t.day = _mkdate(u.day.year, mon, dd) or t.day
+                    t.day = nxt if late else d
                     t.unordered = True
                 else:
                     t.day = d or t.day

@@ -4,7 +4,8 @@ MR6, PR0 a PR4.
 - MR0: nočná výluka s oknom po polnoci („v noci z 12. na 13.11. od 0:30 do 4:30“) je 13.11. 0:30 – 4:30, nie 12.11.;
 - MR3: dni oddelené čiarkou („12.11.2026 od 8:00 do 14:00, 13.11.2026 od 9:00 do 15:00“) sú dve obdobia;
 - MR6: zoznam „3.12. a 27.11.2026“ nie je 3.12.2025 (zlé poradie → rok z ďalšieho dátumu a „overte termín“);
-- MR4: oznámenie o skončení mimoriadnosti nie je nová mimoriadnosť do odvolania, ale jej zrušenie;
+- MR4: oznámenie o skončení mimoriadnosti nie je nová mimoriadnosť do odvolania (je „iné“ – nič sa samo
+  nezruší), zrušenie pomalej jazdy či POTR nie je nová pomalá jazda;
 - PR4: mimoriadnosť s uvedeným „od … do …“ si koniec ponechá (nie 30 dní do odvolania);
 - PR0: mimoriadnosť „v železničnej stanici X … neprejazdná“ je mimoriadnosť v dopravni X (od = do) so záznamom
   „navrh“ pre plánovač – vlak cez neprejazdnú stanicu nedostane ZELENÚ ani po potvrdení;
@@ -389,23 +390,23 @@ END_NOTICE = ("Oznamujeme ukončenie mimoriadnej udalosti v ŽST Ružomberok (po
     ("Ukoncenie prerusenia dopravy", "Ukončenie prerušenia dopravy v úseku Ružomberok – Liptovský Mikuláš o 08:15 dňa "
                                      "02.11.2026."),
 ])
-def test_mr4_skoncenie_mimoriadnosti_je_zrusenie_nie_nova_mimoriadnost(cfg, subject, text):
-    """MR4: oznámenie o skončení mimoriadnosti je zrušenie (ukončenie) mimoriadnosti na tom istom mieste – nie nová
-    mimoriadnosť do odvolania."""
+def test_mr4_skoncenie_mimoriadnosti_nie_je_nova_mimoriadnost(cfg, subject, text):
+    """MR4: oznámenie o skončení mimoriadnosti nie je nová mimoriadnosť do odvolania – je to „iné“ s vysvetlením
+    (miesto a čas obnovenia); bez čísla sa nič automaticky neruší (podľa úseku by sa mohla zrušiť iná výluka)."""
     items = rules(text, subject=subject, received=utc(2026, 11, 2, 7, 30))
-    assert [i.kind for i in items] == ["vyluka_zrusenie"]
+    assert [i.kind for i in items] == ["ine"]
     (it,) = items
-    assert (it.data["from_station"], it.data["to_station"]) == ("Ružomberok", "Liptovský Mikuláš")
-    assert it.data["start"] == iso(2026, 11, 2, 7, 15)
-    assert any("skončení mimoriadnosti" in n for n in it.notes)
+    assert it.data == {}
+    note = next(n for n in it.notes if "skončení mimoriadnosti" in n)
+    assert "Ružomberok – Liptovský Mikuláš" in note and "02.11.2026 08:15" in note and "ručne" in note
 
 
-def test_mr4_obnovenie_s_obmedzenim_rychlosti_je_zrusenie_a_pomala_jazda(cfg):
-    """MR4: „prevádzka obnovená …, rýchlosť obmedzená na 30 km/h do odvolania“ – zrušenie mimoriadnosti a pomalá
+def test_mr4_obnovenie_s_obmedzenim_rychlosti_je_pomala_jazda(cfg):
+    """MR4: „prevádzka obnovená …, rýchlosť obmedzená na 30 km/h do odvolania“ – oznámenie o skončení (iné) a pomalá
     jazda do odvolania (nie mimoriadnosť, ktorá by úsek zablokovala na 30 dní)."""
     items = rules("Prevádzka v úseku Ružomberok – Liptovský Mikuláš obnovená od 02.11.2026 08:15, rýchlosť obmedzená "
                   "na 30 km/h do odvolania.", subject="Mimoriadnost Ruzomberok", received=utc(2026, 11, 2, 7, 30))
-    assert [i.kind for i in items] == ["vyluka_zrusenie", "pomala_jazda"]
+    assert [i.kind for i in items] == ["ine", "pomala_jazda"]
     pj = items[1].data
     assert (pj["from_station"], pj["to_station"], pj["start"], pj["speed_kmh"], pj["until_revoked"]) == (
         "Ružomberok", "Liptovský Mikuláš", iso(2026, 11, 2, 7, 15), 30, True)
@@ -424,10 +425,11 @@ def test_mr4_zrusenie_pomalej_jazdy_nie_je_nova_pomala_jazda(cfg, subject, text,
     assert it.kind == "vyluka_zrusenie" and ref in it.data["external_ref"]
 
 
-def test_mr4_end_to_end_skoncenie_zrusi_mimoriadnost_az_po_potvrdeni(env, session):
+def test_mr4_end_to_end_skoncenie_nevytvori_zaznam_a_nezrusi_nic_samo(env, session):
     """MR4 end to end: v registri je otvorená mimoriadnosť Ružomberok – Liptovský Mikuláš. Oznámenie o jej skončení
-    nevytvorí nový záznam „navrh“ do odvolania (úsek by bol 30 dní červený); čaká na potvrdenie ako zrušenie s
-    upozornením, ktorú mimoriadnosť zruší. Po potvrdení je mimoriadnosť zrušená a vlak cez úsek sa už nezastavuje."""
+    nevytvorí nový záznam „navrh“ do odvolania (úsek by bol 30 dní červený) ani prepočet; čaká vo fronte ako „iné“.
+    Mimoriadnosť sa automaticky nezruší (ani po potvrdení) – ukončí ju dispečer v registri, potom sa vlak cez úsek
+    už nezastavuje."""
     from vlaky.planovanie.planovac import evaluate_train
     from vlaky.posta.spracovanie import confirm_event, process_mailbox
 
@@ -444,14 +446,16 @@ def test_mr4_end_to_end_skoncenie_zrusi_mimoriadnost_az_po_potvrdeni(env, sessio
     summary = process_mailbox(session, now=now)
     session.commit()
     (ev,) = events(session)
-    assert ev.kind == "vyluka_zrusenie" and ev.needs_confirmation and ev.status == "navrh"
+    assert ev.kind == "ine" and ev.needs_confirmation and ev.status == "navrh"
+    assert any("skončení mimoriadnosti" in n for n in ev.validation["notes"])
     assert [c.id for c in rows(session)] == [incident.id]          # žiadny nový záznam do odvolania
     assert summary["planning"] is None
-    assert any(f"Zruší výluku #{incident.id}" in w for w in ev.validation["warnings"])
     confirm_event(session, ev.id, "dispecer1")
     session.commit()
     session.refresh(incident)
-    assert incident.status == "zrusene"
+    assert incident.status == "overene"                           # nič sa samo nezrušilo
+    incident.status = "zrusene"                                   # dispečer mimoriadnosť ukončí v registri
+    session.commit()
     t = add_train(session, "77503", "Ružomberok", "Liptovský Mikuláš", now + timedelta(hours=1), deadline_h=3)
     r = evaluate_train(session, t.id, now, "test MR4")
     assert r.decision != "ESKALOVAŤ" and not any("Mimoriadnosť" in x for x in r.reasons), (r.decision, r.reasons)
