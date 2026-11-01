@@ -46,6 +46,7 @@ RUN_MARGIN = 0.04            # prirážka k vypočítanej jazdnej dobe (UIC 451-
 NO_DEADLINE_MIN = 7 * 24 * 60
 NO_PATH_SENTINEL = -10 ** 9  # „žiadna pridelená trasa“ → každý odchod vyžaduje novú trasu
 BLOCKING = {"uplna", "mimoriadnost", "trakcne_vedenie"}
+AVIZO_GRACE_MIN = 30.0       # avízo uplynulo dlhšie, príchod nie je zaznamenaný → vlak mešká, pripravenosť nie je istá
 
 
 # ------------------------------------------------------------------ parametre
@@ -555,6 +556,17 @@ def mailbox_age_minutes(session: Session, now: datetime) -> Optional[float]:
     return _min(last, now)
 
 
+def _mailbox_reason(session: Session, now: datetime) -> Optional[str]:
+    """Dôvod, prečo nesmie byť ZELENÁ: schránka agenta nebola úspešne skontrolovaná v posledných 30 min
+    (rovnaké texty ako pri vlaku v evaluate_train). Inak None."""
+    age = mailbox_age_minutes(session, now)
+    if age is None:
+        return "Agent ešte úspešne neskontroloval svoju e-mailovú schránku – výluky nemusia byť aktuálne."
+    if age > 30:
+        return f"E-mailová schránka agenta sa nekontrolovala {age:.0f} min – výluky nemusia byť aktuálne."
+    return None
+
+
 def _unmapped_windows(net: Network, windows: list, groute: GRoute, ready: datetime, horizon_min: float) -> list:
     """Výluky v čase možnej jazdy, ktoré sa nepodarilo umiestniť na sieť a môžu ležať na trase vlaku.
 
@@ -644,18 +656,71 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
     ho = entry_handover(session, train.id)
     bc = ho.border if ho else train.entry_border
     paths = allocated_paths(session, train, border_time(ho), now)
+    from .stav import STANDING
+
+    # vlak ešte v zahraničí (vstupné preberanie očakávané, príchod nezaznamenaný; alebo „na ceste k hranici“ bez
+    # preberania) – nie vlak, ktorý podľa svojho stavu už stojí na koľajach ŽSR (prevzatý, odstavený: nedopísané
+    # preberanie je len evidencia, limit 18 h mu beží – ako v stav._since_applies). Avízo v budúcnosti je plán
+    # príchodu; uplynuté avízo NIE JE príchod – vlak mešká alebo príchod nie je zapísaný (ready_unknown: nikdy
+    # ZELENÁ). Čas pripravenosti zapísaný až po avíze (hlásenie rušňovodiča „pripravený“, dispečer) znamená, že
+    # vlak je zrejme na hranici a nezapísaný je len príchod – počíta sa s ním; inak vlak prinajlepšom príde teraz.
+    # Bez avíza platí budúci čas pripravenosti od dispečera.
+    ready_unknown = False
+    abroad = not running and train.status not in STANDING and (
+        (ho is not None and ho.status == "ocakavany" and not ho.arrived_utc) or
+        (ho is None and train.status == "na_ceste_k_hranici"))
+    planned_ready = ensure_utc(train.ready_utc) if train.ready_utc else None
+    avizo = ensure_utc(ho.avizo_eta_utc) if ho is not None and ho.avizo_eta_utc else None
     if running:
         ready = now
-    elif ho and ho.status in ("ocakavany", "prisiel") and (ho.arrived_utc or ho.avizo_eta_utc):
-        arrival = ensure_utc(ho.arrived_utc or ho.avizo_eta_utc)
+    elif (ho and ho.status in ("ocakavany", "prisiel") and (ho.arrived_utc or ho.avizo_eta_utc)) or \
+            (abroad and (planned_ready is None or planned_ready <= now)):
         p50 = bc.dwell_p50_min if bc and bc.dwell_p50_min is not None else 60.0
         p90 = bc.dwell_p90_min if bc and bc.dwell_p90_min is not None else max(p50 * 1.5, p50 + 30.0)
         dwell = max(p50, p90)
-        ready = max(now, plus_minutes(arrival, dwell))
-        reasons.append(f"Preberanie na {bc.handover_station if bc else 'hranici'}: príchod "
-                       f"{fmt(arrival)} + preberanie {dwell:.0f} min (P90; bežne {p50:.0f} min).")
+        place = bc.handover_station if bc else "hranici"
+        if not abroad:
+            arrival = ensure_utc(ho.arrived_utc or ho.avizo_eta_utc)
+            what = "príchod" if ho.arrived_utc else "príchod (čas podľa avíza)"
+            reasons.append(f"Preberanie na {place}: {what} {fmt(arrival)} + preberanie {dwell:.0f} min "
+                           f"(P90; bežne {p50:.0f} min).")
+            ready = max(now, plus_minutes(arrival, dwell))
+        elif avizo is not None and avizo >= plus_minutes(now, -AVIZO_GRACE_MIN):
+            # avízo v budúcnosti, alebo len krátko po ňom (príchod sa zapisuje s oneskorením) – plán príchodu
+            note = "" if avizo >= now else " (príchod zatiaľ nie je zaznamenaný)"
+            reasons.append(f"Preberanie na {place}: avízo príchodu {fmt(avizo)}{note} + preberanie {dwell:.0f} min "
+                           f"(P90; bežne {p50:.0f} min).")
+            ready = max(now, plus_minutes(avizo, dwell))
+        else:
+            ready_unknown = True
+            late = (f"{bc.handover_station}; " if bc else "") + (
+                f"avízo {fmt(avizo)}, meškanie {_min(avizo, now):.0f} min" if avizo is not None else "bez avíza")
+            earliest = plus_minutes(now, dwell)  # vlak ešte neprišiel: príchod najskôr teraz + preberanie (P90)
+            recorded = planned_ready is not None and (avizo is None or planned_ready >= avizo)
+            if recorded:
+                # pripravenosť zapísaná po avíze: nie „vlak neprišiel“ – nezapísaný je len príchod (prevzatie); nikdy
+                # však skôr, ako by bol pripravený pri príchode podľa avíza
+                ready = max(now, planned_ready, plus_minutes(avizo, dwell) if avizo is not None else now)
+                reasons.append(f"Príchod na hranicu ({late}) nie je zapísaný; počíta sa s pripravenosťou "
+                               f"podľa záznamu vlaku {fmt(planned_ready)} (hlásenie rušňovodiča „pripravený“ alebo "
+                               f"dispečer). Ak vlak prišiel, zapíšte príchod a prevzatie v Hraniciach, inak nové "
+                               f"avízo alebo čas pripravenosti; dovtedy vlak nemôže byť ZELENÝ.")
+            else:
+                ready = earliest
+                old = f"; zapísaná pripravenosť {fmt(planned_ready)} je staršia ako avízo" if planned_ready else ""
+                reasons.append(f"Vlak ešte neprišiel na hranicu ({late}{old}) – príchod nie je známy, počíta "
+                               f"sa najskôr s príchodom teraz + preberanie {dwell:.0f} min (P90). Zapíšte príchod "
+                               f"alebo nové avízo; dovtedy vlak nemôže byť ZELENÝ.")
+            last_path = max((ensure_utc(p.departure_utc) for p in paths), default=None)
+            if last_path is not None and last_path < plus_minutes(ready, -params.path_tolerance_min):
+                reasons.append(f"Pridelenú trasu ({fmt(last_path)}) vlak{'' if recorded else ' pri neskoršom príchode'}"
+                               f" nestihne – počíta sa s novou trasou.")
+            elif last_path is not None and last_path < plus_minutes(earliest, -params.path_tolerance_min):
+                reasons.append(f"Ak vlak ešte neprišiel, pridelenú trasu ({fmt(last_path)}) nestihne (príchod "
+                               f"najskôr teraz + preberanie {dwell:.0f} min) – príchod alebo nové avízo zapíšte "
+                               f"čo najskôr.")
     else:
-        ready = max(now, ensure_utc(train.ready_utc) if train.ready_utc else now)
+        ready = max(now, planned_ready or now)
     # od kedy vlak už stojí na koľajach ŽSR (limit 18 h – PPŽS): začiatok státia, príchod na hranicu, zmeškaná
     # trasa tejto jazdy (pravidlá a náhradné kotvy starších záznamov vo vlaky.planovanie.stav)
     hold_since: list = hold_anchors(train, ho, paths, now)
@@ -674,10 +739,17 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
         left = params.max_hold_h * 60.0 - _min(since, ready)
         horizon_min = max(0.0, min(horizon_min, left))
         hold_exceeded = left <= 0
-        if left <= 0:
+        limit_at = plus_minutes(since, params.max_hold_h * 60.0)
+        if left <= 0 and limit_at <= now:
             reasons.append(f"Vlak stojí od {fmt(since)} dlhšie ako {params.max_hold_h:.0f} h – podľa PPŽS ho ŽSR "
                            f"(PIS) zruší a odstavenie je najviac {params.max_hold_h:.0f} h. Neskorší odchod nie je "
                            f"prípustný – dohodnúť so ŽSR novú trasu.")
+        elif left <= 0:
+            # limit ešte neuplynul, ale uplynie skôr, ako bude vlak pripravený (nie „už stojí dlhšie ako 18 h“)
+            reasons.append(f"Vlak stojí od {fmt(since)} – limit {params.max_hold_h:.0f} h státia (PPŽS) uplynie "
+                           f"{fmt(limit_at)}, skôr ako bude vlak pripravený ({fmt(ready)}); potom ho ŽSR (PIS) "
+                           f"zruší a odstavenie je najviac {params.max_hold_h:.0f} h. Neskorší odchod nie je "
+                           f"prípustný – pripraviť vlak skôr alebo dohodnúť so ŽSR novú trasu.")
         elif left < params.max_hold_h * 60.0:
             reasons.append(f"Vlak stojí od {fmt(since)} – do limitu {params.max_hold_h:.0f} h (PPŽS) zostáva "
                            f"{left / 60:.1f} h; neskorší odchod sa neponúka.")
@@ -745,18 +817,34 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
                        "Zadajte zmenu rušňovodiča.")
 
     ready_min = _min(now, ready)
+    # doterajšie platné odporúčanie: stabilita voľby POČKAŤ/ODSTAVIŤ; rozhodnutie dispečera (posledné prijaté
+    # odporúčanie, aj keď po ňom vzniklo iné): už zaplatené odstavenie, objednaná nová trasa
+    prev = None if running else _previous_choice(session, train, now)
+    accepted = None if running else _accepted_choice(session, train, now)
+    requested = _requested_paths(accepted, params, paths)
     rec = two_stage_recommend(routes, ready_min, deadline_min, params, allocated, crew_start,
-                              horizon_min=horizon_min, stable_needs_new_path=running)
+                              horizon_min=horizon_min, stable_needs_new_path=running, anchor=now, prev=prev,
+                              already_stabled=_already_stabled(train, accepted), requested=requested)
 
     decision = rec.decision
     chosen: Optional[Evaluation] = rec.chosen
     color = chosen.status if chosen else CERVENA
+    if ready_unknown and color == ZELENA:
+        color = ORANZOVA  # vlak ešte neprišiel na hranicu a avízo uplynulo (chýba) – pripravenosť nie je istá
     if hold_exceeded:
         decision = ESKALOVAT  # aj odchod hneď po pripravenosti by bol po limite 18 h (PPŽS) – len informácia
     if decision == ESKALOVAT:
         color = CERVENA
     if running and decision == VYPRAVIT:
         decision = POKRACOVAT
+    ordered = _ordered(chosen, requested, params)  # nová trasa objednaná podľa prijatého odporúčania
+    if ordered and decision == VYPRAVIT:
+        # odchod teraz na trasu, ktorú ŽSR (podľa údajov) ešte nepridelila – nikdy ZELENÁ
+        asked = min(requested[chosen.route], key=lambda r: abs(r - chosen.depart))
+        reasons.append(f"Trasa podľa prijatého odporúčania ({fmt(_dt(now, asked))}) nie je zapísaná ako pridelená – "
+                       f"vypraviť až po overení pridelenia v IS KIS.")
+        if color == ZELENA:
+            color = ORANZOVA
 
     # bez čerstvých a použiteľných dát nikdy zelená (10.3)
     stale = position_unusable or crew_unknown or bool(unmapped)
@@ -830,7 +918,7 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
                    for name, wins in rec.green_windows.items()}
     variants = _variants(rec, now)
     priority = _priority(session, train, decision, color, chosen, crew, running, now)
-    summary = _summary(train, decision, chosen, now, crew, rec, horizon_min)
+    summary = _summary(train, decision, chosen, now, crew, rec, horizon_min, has_path=bool(paths), ordered=ordered)
     chosen_d = _ev_dict(chosen, now) if chosen else {}
     if chosen is not None and (decision in (ESKALOVAT, POKRACOVAT) or (
             chosen.needs_new_path and abs(chosen.depart - params.new_path_lead_min) <= cfg.step_minutes + 1e-6)):
@@ -839,28 +927,46 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
         chosen_d["floating"] = True
     if chosen is not None and running and arrival_floating:
         chosen_d["arrival_floating"] = True  # bez polohy a času odchodu sa posúva aj predpokladaný príchod
+    if chosen is not None and chosen.needs_new_path and not running:
+        # pridelené trasy v čase odporúčania: po prijatí je nová pridelená (zmenená) trasa odpoveďou ŽSR na objednávku
+        chosen_d["paths"] = sorted(ensure_utc(p.departure_utc).isoformat() for p in paths)
     return _store(session, train, now, trigger, decision=decision, color=color, priority=priority,
                   summary=summary, chosen=chosen_d, variants=variants,
                   windows=windows_iso, path_proposal=path_proposal, crew=crew,
                   reasons=_dedupe(reasons), data_age=data_age)
 
 
+def _grid_origin(anchor: datetime, step_min: float) -> float:
+    """Minúty od `anchor` k bodu pevnej mriežky odchodov (násobky kroku v absolútnom čase), ≤ 0."""
+    return -((ensure_utc(anchor).timestamp() % (step_min * 60.0)) / 60.0)  # v sekundách – presne pre celé sekundy
+
+
 def two_stage_recommend(routes: list, ready_min: float, deadline_min: float, params: Params,
                         allocated: list, crew_start: Optional[float], horizon_min: Optional[float] = None,
-                        stable_needs_new_path: bool = False) -> DRecommendation:
+                        stable_needs_new_path: bool = False, anchor: Optional[datetime] = None,
+                        prev: Optional[dict] = None, already_stabled: bool = False,
+                        requested: Optional[dict] = None) -> DRecommendation:
     """1. hrubý prechod všetkých odchodov s menej vzorkami, 2. spresnenie najlepších kandidátov.
 
     Výsledok je rovnaký ako pri recommend() s plným počtom vzoriek pre vybrané varianty, ale
     výpočet je niekoľkonásobne rýchlejší (sekcia 13: prepočet do 5 s).
     horizon_min – ako ďaleko od pripravenosti hľadať odchod (napr. skrátené limitom 18 h státia).
     stable_needs_new_path – odstavenie ruší trasu (idúci vlak): ODSTAVIŤ len s novou trasou a lehotou.
+    anchor – čas posúdenia (t = 0): odchody sa hľadajú v pevnej mriežke (násobky kroku v absolútnom čase), nie
+      od teraz – bez zmeny údajov dá ďalší cyklus agenta ten istý odchod aj semafor.
+    prev – doterajšie platné odporúčanie (_previous_choice): voľba POČKAŤ/ODSTAVIŤ pri tom istom odchode a trase
+      sa nemení, kým je rozdiel nákladov v rámci robustness_premium (bod zlomu čakať/odstaviť bez zmeny údajov).
+    already_stabled – vlak už stojí odstavený: jednorazový náklad odstavenia je zaplatený.
+    requested – {trasa: [odchody]} nových trás, ktoré dispečer už objednal v lehote (prijaté odporúčanie).
     """
     cfg = settings()
     fast = replace(params, samples=min(params.samples, 600))
     rec = recommend(routes, now=0.0, ready=ready_min, deadline=deadline_min, p=fast,
                     horizon_min=cfg.horizon_hours * 60 if horizon_min is None else horizon_min,
                     step_min=cfg.step_minutes, allocated_departures=allocated, crew_start=crew_start,
-                    stable_needs_new_path=stable_needs_new_path)
+                    stable_needs_new_path=stable_needs_new_path,
+                    grid_origin=_grid_origin(anchor, cfg.step_minutes) if anchor is not None else None,
+                    already_stabled=already_stabled, requested_departures=requested)
     if not rec.candidates:
         return rec
     rank = {ZELENA: 0, ORANZOVA: 1, CERVENA: 2}
@@ -872,12 +978,112 @@ def two_stage_recommend(routes: list, ready_min: float, deadline_min: float, par
         stabled = ev.kind == ODSTAVIT
         normals = _normals(params.samples, len(route.segments), params.seed)
         new = evaluate(route, ev.depart, ready_min, deadline_min, params, normals, stabled,
-                       ev.needs_new_path, None if stabled else crew_start)
+                       ev.needs_new_path, None if stabled else crew_start, already_stabled=already_stabled)
         if not route.is_primary:
             new.kind = PRESMEROVAT
         refined.append(new)
     decision, chosen, explanation = select_best(refined, params)
+    kept = _keep_previous_kind(prev, decision, chosen, by_name, ready_min, deadline_min, params, crew_start,
+                               stable_needs_new_path, already_stabled)
+    if kept is not None:
+        decision, chosen = kept.kind, kept
+        explanation = select_best([kept], params)[2] + [
+            f"Ponechaná doterajšia voľba {kept.kind} – rozdiel nákladov oproti druhej možnosti je v rámci "
+            f"{params.robustness_premium:.0%}."]
     return DRecommendation(decision, chosen, explanation, rec.green_windows, rec.candidates)
+
+
+def _keep_previous_kind(prev: Optional[dict], decision: str, chosen: Optional[Evaluation], routes: dict,
+                        ready_min: float, deadline_min: float, params: Params, crew_start: Optional[float],
+                        stable_needs_new_path: bool, already_stabled: bool) -> Optional[Evaluation]:
+    """Stabilita voľby POČKAŤ ↔ ODSTAVIŤ: pri tom istom odchode (± tolerancia trasy) a trase bez zmeny semaforu sa
+    doterajšia voľba nemení, kým je jej náklad v rámci robustness_premium od lacnejšej možnosti – inak by sa
+    s plynúcim časom (bod zlomu čakať/odstaviť) odporúčanie zmenilo bez zmeny údajov. Vracia ponechanú variantu."""
+    if prev is None or chosen is None or stable_needs_new_path or decision not in (POCKAT, ODSTAVIT) or \
+            prev.get("decision") not in (POCKAT, ODSTAVIT) or prev["decision"] == decision or \
+            prev.get("route") != chosen.route:
+        return None
+    if abs(prev["depart"] - chosen.depart) > params.path_tolerance_min + 1e-6 or chosen.route not in routes:
+        return None
+    route = routes[chosen.route]
+    stabled = prev["decision"] == ODSTAVIT
+    normals = _normals(params.samples, len(route.segments), params.seed)
+    alt = evaluate(route, chosen.depart, ready_min, deadline_min, params, normals, stabled, chosen.needs_new_path,
+                   None if stabled else crew_start, already_stabled=already_stabled)
+    if not route.is_primary or alt.kind != prev["decision"] or alt.status != chosen.status:
+        return None
+    if alt.expected_cost > chosen.expected_cost * (1 + params.robustness_premium) + 1e-6:
+        return None
+    return alt
+
+
+def _previous_choice(session: Session, train: Train, now: datetime) -> Optional[dict]:
+    """Posledné odporúčanie vlaku, ak ešte platí (nové, prijaté alebo upravené dispečerom) a má odchod:
+    {decision, route, depart (min od teraz), needs_new_path, state}. Inak None."""
+    last = session.scalar(select(Recommendation).where(Recommendation.train_id == train.id)
+                          .order_by(Recommendation.id.desc()))
+    if last is None or last.state not in ("nove", "prijate", "upravene"):
+        return None
+    return _choice(last, now)
+
+
+def _accepted_choice(session: Session, train: Train, now: datetime) -> Optional[dict]:
+    """Rozhodnutie dispečera: posledné prijaté (aj upravené) odporúčanie vlaku s odchodom, ako _previous_choice.
+
+    Platí, kým dispečer neprijme iné – aj keď po ňom vzniklo ďalšie odporúčanie (napr. ORANŽOVÁ pri výpadku
+    schránky): prijaté odporúčanie ostáva prijaté (_store označí za zastarané len nové), inak by sa objednaná
+    nová trasa či prijaté odstavenie po prvom takom odporúčaní zabudli. Nie rozhodnutie spred posledného
+    skutočného odchodu vlaku (to patrilo predchádzajúcemu státiu)."""
+    last = session.scalar(select(Recommendation).where(Recommendation.train_id == train.id,
+                                                       Recommendation.state.in_(("prijate", "upravene")))
+                          .order_by(Recommendation.id.desc()))
+    if last is None:
+        return None
+    if train.departed_utc and last.created_at and ensure_utc(last.created_at) <= ensure_utc(train.departed_utc):
+        return None
+    return _choice(last, now)
+
+
+def _choice(rec: Recommendation, now: datetime) -> Optional[dict]:
+    ch = rec.chosen or {}
+    if not ch.get("depart") or not ch.get("route"):
+        return None
+    try:
+        depart = _min(now, datetime.fromisoformat(ch["depart"]))
+    except (TypeError, ValueError):
+        return None
+    return {"decision": rec.decision, "route": ch["route"], "depart": depart,
+            "needs_new_path": bool(ch.get("needs_new_path")), "state": rec.state, "paths": ch.get("paths")}
+
+
+def _already_stabled(train: Train, accepted: Optional[dict]) -> bool:
+    """Vlak už stojí odstavený (alebo dispečer prijal odporúčanie ODSTAVIŤ – _accepted_choice): náklad odstavenia je
+    zaplatený – ďalšie posúdenie ho nesmie prepnúť na „POČKAŤ“ (držať pripravený s rušňovodičom) len preto, že čas
+    plynie."""
+    return train.status == "odstaveny" or bool(accepted and accepted["state"] in ("prijate", "upravene")
+                                                and accepted["decision"] == ODSTAVIT)
+
+
+def _requested_paths(accepted: Optional[dict], params: Params, paths: Optional[list] = None) -> Optional[dict]:
+    """Nová trasa z prijatého odporúčania (_accepted_choice – dispečer ju objednal v lehote P5): jej čas sa ponúka aj
+    po tom, čo vojde do lehoty new_path_lead_min – kým neuplynie, prijaté odporúčanie sa len preto nenahradí
+    neskoršou trasou. Len kým ŽSR neodpovie: pridelená (alebo zmenená) trasa, ktorú odporúčanie ešte nepoznalo
+    (``paths`` – pridelené trasy vlaku teraz), je odpoveď na objednávku – ďalej platia pridelené trasy."""
+    if accepted is None or accepted["state"] not in ("prijate", "upravene") or not accepted["needs_new_path"] or \
+            accepted["decision"] not in (VYPRAVIT, POCKAT, ODSTAVIT, PRESMEROVAT) or \
+            accepted["depart"] < -params.path_tolerance_min:
+        return None
+    known = accepted.get("paths")
+    if known is not None and any(ensure_utc(p.departure_utc).isoformat() not in known for p in paths or ()):
+        return None
+    return {accepted["route"]: [accepted["depart"]]}
+
+
+def _ordered(chosen: Optional[Evaluation], requested: Optional[dict], params: Params) -> bool:
+    """Zvolený odchod je nová trasa, ktorú dispečer už objednal (prijaté odporúčanie – _requested_paths)."""
+    return bool(chosen is not None and chosen.needs_new_path and requested and
+                any(abs(chosen.depart - r) <= params.path_tolerance_min + 1e-6
+                    for r in requested.get(chosen.route, ())))
 
 
 def evaluate_all(session: Session, now: Optional[datetime] = None, trigger: str = "") -> list:
@@ -916,12 +1122,13 @@ def _store_failure(session: Session, train_id: int, now: datetime, trigger: str,
     train = session.get(Train, train_id)
     if train is None:
         return None
+    # vlastný odtlačok (failure=True): chyba výpočtu sa nesmie zlúčiť so skutočnou eskaláciou (ani naopak)
     return _store(session, train, now, trigger, decision=ESKALOVAT, color=CERVENA, priority="DÔLEŽITÉ",
                   summary=f"Vlak {train.number} ({train.origin} → {train.destination}): agent ho nedokázal "
                           f"prepočítať – predchádzajúce odporúčanie neplatí. Posúďte vlak bez agenta.",
                   reasons=[f"Chyba výpočtu: {type(exc).__name__}: {str(exc)[:200]}",
                            "Skontrolujte údaje vlaku a výluk (napr. názvy dopravní, časy) a nahláste chybu "
-                           "správcovi."])
+                           "správcovi."], failure=True)
 
 
 def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) -> dict:
@@ -950,9 +1157,22 @@ def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) 
         via = [s.name for s, _, _ in g.stations if s.type == "station"]
         name = "hlavná trasa" if i == 0 else f"alternatíva cez {via[len(via) // 2] if via else '?'}"
         droutes.append(DRoute(name, tuple(segs), electric=spec.traction == "E", is_primary=i == 0))
-    unmapped = _unmapped_windows(net, windows, groutes[0], ready, float(cfg.horizon_hours * 60))
+    # rovnaké poistky ZELENEJ ako pri vlaku (evaluate_train): výluka, ktorú sa nepodarilo umiestniť na sieť pri
+    # trase, a schránka agenta neskontrolovaná v posledných 30 min → varianta nanajvýš ORANŽOVÁ
+    unmapped_by_route = {d.name: _unmapped_windows(net, windows, g, ready, float(cfg.horizon_hours * 60))
+                         for g, d in zip(groutes, droutes)}
+    unmapped = list({w.closure_id: w for ws in unmapped_by_route.values() for w in ws}.values())
+    mailbox_reason = _mailbox_reason(session, now)
     deadline_min = _min(now, order.deadline_utc) if order.deadline_utc else _min(now, ready) + NO_DEADLINE_MIN
-    rec = two_stage_recommend(droutes, _min(now, ready), deadline_min, params, [NO_PATH_SENTINEL], None)
+    rec = two_stage_recommend(droutes, _min(now, ready), deadline_min, params, [NO_PATH_SENTINEL], None,
+                              anchor=now)
+
+    def guards(route: str) -> list:
+        out_ = [f"{_kind_label(w.kind)} {w.from_station} – {w.to_station} {fmt(w.start)} – {fmt(w.end)} sa "
+                f"nepodarilo umiestniť na sieť (neznámy úsek) – kým sa to neoverí, varianta nemôže byť ZELENÁ"
+                for w in unmapped_by_route.get(route, [])]
+        return out_ + ([mailbox_reason.rstrip(".")] if mailbox_reason else [])
+
     explanation = []
     ch = rec.chosen
     if ch is not None and rec.decision != ESKALOVAT:
@@ -960,16 +1180,23 @@ def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) 
                            f"P(včas) {ch.p_on_time:.0%}, príchod {fmt(_dt(now, ch.arrival_p50))} "
                            f"(90 % do {fmt(_dt(now, ch.arrival_p90))}), očakávaný náklad {ch.expected_cost:,.0f} €.")
         explanation.append("Trasu treba objednať v IS KIS (ad hoc trasa P5 najneskôr 6 h pred odchodom).")
-        if ch.status != ZELENA:
-            explanation.append("ORANŽOVÁ – vyžaduje potvrdenie dispečera: " + "; ".join(ch.reasons))
+        amber = (list(ch.reasons) if ch.status != ZELENA else []) + guards(ch.route)
+        if amber:
+            explanation.append("ORANŽOVÁ – vyžaduje potvrdenie dispečera: " + "; ".join(amber))
     else:
         explanation.append("Žiadna bezpečná varianta v horizonte – dohodnúť so zákazníkom iný termín "
                            "alebo so ŽSR iný čas či trasu.")
     for w in unmapped:
         explanation.append(f"POZOR: {_kind_label(w.kind)} {w.from_station} – {w.to_station} {fmt(w.start)} – "
                            f"{fmt(w.end)} sa nepodarilo umiestniť na sieť – overte, či sa prepravy netýka.")
+    variants = _variants(rec, now)
+    for v in variants:
+        extra = guards(v.get("route", ""))
+        if extra and v.get("status") == ZELENA:
+            v["status"] = ORANZOVA
+            v["reasons"] = list(v.get("reasons") or []) + extra
     out = {"order_id": order.id, "decision": rec.decision, "explanation": explanation,
-           "variants": _variants(rec, now), "routes": []}
+           "variants": variants, "routes": []}
     for g, d in zip(groutes, droutes):
         out["routes"].append({"name": d.name, "km": round(g.length_m / 1000, 1), "minutes": round(g.minutes),
                               "stations": [s.name for s, _, _ in g.stations if s.type == "station"]})
@@ -1091,9 +1318,10 @@ def _drafts(train: Train, decision: str, chosen: Optional[Evaluation], pp: dict,
     arr50 = _dt(now, chosen.arrival_p50)
     arr90 = _dt(now, chosen.arrival_p90)
     dep = _dt(now, chosen.depart)
-    phrase = {VYPRAVIT: f"odchádza o {fmt(dep)}", POKRACOVAT: "je na ceste",
-              POCKAT: f"pre obmedzenie na trati vyrazí o {fmt(dep)}",
-              ODSTAVIT: f"pre obmedzenie na trati vyrazí o {fmt(dep)}",
+    # odchod na vlastnú pridelenú trasu (bez novej trasy) nie je kvôli obmedzeniu na trati
+    later = f"pre obmedzenie na trati vyrazí o {fmt(dep)}" if chosen.needs_new_path else \
+        f"vyrazí podľa pridelenej trasy o {fmt(dep)}"
+    phrase = {VYPRAVIT: f"odchádza o {fmt(dep)}", POKRACOVAT: "je na ceste", POCKAT: later, ODSTAVIT: later,
               PRESMEROVAT: f"pôjde obchádzkovou trasou s odchodom o {fmt(dep)}"}.get(decision, "")
     lines = [f"KONCEPT – informácia pre zákazníka {train.customer or ''} – agent ju NEODOSIELA", "",
              "Dobrý deň,"]
@@ -1107,7 +1335,12 @@ def _drafts(train: Train, decision: str, chosen: Optional[Evaluation], pp: dict,
             late_h = (arr50 - ensure_utc(deadline)).total_seconds() / 3600.0
             lines.append(f"Oproti dohodnutému termínu {fmt(deadline)} očakávame meškanie približne {late_h:.1f} h.")
     lines += ["", "S pozdravom", f"dispečing {cfg.carrier_name}"]
-    return {"zsr_path_request": zsr, "customer": "\n".join(lines)}
+    drafts = {"customer": "\n".join(lines)}
+    if chosen.needs_new_path:
+        # objednávka ad hoc trasy len pri odchode, ktorý novú trasu potrebuje (ako v e-maile) – nie pri odchode na
+        # vlastnú pridelenú trasu (web by ju inak ponúkal aj pri ODSTAVIŤ či VYPRAVIŤ na pridelenú trasu)
+        drafts["zsr_path_request"] = zsr
+    return drafts
 
 
 def _crew_info(shift: Optional[DriverShift], chosen: Optional[Evaluation], now: datetime, p: Params,
@@ -1187,11 +1420,15 @@ def _priority(session: Session, train: Train, decision: str, color: str, chosen,
 
 
 def _summary(train: Train, decision: str, chosen: Optional[Evaluation], now: datetime, crew: dict, rec,
-             horizon_min: Optional[float] = None) -> str:
+             horizon_min: Optional[float] = None, has_path: Optional[bool] = None, ordered: bool = False) -> str:
+    """Súhrn odporúčania (prvý riadok e-mailu, súhrn, odovzdávka služby). has_path – vlak má pridelenú trasu;
+    ordered – novú trasu už dispečer objednal (prijaté odporúčanie), nie „treba objednať“."""
     rel = f"{train.origin} → {train.destination}"
     if chosen is None or decision == ESKALOVAT:
         full = settings().horizon_hours * 60
-        if horizon_min is not None and horizon_min < full:
+        if horizon_min is not None and horizon_min <= 0:
+            span = "do limitu 18 h státia (na odchod už nezostáva čas)"
+        elif horizon_min is not None and horizon_min < full:
             span = f"do limitu 18 h státia (zostáva {horizon_min / 60:.1f} h)"
         else:
             span = f"v najbližších {settings().horizon_hours} h"
@@ -1207,13 +1444,25 @@ def _summary(train: Train, decision: str, chosen: Optional[Evaluation], now: dat
         return txt
     dep = fmt(_dt(now, chosen.depart))
     arr50, arr90 = fmt(_dt(now, chosen.arrival_p50)), fmt(_dt(now, chosen.arrival_p90))
+    # ODSTAVIŤ: pôvodnú trasu odrieknuť len vtedy, keď odchod naozaj potrebuje novú trasu – odchod na vlastnú
+    # pridelenú trasu (v tolerancii) sa neodrieka (poplatok, novú trasu by ŽSR v lehote P5 aj tak nepridelila)
+    stabled = "ODSTAVIŤ – vlak ostáva odstavený (najviac 18 h)" if train.status == "odstaveny" else \
+        "ODSTAVIŤ (koľaj určí ŽSR, najviac 18 h)"
+    if not chosen.needs_new_path:
+        stable_head = f"{stabled}, vypraviť na pridelenú trasu o {dep}"
+    elif has_path is False and train.status != "v_jazde":
+        stable_head = f"{stabled}, objednať trasu na {dep}"
+    else:
+        stable_head = f"{stabled}, pôvodnú trasu odrieknuť, nová trasa na {dep}"
     head = {VYPRAVIT: f"VYPRAVIŤ o {dep}", POKRACOVAT: "POKRAČOVAŤ v jazde",
-            POCKAT: f"POČKAŤ, vypraviť o {dep}",
-            ODSTAVIT: f"ODSTAVIŤ (koľaj určí ŽSR, najviac 18 h), pôvodnú trasu odrieknuť, nová trasa na {dep}",
+            POCKAT: f"POČKAŤ, vypraviť o {dep}", ODSTAVIT: stable_head,
             PRESMEROVAT: f"PRESMEROVAŤ ({chosen.route}), odchod {dep}"}.get(decision, f"{decision} {dep}")
     txt = (f"Vlak {train.number} ({rel}): {head}. P(včas) {chosen.p_on_time:.0%}, príchod {arr50} "
            f"(90 % do {arr90}).")
-    if chosen.needs_new_path:
+    if chosen.needs_new_path and ordered:
+        # čas v lehote P5 je len pre trasu objednanú podľa prijatého odporúčania – nie výzva objednať ju znova
+        txt += " Nová trasa podľa prijatého odporúčania (objednaná v lehote P5) – overte jej pridelenie v IS KIS."
+    elif chosen.needs_new_path:
         txt += (" Treba objednať ad hoc trasu v IS KIS (produkt P5 najneskôr 6 h pred odchodom; neskôr len "
                 "výnimočne cez dispečera ŽSR).")
     if crew.get("status") in (ORANZOVA, CERVENA) and (crew.get("relieve_by") or crew.get("unknown_start")):
@@ -1253,10 +1502,14 @@ def _baseline_floating(last: Recommendation) -> bool:
     return False
 
 
+_PRIORITY_RANK = {"INFO": 0, "DÔLEŽITÉ": 1, "KRITICKÉ": 2}
+
+
 def _store(session: Session, train: Train, now: datetime, trigger: str, decision: str, color: str,
            priority: str, summary: str, chosen: Optional[dict] = None, variants: Optional[list] = None,
            windows: Optional[dict] = None, path_proposal: Optional[dict] = None, crew: Optional[dict] = None,
-           reasons: Optional[list] = None, data_age: Optional[dict] = None) -> Recommendation:
+           reasons: Optional[list] = None, data_age: Optional[dict] = None,
+           failure: bool = False) -> Recommendation:
     """Uloží odporúčanie len ak sa zmenilo (fingerprint); staré nové odporúčania označí za zastarané.
 
     Odchod sa porovnáva s tým, čo dispečer dostal (baseline), posun o 30 min a viac je nové odporúčanie.
@@ -1264,19 +1517,24 @@ def _store(session: Session, train: Train, now: datetime, trigger: str, decision
     s časom posúva sám: ak je plávajúci baseline aj nový odchod, posun nie je zmena (pri idúcom vlaku sa namiesto
     odchodu porovnáva predpokladaný príchod – nie však príchod idúceho vlaku bez polohy aj času odchodu
     ``chosen["arrival_floating"]``, ten sa posúva s časom; prvý skutočný odhad príchodu je nový základ porovnania).
+    ``failure`` – záznam o chybe výpočtu (_store_failure) má vlastný odtlačok: skutočná eskalácia bez varianty
+    (rovnaké rozhodnutie, farba aj prázdny rušňovodič) sa s ním nezlúči a naopak. Vyššia priorita (napr. KRITICKÉ
+    oproti doterajšiemu DÔLEŽITÉ) je vždy nové odporúčanie – tiché zlúčenie by nové upozornenie (SMS) nevyvolalo.
     """
     chosen = chosen or {}
+    tag = "|chyba" if failure else ""
     full_src = "|".join([decision, color, chosen.get("route", ""), (crew or {}).get("status", ""),
-                         str(bool(chosen.get("needs_new_path")))])
+                         str(bool(chosen.get("needs_new_path")))]) + tag
     # pri eskalácii je najmenej zlá možnosť len informácia – jej trasa sa môže s časom striedať a to nie je
     # dôvod na nové (KRITICKÉ) upozornenie
-    fp_src = "|".join([decision, color, (crew or {}).get("status", "")]) if decision == ESKALOVAT else full_src
+    fp_src = "|".join([decision, color, (crew or {}).get("status", "")]) + tag if decision == ESKALOVAT else full_src
     fingerprint = hashlib.sha1(fp_src.encode("utf-8")).hexdigest()
     same = {fingerprint, hashlib.sha1(full_src.encode("utf-8")).hexdigest()}  # aj eskalácia uložená skôr
     last = session.scalar(select(Recommendation).where(Recommendation.train_id == train.id)
                           .order_by(Recommendation.id.desc()))
     if last is not None and last.fingerprint in same and \
-            last.state in ("nove", "prijate", "upravene", "zamietnute"):
+            last.state in ("nove", "prijate", "upravene", "zamietnute") and \
+            _PRIORITY_RANK.get(priority, 0) <= _PRIORITY_RANK.get(last.priority or "", 0):
         # porovnáva sa s tým, čo dispečer dostal (pôvodný odchod), nie s poslednou tichou aktualizáciou –
         # inak by sa odchod mohol po malých krokoch posunúť o hodiny bez nového upozornenia
         last_ch = last.chosen or {}

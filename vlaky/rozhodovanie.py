@@ -284,7 +284,8 @@ def _quantile(values: Sequence[float], q: float) -> float:
 # ---------------------------------------------------------------------------
 def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Params,
              normals: Optional[list] = None, stabled: bool = False,
-             needs_new_path: bool = False, crew_start: Optional[float] = None) -> Evaluation:
+             needs_new_path: bool = False, crew_start: Optional[float] = None,
+             already_stabled: bool = False) -> Evaluation:
     """Vyhodnotí odchod `depart` po trase `route` simuláciou Monte Carlo.
 
     Pravidlo výluky: vlak nesmie byť v úseku v čase
@@ -294,6 +295,8 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
     Obmedzenie bez zastavenia (Segment.slowdowns – pomalá jazda, výluka koľaje) predĺži jazdu úsekom len pri
     jazde jeho časťou počas jeho platnosti; čas vstupu do úseku sa berie z každej vzorky (odchod, zdržania
     a čakanie pred výlukami), nie z mediánu – nočné obmedzenie sa tak dennému vlaku nepočíta.
+    already_stabled (rozšírenie kanonickej kópie): vlak už stojí odstavený – jednorazový náklad odstavenia
+    (cost_stable_fixed) je už zaplatený, pri odstavení sa počíta len státie.
     """
     segs = route.segments
     if normals is None:
@@ -306,7 +309,7 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
     duty_start = crew_start if crew_start is not None else depart - p.crew_prep_min
     wait_h = max(0.0, depart - ready) / 60.0
     if stabled:
-        base_cost = p.cost_stable_fixed + wait_h * p.cost_stabled_per_h
+        base_cost = (0.0 if already_stabled else p.cost_stable_fixed) + wait_h * p.cost_stabled_per_h
     else:
         base_cost = wait_h * p.cost_wait_ready_per_h
     base_cost += route.extra_fixed_cost + (p.cost_new_path if needs_new_path else 0.0)
@@ -411,6 +414,30 @@ def _needs_new_path(depart: float, allocated: Sequence[float], p: Params) -> boo
     return all(abs(depart - a) > p.path_tolerance_min for a in allocated)
 
 
+def _departures(ready: float, horizon_min: float, step_min: float, grid_origin: Optional[float] = None) -> list:
+    """Skúmané odchody: od `ready` po `ready + horizon_min` s krokom `step_min`.
+
+    grid_origin (rozšírenie kanonickej kópie): mriežka odchodov je pevná (body grid_origin + k·step_min),
+    nie posunutá od `ready` – pri opakovanom posúdení v inom čase (napr. každých 15 min, pripravenosť = teraz)
+    vychádzajú tie isté odchody, takže sa výsledok bez zmeny údajov nemení. Prvý odchod je vždy `ready`.
+    """
+    if grid_origin is None:
+        return [ready + j * step_min for j in range(int(horizon_min // step_min) + 1)]
+    out = [ready]
+    t = grid_origin + (math.floor((ready - grid_origin) / step_min) + 1) * step_min
+    while t <= ready + 1e-6:
+        t += step_min
+    while t <= ready + horizon_min + 1e-6:
+        out.append(t)
+        t += step_min
+    return out
+
+
+def _requested(depart: float, requested: Sequence[float], p: Params) -> bool:
+    """Odchod na novú trasu, ktorú dispečer už objednal v lehote (rozšírenie kanonickej kópie)."""
+    return any(abs(depart - r) <= p.path_tolerance_min for r in requested)
+
+
 def _windows(evals: Sequence[Evaluation], step: float) -> list:
     """Súvislé intervaly odchodov so ZELENOU (od, do)."""
     out = []
@@ -428,7 +455,10 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
               p: Params = Params(), horizon_min: float = 24 * 60, step_min: float = 10,
               allocated_departures: Sequence[float] = (),
               crew_start: Optional[float] = None,
-              stable_needs_new_path: bool = False) -> Recommendation:
+              stable_needs_new_path: bool = False,
+              grid_origin: Optional[float] = None,
+              already_stabled: bool = False,
+              requested_departures: Optional[dict] = None) -> Recommendation:
     """Prehľadá odchody od `ready` po `ready + horizon_min` po každej trase.
 
     Pravidlá výberu:
@@ -444,28 +474,35 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
     Rozšírenia kanonickej kópie (referencia ich nemá, predvolené hodnoty správanie nemenia):
       crew_start – rušňovodič už v službe (POČKAŤ: jeho pracovný čas beží ďalej),
       stable_needs_new_path – odstavenie ruší trasu (idúci vlak): ODSTAVIŤ vždy znamená novú trasu,
-        teda najskôr now + new_path_lead_min.
+        teda najskôr now + new_path_lead_min,
+      grid_origin – pevná mriežka odchodov (_departures), nie posunutá od `ready`,
+      already_stabled – vlak už stojí odstavený: jednorazový náklad odstavenia je zaplatený (evaluate),
+      requested_departures – {názov trasy: [odchody]} nových trás, ktoré dispečer už objednal v lehote
+        (prijaté odporúčanie): odchod v ich tolerancii sa ponúkne aj po uplynutí lehoty new_path_lead_min.
     """
     candidates, windows = [], {}
     horizon_min = min(horizon_min, p.max_hold_h * 60.0)  # dlhšie čakanie nie je podľa PPŽS prípustné
-    k = int(horizon_min // step_min)
+    departs = _departures(ready, horizon_min, step_min, grid_origin)
     for route in routes:
         normals = _normals(p.samples, len(route.segments), p.seed)
+        requested = (requested_departures or {}).get(route.name, ())
         per_route = []
-        for j in range(k + 1):
-            depart = ready + j * step_min
+        for depart in departs:
             # Alternatívna trasa vždy znamená novú trasu; pri hlavnej trase len odchod
             # mimo pridelenej trasy (± path_tolerance_min).
             new_path = (not route.is_primary) or _needs_new_path(depart, allocated_departures, p)
-            if new_path and depart < now + p.new_path_lead_min:
-                continue  # novú trasu by ŽSR nestihla prideliť
+            # novú trasu by ŽSR nestihla prideliť (okrem trasy, ktorú dispečer už objednal v lehote)
+            late = depart < now + p.new_path_lead_min and not (requested and _requested(depart, requested, p))
+            if new_path and late:
+                continue
             # POČKAŤ: ten istý rušňovodič čaká (jeho pracovný čas beží od crew_start, ak už je v službe)
             options = [evaluate(route, depart, ready, deadline, p, normals, False, new_path, crew_start)]
             if depart > ready:
                 # ODSTAVIŤ: rušňovodič sa uvoľní, neskôr nastúpi nový (pracovný čas od depart - prep)
                 st_new = new_path or stable_needs_new_path
-                if not (st_new and depart < now + p.new_path_lead_min):
-                    options.append(evaluate(route, depart, ready, deadline, p, normals, True, st_new))
+                if not (st_new and late):
+                    options.append(evaluate(route, depart, ready, deadline, p, normals, True, st_new,
+                                            already_stabled=already_stabled))
             best = min(options, key=lambda e: e.expected_cost)
             if not route.is_primary:
                 best.kind = PRESMEROVAT
