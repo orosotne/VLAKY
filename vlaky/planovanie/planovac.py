@@ -23,7 +23,7 @@ from dataclasses import dataclass, fields, replace
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
@@ -37,7 +37,7 @@ from ..rozhodovanie import (CERVENA, ESKALOVAT, ODSTAVIT, ORANZOVA, POCKAT, PRES
                             Closure as DClosure, Evaluation, Params, Recommendation as DRecommendation,
                             Route as DRoute, Segment, _normals, evaluate, recommend, select_best)
 from ..siet.graf import WAIT_TYPES, Network, Route as GRoute, TrainSpec, network
-from .stav import allocated_paths, entry_handover, hold_anchors  # noqa: F401 (allocated_paths aj pre iné moduly)
+from .stav import allocated_paths, border_time, entry_handover, hold_anchors  # noqa: F401 (aj pre iné moduly)
 
 POKRACOVAT = "POKRAČOVAŤ"
 DONE_STATES = {"ukonceny", "zruseny", "odovzdany"}
@@ -308,9 +308,15 @@ def latest_position(session: Session, train_id: int) -> Optional[PositionReport]
 
 
 def active_shift(session: Session, train_id: int) -> Optional[DriverShift]:
+    """Zmena rušňovodiča vlaku: prebiehajúca (rušňovodič je v službe – jeho 13 h limit), inak naplánovaná.
+
+    Naplánované vystriedanie (zmena s neskorším nástupom) nesmie zakryť zmenu, ktorá prebieha – inak by sa
+    idúci vlak tváril ako bez záznamu o nástupe a skutočný limit rušňovodiča v službe by sa nestrážil.
+    """
     return session.scalar(select(DriverShift).where(DriverShift.train_id == train_id,
                                                     DriverShift.status.in_(("planovana", "prebieha")))
-                          .order_by(DriverShift.start_utc.desc()))
+                          .order_by(case((DriverShift.status == "prebieha", 0), else_=1),
+                                    DriverShift.start_utc.desc()))
 
 
 def path_run_scale(paths: list, groute: GRoute) -> tuple:
@@ -409,6 +415,7 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
     running = train.status == "v_jazde"
     start_km = 0.0
     position_unusable = False  # idúci vlak bez čerstvej polohy na trase → nikdy ZELENÁ
+    arrival_floating = False   # idúci vlak bez polohy aj času odchodu: príchod = teraz + celá jazda (posúva sa)
     pos = latest_position(session, train.id)
     if pos is not None:
         data_age["position_min"] = round(_min(pos.ts_utc, now), 1)
@@ -425,14 +432,20 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
         else:
             position_unusable = True
             reasons.append("Chýbajú čerstvé dáta o polohe vlaku – výpočet vychádza z plánu.")
-        if prog is None and train.planned_departure_utc:
-            elapsed = _min(train.planned_departure_utc, now)
+        # bez polohy: odhad podľa skutočného odchodu (hlásenie rušňovodiča), inak plánovaného
+        dep_ref = train.departed_utc or train.planned_departure_utc
+        if prog is None and dep_ref:
+            elapsed = _min(dep_ref, now)
             start_km = _km_at_minutes(primary, max(0.0, elapsed))
+            # podľa odhadu by už mal byť v cieli, no stále ide – predpokladaný príchod (teraz) nič nehovorí
+            arrival_floating = start_km >= _km_at_minutes(primary, float("inf")) > 0.0
+        elif prog is None:
+            arrival_floating = True
 
     # čas pripravenosti (preberanie na hranici: plán počíta s dobou preberania P90 – pravidlo 10.2.8)
     ho = entry_handover(session, train.id)
     bc = ho.border if ho else train.entry_border
-    paths = allocated_paths(session, train, ensure_utc(ho.arrived_utc or ho.avizo_eta_utc) if ho else None)
+    paths = allocated_paths(session, train, border_time(ho), now)
     if running:
         ready = now
     elif ho and ho.status in ("ocakavany", "prisiel") and (ho.arrived_utc or ho.avizo_eta_utc):
@@ -617,6 +630,8 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
         # odchod „čo najskôr“ (idúci vlak, najskoršia nová trasa po lehote P5, najmenej zlá možnosť pri
         # eskalácii) sa s časom posúva sám – posun nie je zmena situácie (_store)
         chosen_d["floating"] = True
+    if chosen is not None and running and arrival_floating:
+        chosen_d["arrival_floating"] = True  # bez polohy a času odchodu sa posúva aj predpokladaný príchod
     return _store(session, train, now, trigger, decision=decision, color=color, priority=priority,
                   summary=summary, chosen=chosen_d, variants=variants,
                   windows=windows_iso, path_proposal=path_proposal, crew=crew,
@@ -1040,7 +1055,8 @@ def _store(session: Session, train: Train, now: datetime, trigger: str, decision
     Odchod sa porovnáva s tým, čo dispečer dostal (baseline), posun o 30 min a viac je nové odporúčanie.
     Plávajúci odchod („čo najskôr“ – idúci vlak, najskoršia nová trasa, eskalácia; ``chosen["floating"]``) sa
     s časom posúva sám: ak je plávajúci baseline aj nový odchod, posun nie je zmena (pri idúcom vlaku sa namiesto
-    odchodu porovnáva predpokladaný príchod).
+    odchodu porovnáva predpokladaný príchod – nie však príchod idúceho vlaku bez polohy aj času odchodu
+    ``chosen["arrival_floating"]``, ten sa posúva s časom; prvý skutočný odhad príchodu je nový základ porovnania).
     """
     chosen = chosen or {}
     full_src = "|".join([decision, color, chosen.get("route", ""), (crew or {}).get("status", ""),
@@ -1059,19 +1075,27 @@ def _store(session: Session, train: Train, now: datetime, trigger: str, decision
         last_ch = last.chosen or {}
         baseline = last_ch.get("baseline_depart") or last_ch.get("depart")
         base_arrival = last_ch.get("baseline_arrival_p50") or last_ch.get("arrival_p50")
+        base_arr_floating = bool(last_ch.get("baseline_arrival_floating", last_ch.get("arrival_floating")))
         base_floating = _baseline_floating(last)
         if base_floating and chosen.get("floating"):
-            shift_min = _shift_min(chosen.get("arrival_p50"), base_arrival) if decision == POKRACOVAT else 0.0
+            arrival_known = not (chosen.get("arrival_floating") or base_arr_floating)
+            shift_min = _shift_min(chosen.get("arrival_p50"), base_arrival) \
+                if decision == POKRACOVAT and arrival_known else 0.0
         else:
             shift_min = _shift_min(chosen.get("depart"), baseline)
         if shift_min < 30:
             if last.state == "nove":
                 # nepodstatná zmena: aktualizovať čísla, nevytvárať nové odporúčanie ani notifikáciu
                 chosen = dict(chosen)
+                if base_arr_floating and not chosen.get("arrival_floating"):
+                    # doterajší príchod bol len posúvajúci sa odhad (bez polohy a času odchodu) – prvý skutočný
+                    # odhad príchodu je nový základ porovnania
+                    base_arrival, base_arr_floating = chosen.get("arrival_p50"), False
                 if baseline:
                     chosen["baseline_depart"] = baseline
                 if base_arrival:
                     chosen["baseline_arrival_p50"] = base_arrival
+                chosen["baseline_arrival_floating"] = base_arr_floating
                 chosen["baseline_floating"] = base_floating
                 last.fingerprint = fingerprint
                 last.summary, last.chosen, last.variants = summary, chosen, variants or []

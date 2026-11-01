@@ -231,9 +231,9 @@ def driver_report(body: ReportIn, request: Request, background: BackgroundTasks)
             from ..planovanie import stav
 
             detail["previous_ready"] = train.ready_utc
-            if stav.is_standing(train) and train.ready_utc and ensure_utc(train.ready_utc) < now:
-                # stojaci vlak (odstavený, prevzatý): minulý čas pripravenosti sa nemení – hlásenie nesmie
-                # posunúť limit 18 h státia (PPŽS); hlásenie ostáva v audite
+            if stav.keep_ready_on_report(s, train, now):
+                # vlak už stojí na koľajach ŽSR (odstavený, prevzatý, čaká pripravený od zmeškanej trasy): doterajší
+                # čas pripravenosti sa nemení – hlásenie nesmie posunúť limit 18 h státia (PPŽS); ostáva v audite
                 detail["ready_unchanged"] = True
             else:
                 train.ready_utc = now

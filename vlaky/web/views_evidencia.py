@@ -174,7 +174,7 @@ def train_create(request: Request, background: BackgroundTasks, user=Depends(ope
         train = Train(**values)
         s.add(train)
         s.flush()
-        stav.pin_standing(s, train)  # zadaný rovno ako odstavený/prevzatý → začiatok státia (limit 18 h)
+        stav.pin_standing(s, train)  # zadaný ako stojaci alebo už čaká od minulej trasy → začiatok státia (18 h)
         audit(s, user.username, "train_create", "train", train.id,
               **{k: (iso(v) if hasattr(v, "tzinfo") else v) for k, v in values.items()})
         train_id, number = train.id, train.number
@@ -237,7 +237,9 @@ def train_update(train_id: int, request: Request, background: BackgroundTasks, u
 
         changes = _diff(t, values)
         if changes:
-            stav.pin_standing(s, t)  # starší záznam stojaceho vlaku: úprava pripravenosti neposunie limit 18 h
+            # pred zápisom: začiatok státia z doterajších kotiev (zmeškaná trasa, minulá pripravenosť) – úprava
+            # pripravenosti ani stavu limit 18 h neposunie
+            stav.pin_standing(s, t)
         for k, v in values.items():
             if k != "status":
                 setattr(t, k, v)
@@ -645,6 +647,8 @@ def _assignment_proposal(s) -> tuple:
 
 @router.get("/rusnovodici", response_class=HTMLResponse)
 def drivers_page(request: Request, navrh: int = 0, user=Depends(view)):
+    from .common import parse_iso
+
     now = now_utc()
     with session_scope() as s:
         proposal, proposal_error = _assignment_proposal(s) if navrh and user.can("crew") else (None, "")
@@ -667,6 +671,11 @@ def drivers_page(request: Request, navrh: int = 0, user=Depends(view)):
             color = crew_color(left, params["crew_buffer_min"]) if sh.status == "prebieha" else "seda"
             rec = recs.get(sh.train_id)
             crew_info = (rec.crew or {}) if rec is not None else {}
+            if sh.status == "prebieha" and crew_info.get("unknown_start"):
+                crew_info = {}  # odhad z času, keď nástup nebol zadaný – pre zaznamenanú zmenu neplatí
+            elif sh.status == "planovana" and crew_info.get("start") and not crew_info.get("unknown_start") and \
+                    (parse_iso(crew_info["start"]) or start) <= now < start:
+                crew_info = {}  # pracovný čas rušňovodiča v službe – nie tohto naplánovaného vystriedania
             if sh.status == "prebieha" and crew_info.get("status") == "ČERVENÁ":
                 color = "cervena"
             elif sh.status == "prebieha" and crew_info.get("status") == "ORANŽOVÁ" and color == "zelena":

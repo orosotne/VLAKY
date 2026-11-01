@@ -293,6 +293,9 @@ def _rec_dict(r: Optional[Recommendation]) -> Optional[dict]:
 def _driver_dict(sh: Optional[DriverShift], rec: Optional[Recommendation], params: dict,
                  now: datetime) -> Optional[dict]:
     crew = (rec.crew if rec is not None else None) or {}
+    if sh is not None and sh.status == "planovana" and ensure_utc(sh.start_utc) > now and crew.get("start") and \
+            not crew.get("unknown_start") and (parse_iso(crew["start"]) or ensure_utc(sh.start_utc)) <= now:
+        sh = None  # naplánované vystriedanie: kým nenastúpi, platí pracovný čas rušňovodiča v službe (odporúčanie)
     if sh is None and not crew:
         return None
     out: dict = {"name": "", "shift_id": None, "start": None, "limit": None, "left_min": None,
