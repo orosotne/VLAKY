@@ -169,9 +169,12 @@ def train_create(request: Request, background: BackgroundTasks, user=Depends(ope
             return render(request, "vlak_form.html", {"train": None, "values": reader.values(),
                                                       "errors": reader.errors, **_train_choices(s)},
                           user=user, status_code=422)
+        from ..planovanie import stav
+
         train = Train(**values)
         s.add(train)
         s.flush()
+        stav.pin_standing(s, train)  # zadaný rovno ako odstavený/prevzatý → začiatok státia (limit 18 h)
         audit(s, user.username, "train_create", "train", train.id,
               **{k: (iso(v) if hasattr(v, "tzinfo") else v) for k, v in values.items()})
         train_id, number = train.id, train.number
@@ -230,9 +233,16 @@ def train_update(train_id: int, request: Request, background: BackgroundTasks, u
         if not reader.ok:
             return render(request, "vlak_form.html", {"train": t, "values": reader.values(), "errors": reader.errors,
                                                       **_train_choices(s)}, user=user, status_code=422)
+        from ..planovanie import stav
+
         changes = _diff(t, values)
+        if changes:
+            stav.pin_standing(s, t)  # starší záznam stojaceho vlaku: úprava pripravenosti neposunie limit 18 h
         for k, v in values.items():
-            setattr(t, k, v)
+            if k != "status":
+                setattr(t, k, v)
+        # stav cez spoločné pravidlo: začiatok státia (limit 18 h) a odchod; čas úpravy nie je skutočný odchod
+        stav.set_status(s, t, values["status"], actual=False)
         if changes:
             audit(s, user.username, "train_update", "train", t.id, changes=changes)
         number = t.number
@@ -559,6 +569,11 @@ def handover_arrived(handover_id: int, request: Request, background: BackgroundT
         if h.status not in ("ocakavany", "prisiel"):
             return "Vlak už bol prevzatý."
         h.arrived_utc, h.status = ts, "prisiel"
+        t = s.get(Train, h.train_id)
+        if t is not None:
+            from ..planovanie import stav
+
+            stav.record_arrival(t, h, ts)  # od príchodu vlak stojí na koľajach ŽSR (limit 18 h)
         audit(s, user.username, "handover_arrived", "handover", h.id, train_id=h.train_id, ts=ts)
         return ""
 
@@ -585,7 +600,10 @@ def handover_taken(handover_id: int, request: Request, background: BackgroundTas
             h.findings = findings
         t = s.get(Train, h.train_id)
         if t is not None and t.status not in ("ukonceny", "zruseny"):
-            t.status = "prevzaty" if h.direction == "vstup" else "odovzdany"
+            from ..planovanie import stav
+
+            # vlak stojí ďalej – limit 18 h beží od príchodu na hranicu, nie od prevzatia
+            stav.record_takeover(s, t, h, ts)
         audit(s, user.username, "handover_taken_over", "handover", h.id, train_id=h.train_id, ts=ts,
               findings=findings, direction=h.direction)
         return ""

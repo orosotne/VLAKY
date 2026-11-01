@@ -167,7 +167,8 @@
       ['Rušeň', t.locomotive ? t.locomotive.number + (t.locomotive.type ? ' (' + t.locomotive.type + ')' : '') : '—'],
       ['Rušňovodič', d ? (d.name || 'nepriradený') + (d.left_min !== null && d.left_min !== undefined ? ' · do limitu 13 h: ' + fmtMin(d.left_min) : '') : '—']
     ];
-    if (d && d.relieve_by && (d.color === 'cervena' || d.color === 'oranzova')) { rows.push(['Vystriedať najneskôr', fmt(d.relieve_by, true)]); }
+    if (d && d.unknown_start) { rows.push(['Pracovný čas', d.relieve_note || 'limit 13 h sa nedá overiť – zadajte nástup rušňovodiča']); }
+    else if (d && d.relieve_by && (d.color === 'cervena' || d.color === 'oranzova')) { rows.push(['Vystriedať najneskôr', fmt(d.relieve_by, true)]); }
     rows.push(['Odchýlka', t.slack_min === null || t.slack_min === undefined ? '—' :
       (t.slack_min < 0 ? 'meškanie ' + fmtMin(-t.slack_min) + ' voči termínu' : 'rezerva ' + fmtMin(t.slack_min) + ' do termínu')]);
     rows.push(['ETA P50 / P90', fmt(t.eta_p50, true) + ' / ' + fmt(t.eta_p90, true) + (t.stale && t.eta_p50 ? ' (neistá)' : '')]);
@@ -974,7 +975,7 @@
         ])]),
         el('td', { class: 'small' }, positionCell(t)),
         el('td', { class: 'small' }, [fmt(t.eta_p50, true), t.eta_p90 ? el('span', { class: 'muted' }, [' (' + fmt(t.eta_p90) + ')']) : null, slack]),
-        el('td', { class: 'small' }, d ? [d.name || '—', el('div', { class: 'crew crew-' + (d.color || 'seda') }, [fmtMin(d.left_min)])] : ['—']),
+        el('td', { class: 'small' }, d ? [d.name || '—', el('div', { class: 'crew crew-' + (d.color || 'seda') }, [d.unknown_start ? (d.relieve_note || 'limit 13 h sa nedá overiť – zadajte nástup rušňovodiča') : fmtMin(d.left_min)])] : ['—']),
         el('td', { class: 'small risk' }, [t.risk || '—'])
       ]));
     });
