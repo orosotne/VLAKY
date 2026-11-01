@@ -53,6 +53,27 @@ class Closure:
 
 
 @dataclass(frozen=True)
+class Slowdown:
+    """Časovo obmedzené predĺženie jazdy úsekom (pomalá jazda, výluka jednej koľaje). Časy v minútach od t0.
+
+    Rozšírenie kanonickej kópie (referencia ho nemá). Započíta sa len vtedy, keď vlak ide dotknutou časťou
+    úseku počas okna [start, end] – napr. nočná pomalá jazda sa dennému vlaku nepočíta. part_from/part_to je
+    poloha dotknutej časti v úseku ako podiel jazdnej doby (po zlúčení úsekov). Viac okien tej istej výluky
+    (group, napr. denné opakovanie) sa pri jednej jazde tou istou časťou úseku počíta najviac raz.
+    """
+
+    start: float
+    end: float
+    extra_run: float = 0.0         # predĺženie jazdnej doby [min] (pomalá jazda), nezáporné
+    extra_p50: float = 0.0         # zvýšenie mediánu zdržania [min] (napr. jednokoľajná prevádzka), nezáporné
+    extra_p90: float = 0.0         # zvýšenie 90. percentilu zdržania [min], nezáporné
+    group: Optional[int] = None    # výluka, z ktorej okno pochádza (None = samostatné okno)
+    label: str = ""
+    part_from: float = 0.0         # začiatok dotknutej časti úseku (podiel jazdnej doby úseku)
+    part_to: float = 1.0           # koniec dotknutej časti úseku
+
+
+@dataclass(frozen=True)
 class Segment:
     """Úsek trasy medzi dvoma dopravňami."""
 
@@ -62,6 +83,7 @@ class Segment:
     delay_p90: float = 10.0        # 90. percentil zdržania na úseku [min] (z histórie)
     closures: tuple = ()           # n-tica Closure
     can_wait_before: bool = True   # je pred úsekom dopravňa s dosť dlhou koľajou na čakanie?
+    slowdowns: tuple = ()          # n-tica Slowdown (rozšírenie kanonickej kópie; prázdna = ako referencia)
 
 
 @dataclass(frozen=True)
@@ -213,6 +235,38 @@ def _lognormal(seg: Segment, z: float) -> float:
     return p50 * math.exp(sigma * z)
 
 
+def _slowed(seg: Segment, z: float, t: float, travel: float) -> float:
+    """Jazdná doba úsekom pri vstupe v čase t s obmedzeniami (Slowdown), ktoré platia, kým vlak ide ich časťou.
+
+    travel = jazdná doba bez obmedzení (run_min + zdržanie pre to isté z). Rozšírenie kanonickej kópie.
+    """
+    extra = e50 = e90 = 0.0
+    active = False
+    groups = None
+    for s in seg.slowdowns:
+        if not (t + s.part_from * travel < s.end and t + s.part_to * travel > s.start):
+            continue
+        if s.group is not None:
+            key = (s.group, s.part_from, s.part_to)
+            if groups is None:
+                groups = {key}
+            elif key in groups:
+                continue
+            else:
+                groups.add(key)
+        active = True
+        extra += s.extra_run
+        e50 += s.extra_p50
+        e90 += s.extra_p90
+    if not active:
+        return travel
+    if not e50 and not e90:  # len dlhšia jazda (pomalá jazda) – zdržanie sa nemení
+        return travel + extra
+    p50 = max(seg.delay_p50 + e50, 0.01)
+    p90 = max(seg.delay_p90 + e90, p50 * 1.0001)
+    return seg.run_min + extra + p50 * math.exp(math.log(p90 / p50) / Z90 * z)
+
+
 def _normals(n: int, k: int, seed: int) -> list:
     """Spoločné náhodné čísla pre všetky porovnávané varianty (férové porovnanie)."""
     rng = random.Random(seed)
@@ -237,6 +291,9 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
     [začiatok výluky - buffer_before_closure_min, koniec + buffer_after_closure_min].
     Ak by tam bol, čaká pred úsekom do konca tohto okna (neplánované zadržanie).
     Ak pred úsekom nie je kde čakať (can_wait_before=False), ide o zablokovanie.
+    Obmedzenie bez zastavenia (Segment.slowdowns – pomalá jazda, výluka koľaje) predĺži jazdu úsekom len pri
+    jazde jeho časťou počas jeho platnosti; čas vstupu do úseku sa berie z každej vzorky (odchod, zdržania
+    a čakanie pred výlukami), nie z mediánu – nočné obmedzenie sa tak dennému vlaku nepočíta.
     """
     segs = route.segments
     if normals is None:
@@ -253,12 +310,23 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
     else:
         base_cost = wait_h * p.cost_wait_ready_per_h
     base_cost += route.extra_fixed_cost + (p.cost_new_path if needs_new_path else 0.0)
+    # obmedzenia úsekov ako n-tice (rýchla kontrola vo vzorkách); okno, ktoré skončí skôr, než vlak môže
+    # do úseku najskôr vojsť (odchod + jazdné doby predchádzajúcich úsekov), sa nikdy neuplatní
+    slow, earliest = [], depart
+    for seg in segs:
+        slow.append(tuple((s.start, s.end, s.part_from, s.part_to) for s in seg.slowdowns if s.end > earliest))
+        earliest += seg.run_min
 
     for i in range(n):
         t = depart
         hold = stuck = False
         for k, seg in enumerate(segs):
-            travel = seg.run_min + _lognormal(seg, normals[i][k])
+            base_travel = travel = seg.run_min + _lognormal(seg, normals[i][k])
+            if slow[k]:
+                for a, b, f0, f1 in slow[k]:
+                    if t + f0 * base_travel < b and t + f1 * base_travel > a:
+                        travel = _slowed(seg, normals[i][k], t, base_travel)
+                        break
             moved = True
             while moved:  # po čakaní znova skontrolovať všetky výluky na úseku
                 moved = False
@@ -272,6 +340,8 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
                         stuck = stuck or not seg.can_wait_before
                         t = w_end
                         moved = True
+                if moved and slow[k]:  # po čakaní ide vlak úsekom v inom čase
+                    travel = _slowed(seg, normals[i][k], t, base_travel)
             t += travel
         # Pracovný čas rušňovodiča: od nástupu (príprava pred odchodom) po odovzdanie rušňa.
         duty = t + p.crew_post_min - duty_start

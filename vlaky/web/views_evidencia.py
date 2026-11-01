@@ -338,8 +338,8 @@ def _read_closure_form(reader: FormReader) -> dict:
         reader.errors["daily_to"] = "Denné opakovanie: zadajte čas od aj do (alebo nechajte obe prázdne)."
     if v["kind"] == "pomala_jazda" and v["speed_kmh"] is None and "speed_kmh" not in reader.errors:
         reader.errors["speed_kmh"] = "Pri pomalej jazde zadajte obmedzenú rýchlosť."
-    if v["from_station"] and v["from_station"] == v["to_station"]:
-        reader.errors["to_station"] = "Úsek musí mať dve rôzne dopravne."
+    # od = do je výluka alebo mimoriadnosť v jednej dopravni (všetky koľaje v jej obvode) – napr. telefonicky
+    # nahlásená mimoriadnosť; úsek, ktorý sa v sieti nenájde, odmietne kontrola nižšie
     if reader.ok:
         probe = Closure(from_station=v["from_station"], to_station=v["to_station"])
         if not closure_edges(probe):
