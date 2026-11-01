@@ -45,7 +45,7 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..cas import ensure_utc, fmt, now_utc
 from ..config import settings
-from ..models import Email, Notification, Recommendation
+from ..models import Closure, Email, Notification, Recommendation
 from .texty import recommendation_body, recommendation_subject, sms_text
 
 SENT_STATES = ("odoslana", "outbox")
@@ -630,11 +630,28 @@ def is_one_shot(dedup_key: str) -> bool:
     return bool(dedup_key) and dedup_key.startswith(ONE_SHOT_PREFIXES)
 
 
+def one_shot_current(session: Session, dedup_key: str) -> bool:
+    """Jednorazové upozornenie ešte platí (má zmysel ho zopakovať a počítať ako nedoručené). Pripomienka výluky do
+    odvolania (``do_odvolania:{id výluky}:{technický koniec}``) len kým výluka stále platí do odvolania – nie je
+    zrušená ani odvolaná (ŽSR ju ukončila, dispečer zmenil koniec) a technický koniec sa odvtedy neposunul (novší
+    posun má vlastnú pripomienku). Inak by po obnovení servera prišlo „… stále platí“ o zrušenej výluke."""
+    if not (dedup_key or "").startswith("do_odvolania:"):
+        return True
+    parts = dedup_key.split(":")
+    try:
+        closure = session.get(Closure, int(parts[1]))
+    except (IndexError, ValueError):
+        return False
+    if closure is None or not closure.until_revoked or closure.status not in ("navrh", "overene"):
+        return False
+    return len(parts) < 3 or f"{ensure_utc(closure.end_utc):%Y%m%d}" == parts[2]
+
+
 def retry_one_shot(session: Session, now: datetime | None = None) -> list:
     """Zopakuje jednorazové upozornenia, ktoré sa nepodarilo doručiť (hlásenie rušňovodiča o probléme odoslané
     z webu, pripomienka výluky do odvolania): tú istú správu (rovnaký kľúč, predmet aj text) len tým príjemcom,
     ktorým neprišla, s odstupom 5, 10, 20, 40, 60 min (pri výpadku kanála hneď, ako tomu istému príjemcovi prišla
-    iná správa), najviac RETRY_HOURS od prvého pokusu."""
+    iná správa), najviac RETRY_HOURS od prvého pokusu a len kým upozornenie platí (one_shot_current)."""
     now = now or now_utc()
     since = now - timedelta(hours=RETRY_HOURS)
     keys = [k for (k,) in session.execute(
@@ -646,6 +663,8 @@ def retry_one_shot(session: Session, now: datetime | None = None) -> list:
         first = session.scalar(select(func.min(Notification.created_at)).where(Notification.dedup_key == key))
         if first is None or ensure_utc(first) < since:
             continue  # opakuje sa najviac RETRY_HOURS od prvého pokusu
+        if not one_shot_current(session, key):
+            continue  # napr. výluka do odvolania je medzitým zrušená – „stále platí“ by už nebola pravda
         targets = retry_targets(session, key)
         if not targets:
             continue

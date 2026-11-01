@@ -77,47 +77,17 @@ def max_raw_bytes() -> int:
 def mailbox_check(previous: Any, now: datetime, fetched: int, drained: bool) -> dict:
     """Záznam ``mail_last_ok`` po prečítaní schránky.
 
-    Dočítaná schránka: ``{"ts": čas kontroly, "fetched": n}`` – plánovač podľa ``ts`` posudzuje čerstvosť výluk.
+    Dočítaná schránka: ``{"ts": čas kontroly, "fetched": n}`` – plánovač aj web podľa ``ts`` posudzujú čerstvosť
+    výluk (bez úspešnej kontroly za posledných 30 min nikdy ZELENÁ).
     Čiastočné čítanie (v schránke ostali ďalšie e-maily) nie je úspešná kontrola: záznam nemá ``ts`` (plánovač ani
     web ho neberú ako čerstvý – žiadna ZELENÁ, kým sa schránka nedočíta) a pamätá si poslednú úplnú kontrolu
-    (``last_full``) a začiatok dočítavania (``since``) pre zdravie agenta."""
+    (``last_full``) a začiatok dočítavania (``since``) – pre zdravie agenta, pre texty („schránka sa dočítava,
+    posledná úplná kontrola pred X min“) a pre agenta (prepočet hneď po dočítaní)."""
     if drained:
         return {"ts": now.isoformat(), "fetched": fetched}
     prev = previous if isinstance(previous, dict) else {}
-    return {"partial": True, "since": prev.get("since") if prev.get("partial") else now.isoformat(),
+    return {"partial": True, "since": (prev.get("since") if prev.get("partial") else None) or now.isoformat(),
             "checked": now.isoformat(), "last_full": prev.get("ts") or prev.get("last_full"), "fetched": fetched}
-
-
-_CODE = re.compile(r"^[A-Za-z0-9_.-]{1,60}$")
-
-
-def _graph_error(r: httpx.Response) -> str:
-    """Kód chyby z odpovede Microsoft Graph / Entra ID na diagnostiku (napr. „invalid_client, AADSTS7000222“ pri
-    vypršanom tajomstve, „ErrorAccessDenied“) – len kódy, nikdy celý popis (môže obsahovať identifikátory)."""
-    try:
-        j = r.json()
-    except ValueError:
-        return ""
-    if not isinstance(j, dict):
-        return ""
-    parts: list[str] = []
-    err = j.get("error")
-    if isinstance(err, dict):           # Graph: {"error": {"code": "ErrorAccessDenied", "message": …}}
-        err = err.get("code")
-    if isinstance(err, str) and _CODE.match(err):
-        parts.append(err)
-    aadsts = re.search(r"\bAADSTS\d{4,8}\b", str(j.get("error_description") or ""))
-    if aadsts:
-        parts.append(aadsts.group(0))
-    return ", ".join(parts)
-
-
-def _imap_error(exc: BaseException) -> str:
-    """Kód odpovede IMAP servera (napr. AUTHENTICATIONFAILED) – len kód v hranatých zátvorkách, nie celý text."""
-    text = " ".join(x.decode("utf-8", "replace") if isinstance(x, bytes) else str(x) for x in exc.args)
-    m = re.search(r"\[([A-Z][A-Z0-9-]{2,40})\]", text) or re.search(r"\b(AUTHENTICATIONFAILED|AUTHORIZATIONFAILED)\b",
-                                                                   text)
-    return m.group(1) if m else ""
 
 
 # ---------------------------------------------------------------------- stav v KeyValue
@@ -254,9 +224,7 @@ class ImapSource:
             try:
                 conn.login(s.imap_user, s.imap_password)
             except imaplib.IMAP4.error as exc:
-                code = _imap_error(exc)
-                raise MailSourceError(f"Prihlásenie do IMAP zlyhalo ({code + ' – ' if code else ''}skontrolujte "
-                                      f"používateľa a heslo).") from exc
+                raise MailSourceError("Prihlásenie do IMAP zlyhalo (skontrolujte používateľa a heslo).") from exc
             folder = s.imap_folder or "INBOX"
             if " " in folder and not folder.startswith('"'):
                 folder = f'"{folder}"'
@@ -346,9 +314,7 @@ class GraphSource:
                                    "scope": "https://graph.microsoft.com/.default",
                                    "grant_type": "client_credentials"})
         if r.status_code != 200:
-            code = _graph_error(r)
-            raise MailSourceError(f"Získanie tokenu Microsoft Graph zlyhalo (HTTP {r.status_code}"
-                                  f"{', ' + code if code else ''}).")
+            raise MailSourceError(f"Získanie tokenu Microsoft Graph zlyhalo (HTTP {r.status_code}).")
         j = r.json()
         self._token = j.get("access_token")
         if not self._token:
@@ -393,9 +359,7 @@ class GraphSource:
                 kv_set(self.session, self.STATE_KEY, None)
                 raise MailSourceError("Delta odkaz Microsoft Graph vypršal – pri ďalšom behu sa schránka načíta znova.")
             if r.status_code != 200:
-                code = _graph_error(r)
-                raise MailSourceError(f"Čítanie schránky cez Microsoft Graph zlyhalo (HTTP {r.status_code}"
-                                      f"{', ' + code if code else ''}).")
+                raise MailSourceError(f"Čítanie schránky cez Microsoft Graph zlyhalo (HTTP {r.status_code}).")
             j = r.json()
             for m in j.get("value") or []:
                 if "@removed" in m or not m.get("id"):

@@ -53,14 +53,15 @@ def undelivered(session, now: datetime | None = None, ignore_keys: tuple = ()) -
         odporúčanie), kým je aktuálne (nové, nie INFO, vlak nie je ukončený, najviac 48 h – RETRY_HOURS),
       - návrh k objednávke, kým objednávka čaká na návrh,
       - jednorazové upozornenie, ktoré agent opakuje (hlásenie rušňovodiča, pripomienka výluky do odvolania –
-        retry_one_shot), najviac RETRY_HOURS od prvého pokusu; iná doručená správa ho nevybaví,
+        retry_one_shot), najviac RETRY_HOURS od prvého pokusu a kým platí (pripomienka zrušenej výluky nie); iná
+        doručená správa ho nevybaví,
       - ostatné (súhrn, denná správa, odovzdávka, upozornenia na pracovný čas a státie, ktoré sa posielajú znova
         v každom cykle) najviac 90 min po poslednom pokuse (opakujú sa najneskôr každých 60 min) a len kým tomuto
         príjemcovi neprišla iná správa (kanál opäť funguje).
     Príjemcovia, ktorí už nie sú na internom zozname, sa nepočítajú.
     """
     from ..notifikacie.odosielanie import (RETRY_HOURS, RETRY_MAX_MIN, SENT_STATES, allowed_recipients,
-                                           is_one_shot)
+                                           is_one_shot, one_shot_current)
     from ..planovanie.planovac import DONE_STATES
 
     now = now or now_utc()
@@ -123,7 +124,8 @@ def undelivered(session, now: datetime | None = None, ignore_keys: tuple = ()) -
             pending = int(f.dedup_key.split(":")[1]) in open_orders
         elif f.dedup_key in one_shot:
             started = first_try.get(f.dedup_key)
-            pending = started is not None and ensure_utc(started) >= horizon
+            pending = started is not None and ensure_utc(started) >= horizon and \
+                one_shot_current(session, f.dedup_key)
         else:
             pending = ensure_utc(f.created_at) >= recent and pair_later.get((f.channel, f.recipient), 0) < f.id
         if pending:
@@ -135,8 +137,8 @@ def mailbox_status(kv: dict, now: datetime | None = None) -> tuple:
     """(v poriadku, popis) kontroly schránky podľa záznamu ``mail_last_ok``.
 
     Čiastočné čítanie (v schránke ostali ďalšie e-maily, napr. nahromadená pošta po výpadku agenta) nie je úspešná
-    kontrola – plánovač vtedy nedá ZELENÚ. Pre zdravie je v poriadku, kým od poslednej úplnej kontroly (alebo od
-    začiatku dočítavania, ak úplná kontrola ešte neprebehla) neuplynulo viac ako 30 min."""
+    kontrola – plánovač vtedy nedá ZELENÚ (zdroje.mailbox_check). Pre zdravie je v poriadku, kým od poslednej úplnej
+    kontroly (alebo od začiatku dočítavania, ak úplná kontrola ešte neprebehla) neuplynulo viac ako 30 min."""
     now = now or now_utc()
 
     def age(ts) -> float | None:
@@ -145,19 +147,20 @@ def mailbox_status(kv: dict, now: datetime | None = None) -> tuple:
         except (TypeError, ValueError):
             return None
 
+    kv = kv if isinstance(kv, dict) else {}
+    full_ts = kv.get("last_full") if kv.get("partial") else kv.get("ts")
+    full = age(full_ts) if full_ts else None
     if kv.get("partial"):
-        full = age(kv.get("last_full"))
         ref = full if full is not None else age(kv.get("since"))
         text = "dočítava sa (v schránke čakajú ďalšie e-maily), posledná úplná kontrola " + \
             (f"pred {max(full, 0):.0f} min" if full is not None else "zatiaľ neprebehla")
         if ref is not None and ref > MAILBOX_MAX_AGE_MIN:
             return False, text + f" (viac ako {MAILBOX_MAX_AGE_MIN} min!)"
         return True, text
-    minutes = age(kv.get("ts")) if kv.get("ts") else None
-    if minutes is None:
+    if full is None:
         return False, "zatiaľ neprebehol"
-    text = f"pred {minutes:.0f} min"
-    if minutes > MAILBOX_MAX_AGE_MIN:
+    text = f"pred {full:.0f} min"
+    if full > MAILBOX_MAX_AGE_MIN:
         return False, text + f" (viac ako {MAILBOX_MAX_AGE_MIN} min!)"
     return True, text
 

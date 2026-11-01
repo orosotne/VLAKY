@@ -1,7 +1,7 @@
 """Príkazový riadok Agenta dispečera.
 
   python -m vlaky init-db                     # vytvorí tabuľky a nahrá hraničné priechody
-  python -m vlaky create-user MENO --role dispecer --password HESLO [--email ...] [--phone ...]
+  python -m vlaky create-user MENO --role dispecer [--password [HESLO]] [--email ...] [--phone ...]
                                               # existujúci účet sa nezmení; zmena: --update (len zadané údaje)
   python -m vlaky import-osm --pbf slovakia.osm.pbf   # prebuduje sieť z OpenStreetMap
   python -m vlaky web [--host 0.0.0.0 --port 8000]    # webová aplikácia (mapa, fronta, odporúčania)
@@ -18,6 +18,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+ASK_PASSWORD = "\0vypytat"  # --password bez hodnoty: heslo sa vypýta (alebo prečíta z prvého riadku vstupu)
+
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m vlaky", description=__doc__,
@@ -28,8 +30,10 @@ def main(argv: list[str] | None = None) -> int:
     cu.add_argument("username")
     cu.add_argument("--role", default=None, choices=["dispecer", "veduci", "planovac", "obchod", "admin"],
                     help="rola (nový používateľ: predvolene dispecer)")
-    cu.add_argument("--password", default=None,
-                    help="heslo (bez neho sa vypýta, prípadne prečíta zo vstupu – nebude v histórii príkazov)")
+    cu.add_argument("--password", nargs="?", const=ASK_PASSWORD, default=None, metavar="HESLO",
+                    help="heslo; bez hodnoty (a pri novom používateľovi aj bez --password) sa vypýta, prípadne "
+                         "prečíta z prvého riadku vstupu – nebude v histórii príkazov; pri --update sa heslo mení "
+                         "len s --password")
     cu.add_argument("--full-name", default=None)
     cu.add_argument("--email", default=None)
     cu.add_argument("--phone", default=None)
@@ -140,8 +144,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _read_password(args) -> str:
-    """Heslo z --password, inak z výzvy (terminál) alebo z prvého riadku vstupu (skript) – nie v histórii príkazov."""
-    if args.password is not None:
+    """Heslo z --password HESLO, inak z výzvy (terminál) alebo z prvého riadku vstupu (skript) – nie v histórii
+    príkazov."""
+    if args.password not in (None, ASK_PASSWORD):
         return args.password
     if sys.stdin.isatty():
         import getpass
@@ -156,18 +161,24 @@ def _read_password(args) -> str:
 def _create_user(args) -> int:
     """create-user: nový účet; existujúci sa NIKDY potichu neprepíše (heslo, rola, kontakty, zrušený účet).
 
-    Zmena existujúceho účtu len s --update a len údaje, ktoré sú zadané (zrušený účet znova povolí --activate)."""
+    Zmena existujúceho účtu len s --update a len údaje, ktoré sú zadané (zrušený účet znova povolí --activate).
+    Existujúci účet sa hľadá bez ohľadu na veľkosť písmen (starší účet „Admin“ – nový „admin“ by bol takmer rovnaký);
+    nové meno je ako vo webe (malé písmená)."""
     from .db import init_db, session_scope
     from .pouzivatelia import create_user, find_user, normalize_username, update_user
 
-    try:
-        username = normalize_username(args.username)
-    except ValueError as exc:
-        print(f"CHYBA: {exc}", file=sys.stderr)
-        return 2
+    username = (args.username or "").strip()
+    if not args.update:
+        try:
+            username = normalize_username(username)
+        except ValueError as exc:
+            print(f"CHYBA: {exc}", file=sys.stderr)
+            return 2
     init_db()
     with session_scope() as s:
         existing = find_user(s, username)
+        if existing is not None:
+            username = existing.username
         if existing is not None and not args.update:
             state = "aktívny" if existing.active else "ZRUŠENÝ"
             print(f"CHYBA: Používateľ {username} už existuje ({existing.role}, {state}) – nič sa nezmenilo. "
@@ -195,10 +206,12 @@ def _create_user(args) -> int:
             print(f"CHYBA: {exc}", file=sys.stderr)
             return 2
     if not changes:
-        print(f"Používateľ {username}: bez zmien (zadajte, čo sa má zmeniť: --password, --role, --full-name, "
-              f"--email, --phone, --activate).")
+        print(f"Používateľ {username}: bez zmien (zadajte, čo sa má zmeniť: --password – bez hodnoty sa heslo "
+              f"vypýta, --role, --full-name, --email, --phone, --activate).")
     else:
-        print(f"Používateľ {username} upravený: {', '.join(changes)}.")
+        labels = {"password": "heslo", "role": "rola", "full_name": "meno", "email": "e-mail", "phone": "telefón",
+                  "active": "účet znova povolený"}
+        print(f"Používateľ {username} upravený: {', '.join(labels.get(c, c) for c in changes)}.")
     return 0
 
 

@@ -123,7 +123,15 @@ app_domain() {
 }
 
 check_https() {
-  local domain url code end end_s days curl_args=(-s -o /dev/null -w '%{http_code}' -m 15)
+  local domain url code end end_s days hint_web hint_cert curl_args=(-s -o /dev/null -w '%{http_code}' -m 15)
+  # ďalší krok podľa spôsobu inštalácie (bez Dockera nie sú príkazy docker compose k dispozícii)
+  if [[ $DEPLOY_MODE == docker ]]; then
+    hint_web="docker compose ps; docker compose logs --tail 100 caddy web"
+    hint_cert="docker compose logs caddy | grep -i acme"
+  else
+    hint_web="systemctl status caddy vlaky-web; journalctl -u caddy -u vlaky-web --since -1h"
+    hint_cert="journalctl -u caddy --since -24h | grep -i acme"
+  fi
   domain=$(app_domain)
   if [[ -z $domain && -z $CHECK_URL ]]; then
     fail "HTTPS a certifikát sa NEKONTROLUJÚ: neznáma doména – nastav CHECK_URL v ops.env alebo VLAKY_DOMAIN či VLAKY_PUBLIC_URL (https://…) v $CHECK_ENV_FILE"
@@ -136,9 +144,9 @@ check_https() {
   if [[ $code == 200 ]]; then
     pass "$url odpovedá 200"
   elif [[ -z $code || $code == 000 ]]; then
-    fail "$url je nedostupné (spojenie/TLS zlyhalo) – docker compose ps; docker compose logs --tail 100 caddy web"
+    fail "$url je nedostupné (spojenie/TLS zlyhalo) – $hint_web"
   else
-    fail "$url odpovedá $code (očakávané 200) – docker compose logs --tail 100 caddy web"
+    fail "$url odpovedá $code (očakávané 200) – $hint_web"
   fi
 
   [[ -n $domain ]] || return 0
@@ -152,7 +160,7 @@ check_https() {
   end_s=$(date -d "$end" +%s)
   days=$(( (end_s - $(date +%s)) / 86400 ))
   if (( days < CHECK_CERT_MIN_DAYS )); then
-    fail "certifikát pre $domain vyprší o $days dní ($end) – docker compose logs caddy | grep -i acme"
+    fail "certifikát pre $domain vyprší o $days dní ($end) – $hint_cert"
   else
     pass "certifikát pre $domain platí ešte $days dní"
   fi

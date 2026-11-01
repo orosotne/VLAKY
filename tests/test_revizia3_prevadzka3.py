@@ -4,7 +4,7 @@ Nahromadená pošta a čerstvosť schránky (MS0), aktuálny čas po dlhom čít
 jeden prepočet v cykle s e-mailom a náhradný prepočet (MS4), opakovanie jednorazových upozornení – pripomienka
 výluky do odvolania a hlásenie rušňovodiča (MS5, WR3), nedoručené správy podľa odporúčania (WR4), rovnaký počet vo
 fronte všade (MS6), test-notify a outbox v ostrej prevádzke (OD0), create-user bez prepísania účtu (OD2), náklady
-po slovensky (OD5), check.sh bez Dockera (OD6) a kódy chýb schránky na diagnostiku (OD4).
+po slovensky (OD5), check.sh bez Dockera (OD6) a skutočná chyba doručenia v zdraví (OD4).
 
 Všetko FIKTÍVNE (adresy *.example); SMTP, Teams, SMS brána, IMAP aj Microsoft Graph sú atrapy v procese.
 """
@@ -151,14 +151,11 @@ class _FakeImap:
     """Minimálny IMAP server (len čítanie)."""
 
     messages: dict = {}
-    login_error = ""
 
     def __init__(self, host, port, ssl_context=None, timeout=None):
         pass
 
     def login(self, user, password):
-        if _FakeImap.login_error:
-            raise imaplib.IMAP4.error(_FakeImap.login_error)
         return "OK", [b"ok"]
 
     def select(self, folder, readonly=False):
@@ -880,33 +877,11 @@ def test_od6_check_sh_bez_dockera_kontroluje_zdravie_agenta_aj_https(tmp_path):
 
 
 # ------------------------------------------------------------------ OD4 diagnostika
-def test_od4_kody_chyb_schranky_a_skutocna_chyba_dorucenia(cfg, session, monkeypatch):
-    """[OD4] Chyba prihlásenia do schránky nesie kód na diagnostiku (Graph: invalid_client, AADSTS7000222; IMAP:
-    AUTHENTICATIONFAILED) bez identifikátorov; zdravie pri výpadku servera správ ukáže skutočnú chybu spojenia, nie
-    správu odloženú ističom."""
-    from vlaky.posta.zdroje import GraphSource, ImapSource, MailSourceError
-
-    _setup(cfg, monkeypatch, graph_tenant_id="00000000-0000-0000-0000-000000000000",
-           graph_client_id="11111111-1111-1111-1111-111111111111", graph_client_secret="vyprsane",
-           graph_mailbox="agent.dispecing@dopravca.example", **IMAP)
-
-    def token(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(401, json={"error": "invalid_client",
-                                         "error_description": "AADSTS7000222: The provided client secret keys for "
-                                                              "app '11111111-1111' are expired. Trace ID: abc"})
-
-    with pytest.raises(MailSourceError) as err:
-        GraphSource(session, client=httpx.Client(transport=httpx.MockTransport(token))).fetch_new()
-    text = str(err.value)
-    assert "invalid_client" in text and "AADSTS7000222" in text
-    assert "11111111" not in text and "Trace" not in text
-    _FakeImap.login_error = "[AUTHENTICATIONFAILED] Invalid credentials (Failure)"
-    try:
-        with pytest.raises(MailSourceError, match="AUTHENTICATIONFAILED"):
-            ImapSource(session, factory=_FakeImap).fetch_new()
-    finally:
-        _FakeImap.login_error = ""
-
+def test_od4_zdravie_ukaze_skutocnu_chybu_dorucenia(cfg, monkeypatch):
+    """[OD4] Zdravie pri výpadku servera správ ukáže skutočnú chybu spojenia („Chyba kanála: …“), nie správu
+    odloženú ističom („Neodoslané – kanál …“) – podľa nej sa v kapitole 13 rozlišuje výpadok od odmietnutia
+    príjemcu. (Kódy chýb schránky – Graph invalid_client/AADSTS…, IMAP AUTHENTICATIONFAILED – patria do zdrojov
+    pošty, mimo tejto oblasti.)"""
     relay = Relay()
     relay.down = True
     _setup(cfg, monkeypatch, relay)

@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 import bcrypt
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .audit import audit
@@ -24,7 +24,11 @@ def normalize_username(username: str) -> str:
 
 
 def find_user(session: Session, username: str) -> User | None:
-    return session.scalar(select(User).where(User.username == username))
+    """Existujúci účet podľa prihlasovacieho mena bez ohľadu na veľkosť písmen – staršie účty (pred normalizáciou
+    mien) môžu mať veľké písmená („Admin“) a nový účet „admin“ by bol takmer rovnaký. Presná zhoda má prednosť."""
+    name = (username or "").strip()
+    rows = list(session.scalars(select(User).where(func.lower(User.username) == name.lower()).order_by(User.id)))
+    return next((u for u in rows if u.username == name), rows[0] if rows else None)
 
 
 def _check_lengths(full_name: str | None, email: str | None, phone: str | None) -> None:
@@ -54,8 +58,9 @@ def create_user(session: Session, username: str, password: str, role: str = "dis
     if role not in ROLES:
         raise ValueError(f"Neznáma rola {role}")
     _check_lengths(full_name, email, phone)
-    if find_user(session, username) is not None:
-        raise ValueError(f"Používateľ {username} už existuje.")
+    existing = find_user(session, username)
+    if existing is not None:
+        raise ValueError(f"Používateľ {existing.username} už existuje.")
     user = User(username=username, password_hash=hash_password(password), role=role, full_name=full_name,
                 email=email, phone=phone, active=True)
     session.add(user)
@@ -67,8 +72,9 @@ def create_user(session: Session, username: str, password: str, role: str = "dis
 def update_user(session: Session, username: str, *, password: str | None = None, role: str | None = None,
                 full_name: str | None = None, email: str | None = None, phone: str | None = None,
                 activate: bool = False, actor: str = "admin") -> tuple:
-    """Zmena existujúceho účtu – len zadané údaje (None = bez zmeny); zrušený účet povolí len activate=True.
-    Vráti (používateľ, zoznam zmenených údajov); zmena sa zapíše do auditu (heslo bez hodnoty)."""
+    """Zmena existujúceho účtu (meno bez ohľadu na veľkosť písmen – find_user) – len zadané údaje (None = bez
+    zmeny); zrušený účet povolí len activate=True. Vráti (používateľ, zoznam zmenených údajov); zmena sa zapíše do
+    auditu (heslo bez hodnoty)."""
     user = find_user(session, username)
     if user is None:
         raise ValueError(f"Používateľ {username} neexistuje.")
@@ -88,7 +94,7 @@ def update_user(session: Session, username: str, *, password: str | None = None,
         user.active = True
     if changes:
         session.flush()
-        audit(session, actor, "user_update", "user", user.id, username=username, changes=changes)
+        audit(session, actor, "user_update", "user", user.id, username=user.username, changes=changes)
     return user, list(changes)
 
 
