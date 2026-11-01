@@ -16,6 +16,31 @@ def _latest_rec(session: Session, train_id: int):
                           .order_by(Recommendation.id.desc()))
 
 
+def _time(iso) -> str:
+    try:
+        return fmt(datetime.fromisoformat(iso)) if iso else ""
+    except (TypeError, ValueError):
+        return str(iso)
+
+
+def _crew_line(train: Train, crew: dict) -> str:
+    """Riadok o rušňovodičovi blízko limitu. Pri chýbajúcom zázname o nástupe sú časy len odhad (nástup
+    = odchod vlaku mínus príprava) – nikdy sa neuvádzajú ako fakt; bez odhadu sa limit nedá overiť."""
+    relieve = _time(crew.get("relieve_by"))
+    try:
+        max_h = f"{float(crew.get('max_duty_h') or 13):g}"
+    except (TypeError, ValueError):
+        max_h = "13"
+    if crew.get("unknown_start"):
+        if relieve:
+            return (f"  - vlak {train.number}: odhad: vystriedať najneskôr o {relieve} "
+                    f"(nástup rušňovodiča nie je zadaný)")
+        return f"  - vlak {train.number}: limit {max_h} h sa nedá overiť – zadajte nástup rušňovodiča"
+    if relieve:
+        return f"  - vlak {train.number}: vystriedať najneskôr o {relieve}"
+    return f"  - vlak {train.number}: čas vystriedania nie je známy – overte nástup rušňovodiča"
+
+
 def build_report(session: Session, now: datetime | None = None, hours: int = 12) -> tuple:
     now = now or now_utc()
     since = now - timedelta(hours=hours)
@@ -42,11 +67,13 @@ def build_report(session: Session, now: datetime | None = None, hours: int = 12)
         lines += ["", title + ":"]
         lines += [f"  - {r.summary}" for _t, r in items] or ["  (žiadne)"]
     lines += ["", "Rušňovodiči blízko limitu 13 h:"]
-    lines += [f"  - vlak {t.number}: vystriedať najneskôr o "
-              f"{fmt(datetime.fromisoformat(r.crew['relieve_by']))}" for t, r in crew_risk] or ["  (žiadni)"]
+    lines += [_crew_line(t, r.crew or {}) for t, r in crew_risk] or ["  (žiadni)"]
     handovers = list(session.scalars(select(Handover).where(Handover.status.in_(("ocakavany", "prisiel")))))
+    # číslo vlaku, nie interné id v databáze (preberajúci dispečer pozná vlaky podľa čísla)
+    numbers = dict(session.execute(select(Train.id, Train.number).where(
+        Train.id.in_({h.train_id for h in handovers}))).all()) if handovers else {}
     lines += ["", "Očakávané preberania na hraniciach:"]
-    lines += [f"  - vlak {h.train_id}: {h.border.handover_station if h.border else '?'} avízo "
+    lines += [f"  - vlak {numbers.get(h.train_id, '?')}: {h.border.handover_station if h.border else '?'} avízo "
               f"{fmt(h.avizo_eta_utc)} ({h.status})" for h in handovers] or ["  (žiadne)"]
     new_closures = list(session.scalars(select(Closure).where((Closure.created_at >= since) |
                                                               (Closure.updated_at >= since))
@@ -80,8 +107,13 @@ def create_report(session: Session, now: datetime | None = None, notify: bool = 
     session.add(rep)
     session.flush()
     if notify:
-        from ..notifikacie.odosielanie import send_internal
-
-        send_internal(session, "odovzdavka", "[AGENT] Odovzdávka služby", content, "INFO",
-                      dedup_key=f"odovzdavka:{rep.id}", channels=["email"])
+        send_report(session, rep)
     return rep
+
+
+def send_report(session: Session, rep: ShiftHandoverReport) -> list:
+    """Pošle odovzdávku dispečerom; pri zlyhaní ju agent pošle znova – tú istú správu s rovnakým kľúčom."""
+    from ..notifikacie.odosielanie import send_internal
+
+    return send_internal(session, "odovzdavka", "[AGENT] Odovzdávka služby", rep.content, "INFO",
+                         dedup_key=f"odovzdavka:{rep.id}", channels=["email"])
