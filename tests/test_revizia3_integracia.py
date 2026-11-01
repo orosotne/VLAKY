@@ -165,3 +165,77 @@ def test_agent_once_vrati_chybovy_kod_pri_chybe_cyklu(cfg, monkeypatch):
     monkeypatch.setattr(cfg, "mail_source", "imap")
     monkeypatch.setattr(cfg, "imap_host", "")  # IMAP nie je nastavené → chyba čítania schránky v cykle
     assert beh.run_agent(once=True) == 1
+
+
+def test_planovac_zapise_dovody_obmedzenia_a_email_neukaze_zelenu(session, fixed_now):
+    """Plánovač zapíše, prečo ZELENÁ nie je dovolená (data_age["obmedzenie"]); e-mail odporúčania potom neukáže
+    okná odchodu ako „bezpečné (ZELENÁ)“ ani ZELENÉ varianty – rovnaké pravidlo ako web (data.semafor_cap)."""
+    from sqlalchemy import delete
+
+    from vlaky.hranice import seed_borders
+    from vlaky.models import KeyValue, Path, Train
+    from vlaky.notifikacie.texty import recommendation_body
+    from vlaky.planovanie.planovac import evaluate_train
+
+    seed_borders(session)
+    session.execute(delete(KeyValue).where(KeyValue.key == "mail_last_ok"))  # schránka neskontrolovaná
+    t = Train(number="47900", run_date=fixed_now.date().isoformat(), origin="Čadca", destination="Žilina",
+              traction="E", gauge="1435", vmax_kmh=100, status="planovany", ready_utc=fixed_now + timedelta(hours=1),
+              deadline_utc=fixed_now + timedelta(hours=10))
+    session.add(t)
+    session.flush()
+    session.add(Path(train_id=t.id, train_number=t.number, status="pridelena",
+                     departure_utc=fixed_now + timedelta(hours=1)))
+    session.commit()
+    rec = evaluate_train(session, t.id, fixed_now, "test")
+    assert rec.color != "ZELENÁ"
+    assert any("schránka" in x for x in rec.data_age.get("obmedzenie", [])), rec.data_age
+    body = recommendation_body(rec)
+    assert "Okná bezpečného odchodu (ZELENÁ)" not in body
+    assert not any(" ZELENÁ " in line for line in body.splitlines() if "P(včas)" in line and line.startswith("  "))
+
+
+def test_email_vlaku_v_cieli_neuvadza_odchod_ani_prichod_teraz(session, fixed_now):
+    """E-mail odporúčania pre vlak v cieli: „Vlak je v cieli – príchod …“ (alebo príchod podľa plánu), nie
+    „Odchod: teraz, Príchod: teraz“ a koniec služby z „teraz“."""
+    from vlaky.models import Recommendation, Train
+    from vlaky.notifikacie.texty import recommendation_body
+
+    t = Train(number="47901", origin="Čadca", destination="Žilina", status="v_jazde")
+    session.add(t)
+    session.flush()
+    arr = fixed_now - timedelta(minutes=20)
+    rec = Recommendation(train_id=t.id, created_at=fixed_now, decision="POKRAČOVAŤ", color="ZELENÁ", priority="INFO",
+                         summary="Vlak 47901: POKRAČOVAŤ – vlak je v cieli.",
+                         chosen={"route": "hlavná", "depart": fixed_now.isoformat(), "kind": "POKRAČOVAŤ",
+                                 "arrival_p50": fixed_now.isoformat(), "arrival_p90": fixed_now.isoformat(),
+                                 "v_cieli": True, "prichod_v_cieli": arr.isoformat(), "prichod_podla_planu": None},
+                         crew={}, reasons=[], data_age={})
+    session.add(rec)
+    session.flush()
+    body = recommendation_body(rec)
+    assert "Vlak je v cieli – príchod" in body and "Odchod:" not in body and "Príchod:" not in body
+    rec.chosen = dict(rec.chosen, prichod_v_cieli=None, prichod_podla_planu=arr.isoformat())
+    rec.crew = {"driver": "Rušňovodič (FIKTÍVNY)", "start": (fixed_now - timedelta(hours=5)).isoformat(),
+                "limit": (fixed_now + timedelta(hours=8)).isoformat(), "end_p50": fixed_now.isoformat(),
+                "end_p90": fixed_now.isoformat(), "status": "ZELENÁ", "max_duty_h": 13}
+    body2 = recommendation_body(rec)
+    assert "Podľa plánu by už mal byť v cieli" in body2 and "koniec služby po ukončení jazdy" in body2
+
+
+def test_ostra_prevadzka_bez_prijemcov_je_chyba_nastavenia(cfg, monkeypatch):
+    """V ostrej prevádzke bez interného zoznamu príjemcov agent neodošle nič (ani KRITICKÉ) – zdravie to musí
+    hlásiť ako chybu; vo vývoji, testoch a ukážke je to len informácia."""
+    from vlaky.agent.zdravie import config_status
+
+    monkeypatch.setattr(cfg, "notify_emails", "")
+    monkeypatch.setattr(cfg, "notify_phones", "")
+    monkeypatch.setattr(cfg, "teams_webhook_url", "")
+    ok, text = config_status()
+    assert ok is True and "príjemca" in text  # test: stačí informácia
+    monkeypatch.setattr(cfg, "env", "prod")
+    ok, text = config_status()
+    assert ok is False and "neodošle nič" in text
+    monkeypatch.setattr(cfg, "notify_phones", "+421900000001")
+    ok, text = config_status()
+    assert ok is False and "VLAKY_NOTIFY_EMAILS" in text

@@ -979,7 +979,7 @@ Súkromné kľúče nikdy neposielaj e-mailom; každý správca má vlastný kľ
 | Zastavenie / spustenie všetkého | `docker compose down` / `docker compose up -d` (dáta zostávajú vo zväzkoch; **nikdy** `down -v`) |
 | Nový používateľ | `docker compose exec web python -m vlaky create-user MENO --role dispecer --password` (heslo sa vypýta; existujúci účet sa nezmení) |
 | Zmena účtu | `docker compose exec web python -m vlaky create-user MENO --update --password` (nové heslo), `--role …`, `--activate` (zmenia sa len zadané údaje) |
-| Jeden cyklus agenta (test, cron) | `docker compose exec agent python -m vlaky agent --once` (kód 1 = chyba v cykle, napr. schránka sa nedá prečítať) |
+| Jeden cyklus agenta (test) | len pri zastavenom agentovi: `docker compose stop agent`, potom `docker compose run --rm agent python -m vlaky agent --once` (kód 1 = chyba v cykle, napr. schránka sa nedá prečítať, alebo beží iná inštancia agenta), nakoniec `docker compose start agent` |
 | Skúšobná správa | `docker compose exec agent python -m vlaky test-notify` (všetky kanály; `--kanal email`, `--kanal teams` alebo `--kanal sms` len jeden), kód 0 = odišlo – over doručenie |
 | Aktualizácia / návrat | `deploy/scripts/update.sh` / `deploy/scripts/update.sh --rollback` |
 | Záloha / zoznam / test obnovy | `deploy/backup/backup.sh` / `deploy/backup/restore.sh --list` / `--test` |

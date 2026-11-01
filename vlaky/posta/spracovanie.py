@@ -2081,17 +2081,21 @@ def pending_uncertainty(session: Session, train: Train, route: Any = None, paths
 
 def _pending_uncertainty(session: Session, train: Train, route: Any, paths: Iterable[Any],
                          window: Optional[tuple]) -> list[str]:
+    # len udalosti, ktoré naozaj čakajú na dispečera (vo fronte alebo potvrdené so zlyhaným zápisom) – potvrdených
+    # a zapísaných udalostí pribúda bez obmedzenia a plánovač sa volá pre každý vlak v každom cykle
+    failed = ExtractedEvent.validation["apply_result"]["ok"].as_boolean().is_(False)
+    waiting = or_(and_(ExtractedEvent.status == "navrh", ExtractedEvent.needs_confirmation.is_(True)),
+                  and_(ExtractedEvent.status == "potvrdene", failed))
     rows = list(session.scalars(select(ExtractedEvent).where(
-        ExtractedEvent.kind.in_(UNCERTAIN_PATH_KINDS + CLOSURE_EVENT_KINDS),
-        or_(and_(ExtractedEvent.status == "navrh", ExtractedEvent.needs_confirmation.is_(True)),
-            ExtractedEvent.status == "potvrdene")).order_by(ExtractedEvent.id)))
+        ExtractedEvent.kind.in_(UNCERTAIN_PATH_KINDS + CLOSURE_EVENT_KINDS), waiting).order_by(ExtractedEvent.id)))
     if not rows:
         return []
     number = train_digits(train.number)
     path_ids = {p.id for p in paths}
-    ids = [ev.id for ev in rows if ev.kind in CLOSURE_EVENT_KINDS]
+    # poddotaz namiesto zoznamu čísel (bez limitu počtu parametrov databázy)
+    waiting_closures = select(ExtractedEvent.id).where(ExtractedEvent.kind.in_(CLOSURE_EVENT_KINDS), waiting)
     with_rows = set(session.scalars(select(Closure.source_event_id).where(
-        Closure.source_event_id.in_(ids), Closure.status != "zrusene"))) if ids else set()
+        Closure.source_event_id.in_(waiting_closures), Closure.status != "zrusene")))
     covers: Optional[Callable[[str, str, Any], bool]] = None
     out: list[str] = []
     for ev in rows:

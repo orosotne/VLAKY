@@ -198,11 +198,19 @@ def config_status() -> tuple:
 
     problems = transport_problems()
     unknown = unknown_env_vars()
+    cfg = settings()
+    # bez interného zoznamu príjemcov agent neodošle nič (ani KRITICKÉ) – v ostrej prevádzke je to chyba
+    if not cfg.csv(cfg.notify_emails) and not cfg.csv(cfg.notify_phones) and not cfg.teams_webhook_url:
+        problems = list(problems) + ["nie je nastavený žiadny príjemca upozornení (VLAKY_NOTIFY_EMAILS, "
+                                     "VLAKY_NOTIFY_PHONES, VLAKY_TEAMS_WEBHOOK_URL) – agent neodošle nič"]
+    elif not cfg.csv(cfg.notify_emails):
+        problems = list(problems) + ["nie je nastavený e-mail dispečerov (VLAKY_NOTIFY_EMAILS) – odporúčania, súhrn "
+                                     "ani odovzdávka služby neodídu e-mailom"]
     parts = list(problems)
     if unknown:
         parts.append(f"neznáme premenné prostredia (preklep?): {', '.join(unknown[:10])}")
     if problems and outbox_counts_as_sent():
-        parts.append(f"prostredie {settings().env}: stačí outbox")
+        parts.append(f"prostredie {cfg.env}: stačí outbox")
     return not (problems and not outbox_counts_as_sent()), "; ".join(parts) or "ok"
 
 

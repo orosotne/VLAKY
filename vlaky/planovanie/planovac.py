@@ -987,6 +987,20 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
     # semafor 10.3: ZELENÁ len ak má rušňovodič rezervu do limitu; inak treba potvrdenie dispečera
     if crew.get("status") in (ORANZOVA, CERVENA) and color == ZELENA:
         color = ORANZOVA
+    # prečo ZELENÁ nie je dovolená (bez ohľadu na farbu zvolenej varianty) – web aj e-mail podľa tohto zoznamu
+    # neukážu ZELENÉ varianty ani okná odchodu ako odporúčanie (jedno pravidlo namiesto hľadania v textoch dôvodov)
+    caps = [txt for flag, txt in (
+        (ready_unknown, "pripravenosť vlaku nie je istá (avízo uplynulo, vlak ešte neprišiel na hranicu)"),
+        (bool(ordered), "trasa podľa prijatého odporúčania nie je zapísaná ako pridelená"),
+        (position_unusable, "poloha idúceho vlaku nie je čerstvá alebo je mimo plánovanej trasy"),
+        (crew_unknown, "chýba záznam o nástupe rušňovodiča"),
+        (crew.get("status") in (ORANZOVA, CERVENA), "rušňovodič nemá rezervu do limitu pracovného času"),
+        (bool(unmapped), "výluku sa nepodarilo umiestniť na sieť"),
+        (bool(pending_notes), "čakajúca udalosť z e-mailu, s ktorou plánovač nevie počítať"),
+        (bool(mb_reason), "schránka agenta nebola úplne skontrolovaná v posledných 30 min"),
+    ) if flag]
+    if caps:
+        data_age["obmedzenie"] = caps
 
     path_proposal = _path_proposal(net, primary if not chosen or chosen.route == routes[0].name
                                    else alt_groutes[0], chosen, now, start_km if running else 0.0, rec)
@@ -1787,6 +1801,10 @@ def _arrived(session: Session, train: Train, now: datetime, trigger: str, p: Par
         summary += f" Rušňovodič: {crew_relief_text(crew)}."
     chosen = _ev_dict(ev, now)
     chosen["floating"] = True
+    # vlak v cieli: texty správ neuvádzajú „odchod/príchod teraz“, ale príchod do cieľa (alebo príchod podľa plánu)
+    chosen["v_cieli"] = True
+    chosen["prichod_v_cieli"] = arr.isoformat() if arrival is not None else None
+    chosen["prichod_podla_planu"] = due.isoformat() if due is not None else None
     if arrival is None:
         chosen["arrival_floating"] = True  # skutočný príchod nie je známy – „teraz“ sa posúva s časom
     priority = _priority(session, train, POKRACOVAT, color, None, crew, True, now)

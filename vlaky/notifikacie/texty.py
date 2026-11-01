@@ -69,9 +69,10 @@ def _km(value) -> str:
 
 
 def _semafor_cap(rec: Recommendation) -> Optional[str]:
-    """Obmedzenie semaforu odporúčania (rovnaké pravidlo ako web): ak ZELENÁ nie je dovolená (zastarané dáta,
-    neznámy nástup rušňovodiča, obmedzenie v dôvodoch, idúci vlak bez čerstvej polohy, farba nižšia ako zvolená
-    varianta), vráti farbu, nad ktorú sa v správe nesmie ísť; inak None."""
+    """Obmedzenie semaforu odporúčania – rovnaké pravidlo ako web (vlaky/web/data.py semafor_cap): ak ZELENÁ nie je
+    dovolená (zoznam ``data_age["obmedzenie"]`` od plánovača, zastarané dáta, neznámy nástup rušňovodiča, idúci
+    vlak bez čerstvej polohy alebo mimo trasy, výluka mimo siete, farba nižšia ako zvolená varianta), vráti farbu,
+    nad ktorú sa v správe nesmie ísť; inak None."""
     age = rec.data_age or {}
     crew = rec.crew or {}
     ch = rec.chosen or {}
@@ -79,7 +80,8 @@ def _semafor_cap(rec: Recommendation) -> Optional[str]:
     mb = age.get("mailbox_min")
     capped = ((rec.color != "ZELENÁ" and ch.get("status") == "ZELENÁ") or bool(crew.get("unknown_start"))
               or (isinstance(mb, (int, float)) and mb > 30) or bool(age.get("obmedzenie"))
-              or any("nemôže byť ZELEN" in str(r) for r in rec.reasons or [])
+              or any("nemôže byť ZELEN" in str(r) or "nie je na plánovanej trase" in str(r)
+                     or "Chýbajú čerstvé dáta o polohe vlaku" in str(r) for r in rec.reasons or [])
               or (rec.train is not None and rec.train.status == "v_jazde"
                   and not (isinstance(pos, (int, float)) and pos <= settings().position_stale_minutes)))
     if not capped:
@@ -99,7 +101,14 @@ def recommendation_body(rec: Recommendation) -> str:
     if rec.trigger:
         lines.append(f"Čo sa zmenilo: {rec.trigger}")
     ch = rec.chosen or {}
-    if ch:
+    if ch.get("v_cieli"):
+        # idúci vlak v cieli (alebo podľa plánu už v cieli bez polohy) – trasa sa neprepočítava, nič „teraz“
+        where = (f"Vlak je v cieli – príchod {_t(ch.get('prichod_v_cieli'))}." if ch.get("prichod_v_cieli") else
+                 f"Podľa plánu by už mal byť v cieli (príchod podľa plánu {_t(ch.get('prichod_podla_planu'))}) – "
+                 "aktuálna poloha nie je známa, overte ju.")
+        lines += [f"Odporúčanie: {rec.decision} – semafor {rec.color}", where,
+                  "Po príchode ukončite jazdu vlaku (stav „ukončený“)."]
+    elif ch:
         lines += [
             f"Odporúčanie: {rec.decision} – semafor {rec.color}",
             f"Trasa: {ch.get('route', '')}",
@@ -136,6 +145,10 @@ def recommendation_body(rec: Recommendation) -> str:
         if crew.get("start"):
             lines.append(f"  (odhad predpokladá nástup o {_t(crew.get('start'))} – odchod vlaku mínus príprava; "
                          f"zadajte skutočný nástup rušňovodiča)")
+    elif crew and ch.get("v_cieli") and not ch.get("prichod_v_cieli"):
+        lines += ["", f"Rušňovodič: {crew.get('driver') or '—'}; nástup {_t(crew.get('start'))}, limit "
+                      f"{crew.get('max_duty_h', 13)} h do {_t(crew.get('limit'))}; koniec služby po ukončení jazdy "
+                      f"– {crew.get('status', '')}"]
     elif crew:
         lines += ["", f"Rušňovodič: {crew.get('driver') or '—'}; nástup {_t(crew.get('start'))}, limit "
                       f"{crew.get('max_duty_h', 13)} h do {_t(crew.get('limit'))}; koniec {_t(crew.get('end_p50'))} "
