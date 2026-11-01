@@ -9,6 +9,11 @@ Jeden cyklus:
 Agent beží v jednej inštancii (zámok v databáze). Chyba jedného kroku nezastaví ostatné. Nedostupný server
 správ (SMTP, Teams, SMS) sa v cykle skúsi len raz a zlyhané správy sa opakujú s rastúcim odstupom – cyklus
 (čítanie schránky) sa tým nezdrží; kým niečo ostáva nedoručené, cyklus hlási chybu (heartbeat /fail, zdravie).
+
+Čítanie schránky môže trvať dlho (nahromadená pošta, časové limity jazykového modelu) – kroky po ňom (prepočet,
+upozornenia, stráženie, odovzdávka) počítajú s aktuálnym časom, nie so začiatkom cyklu. Kým v schránke ostávajú
+ďalšie e-maily nad jednu dávku, kontrola schránky nie je úplná (plánovač nedá ZELENÚ) a ďalší cyklus príde hneď;
+zhoršenie ZELENÁ → ORANŽOVÁ len kvôli dočítavaniu sa neposiela a po dočítaní sa vlaky hneď prepočítajú.
 """
 from __future__ import annotations
 
@@ -26,12 +31,14 @@ from ..cas import local, now_utc
 from ..config import settings
 from ..db import init_db, session_scope
 from ..models import BorderCrossing, Notification, Recommendation, Train
-from .zdravie import get_kv, ping_heartbeat, purge_old, record, set_kv, undelivered
+from .zdravie import get_kv, mailbox_status, ping_heartbeat, purge_old, record, set_kv, undelivered
 
 _STOP = {"flag": False}
 LOCK_KEY = "agent_lock"
 ORDER_FAILURES_KEY = "objednavky_chyby"  # objednávky, ktorých návrh opakovane zlyháva: {id: {n, ts, error}}
 ORDER_MAX_FAILURES = 3                   # potom dispečeri dostanú upozornenie a objednávka „chyba plánu“
+HANDOVER_LATE_MIN = 90                   # zmeškaná odovzdávka (agent stál, dlhý cyklus) sa doplní do 90 min po výmene
+BACKLOG_PAUSE_S = 5.0                    # pauza medzi cyklami, kým sa dočítava nahromadená pošta
 
 
 def _handle_stop(signum, _frame) -> None:  # noqa: ANN001
@@ -72,23 +79,30 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
 
     # 1) schránka
     applied = False
+    mail_eval_errors: list = []
     try:
         from ..posta.spracovanie import process_mailbox
 
         with session_scope() as s:
             mail = _process_mailbox(process_mailbox, s, now)
             summary["mail"] = mail
+            # chyby jednotlivých vlakov pri prepočte, ktorý spustilo spracovanie pošty (evaluate_all ich dáva sem)
+            mail_eval_errors = list(s.info.get("evaluate_errors") or []) if mail.get("planning") else []
             applied = bool(mail.get("auto_applied"))
             fetch_ok = mail.get("fetch_ok")
             if fetch_ok is None:  # spracovanie pošty bez príznaku – zlyhanie zdroja podľa chybových správ
                 fetch_ok = not any(_is_source_error(e) for e in mail.get("errors") or [])
-            if fetch_ok:
-                # čas poslednej ÚSPEŠNEJ kontroly schránky (plánovač bez neho nedá ZELENÚ, zdravie ho stráži)
-                set_kv(s, "mail_last_ok", {"ts": now.isoformat(), "fetched": mail.get("fetched", 0)})
-            else:
+                if fetch_ok:  # čas kontroly schránky inak zapisuje spracovanie pošty (len úplnú kontrolu)
+                    set_kv(s, "mail_last_ok", {"ts": now.isoformat(), "fetched": mail.get("fetched", 0)})
+            if not fetch_ok:
                 src_err = next((e for e in mail.get("errors") or [] if _is_source_error(e)),
                                (mail.get("errors") or ["neznáma chyba"])[0])
                 summary["errors"].append(f"schránka sa nedá čítať: {src_err}")
+            elif mail.get("drained") is False:
+                # nahromadená pošta sa dočítava po dávkach: bez ZELENEJ (plánovač), chyba až keď to trvá dlho
+                mail_ok, mail_text = mailbox_status(get_kv(s, "mail_last_ok"), now)
+                if not mail_ok:
+                    summary["errors"].append(f"schránka: {mail_text}")
             record(s, "schranka", "error" if not fetch_ok else ("warn" if mail.get("errors") else "ok"),
                    **{k: v for k, v in mail.items() if k != "errors"},
                    errors=(mail.get("errors") or [])[:5])
@@ -97,25 +111,62 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
         with session_scope() as s:
             record(s, "schranka", "error", error=repr(exc)[:500])
 
+    # spracovanie pošty mohlo trvať dlho (nahromadená pošta, časový limit jazykového modelu pri každom e-maile):
+    # prepočet, upozornenia, stráženie a odovzdávka nesmú počítať so začiatkom cyklu
+    now = max(now, now_utc())
+
     # 2) prepočet vlakov
     try:
         with session_scope() as s:
             last = get_kv(s, "last_evaluate")
-            mail_planned = bool(((summary.get("mail") or {}).get("planning") or {}).get("ok"))
-            due = force_evaluate or (applied and not mail_planned) or not last or \
+            mail = summary.get("mail") or {}
+            planning = mail.get("planning")
+            # prepočet po e-maile prepočítal všetky vlaky – pravidelný prepočet v tom istom cykle by bol zbytočne
+            # druhý. Ak zlyhal celý, agent prepočíta všetky vlaky hneď sám; ak len pri niektorých vlakoch (tie už
+            # majú záznam o chybe výpočtu), znova len tie – nie celý vozový park v každom cykle s e-mailom.
+            mail_planned = bool((planning or {}).get("ok"))
+            mail_failed = planning is not None and not mail_planned
+            retry_ids = list(dict.fromkeys(e["train_id"] for e in mail_eval_errors if e.get("train_id"))) \
+                if mail_planned else []
+            if mail_failed or retry_ids:
+                err = (planning or {}).get("error") or \
+                    (mail_eval_errors[0].get("error", "") if mail_eval_errors else "")
+                record(s, "planovanie", "warn", prepocet_po_emaile="zlyhal", chyba=str(err)[:300],
+                       vlaky=retry_ids[:20])
+            # schránka sa ešte dočítava (nahromadená pošta): prepočet teraz plánovač obmedzí na ORANŽOVÚ – zapamätá
+            # sa to a po dočítaní sa vlaky hneď prepočítajú znova (nie až pravidelným prepočtom o 15 min)
+            mail_state = get_kv(s, "mail_last_ok")
+            incomplete = bool(mail_state.get("partial"))
+            if mail_planned and not force_evaluate:
+                set_kv(s, "last_evaluate", {"ts": now.isoformat(), "count": (planning or {}).get("recommendations"),
+                                            "z_emailu": True, "neuplna_schranka": incomplete})
+            after_backlog = not incomplete and not mail_planned and bool(last.get("neuplna_schranka")) and \
+                bool(mail.get("fetch_ok"))
+            periodic = not last or \
                 (now - datetime.fromisoformat(last["ts"])).total_seconds() >= cfg.reevaluate_minutes * 60
+            due = force_evaluate or mail_failed or after_backlog or (applied and not mail_planned) or \
+                (not mail_planned and periodic and not _catching_up(mail_state, now))
             if due:
                 from ..planovanie.planovac import evaluate_all
 
-                trigger = "nové údaje z e-mailu" if applied else "pravidelný prepočet"
+                trigger = "nové údaje z e-mailu" if applied or mail_failed else \
+                    ("schránka dočítaná" if after_backlog else "pravidelný prepočet")
                 recs = evaluate_all(s, now, trigger)
                 summary["evaluated"] = len(recs)
-                set_kv(s, "last_evaluate", {"ts": now.isoformat(), "count": len(recs)})
+                set_kv(s, "last_evaluate", {"ts": now.isoformat(), "count": len(recs), "neuplna_schranka": incomplete})
                 ev_errors = list(s.info.get("evaluate_errors") or [])
                 if ev_errors:
                     summary["errors"].append(f"plánovanie: {len(ev_errors)} vlak(ov) sa nepodarilo prepočítať "
                                              f"({ev_errors[0].get('error', '')[:200]})")
                 record(s, "planovanie", "warn" if ev_errors else "ok", vlaky=len(recs), chyby=ev_errors[:5])
+            elif retry_ids:
+                ev_errors = _retry_trains(s, retry_ids, now, "nové údaje z e-mailu")
+                summary["evaluated"] = len(retry_ids) - len(ev_errors)
+                if ev_errors:
+                    summary["errors"].append(f"plánovanie: {len(ev_errors)} vlak(ov) sa nepodarilo prepočítať "
+                                             f"({ev_errors[0].get('error', '')[:200]})")
+                record(s, "planovanie", "warn" if ev_errors else "ok", vlaky=len(retry_ids), chyby=ev_errors[:5],
+                       opakovanie_po_emaile=True)
         # upozornenia: všetky nové (zmenené) odporúčania z tohto cyklu – z prepočtu po e-maile aj pravidelného
         from ..notifikacie.odosielanie import RETRY_HOURS, notify_recommendation, recommendation_attempts
         from ..planovanie.planovac import DONE_STATES
@@ -134,8 +185,15 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
                  .order_by(Recommendation.id))
             recs = list(s.scalars(q))
             attempts = recommendation_attempts(s, [r.id for r in recs])
+            # kým sa dočítava nahromadená pošta, zhoršenie ZELENÁ → ORANŽOVÁ pri rovnakom rozhodnutí počká: plánovač
+            # ho dal preto, že schránka nie je dočítaná, a po dočítaní býva vlak znova ZELENÝ – dispečeri by o každom
+            # vlaku dostali zbytočnú správu. Ak ostane ORANŽOVÉ, pošle sa po dočítaní (najneskôr o 15 min).
+            hold = _catching_up(get_kv(s, "mail_last_ok"), now)
             for rec in recs:
                 rec_id = rec.id
+                if hold and not attempts.get(rec_id) and _mailbox_downgrade(s, rec):
+                    summary["held_back"] = summary.get("held_back", 0) + 1
+                    continue
                 try:
                     pairs = _pending_pairs(s, rec_id, attempts.get(rec_id, []))
                     if pairs is None or pairs:
@@ -191,6 +249,16 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
                                          f"opakuje sa s odstupom")
     except Exception as exc:  # noqa: BLE001
         summary["errors"].append(f"kontrola doručenia: {exc!r}")
+    # ostrá prevádzka: kanál s príjemcami bez servera správ (chýbajúce nastavenie, preklep) hlási každý cyklus,
+    # aj keď práve nič neodchádza – inak by sa na to prišlo až pri prvej KRITICKEJ správe
+    try:
+        from .zdravie import config_status
+
+        conf_ok, conf_text = config_status()
+        if not conf_ok:
+            summary["errors"].append(f"nastavenie odosielania: {conf_text}")
+    except Exception as exc:  # noqa: BLE001
+        summary["errors"].append(f"kontrola nastavení: {exc!r}")
 
     # 4) heartbeat
     with session_scope() as s:
@@ -330,11 +398,12 @@ def _periodic(now: datetime, summary: dict) -> None:
             set_kv(s, "digest", {"ts": dg["ts"], "sent_at": now.isoformat()})
 
     def handover(s) -> None:
-        # odovzdávka služby v hodinách výmeny; kto ju nedostal, dostane tú istú správu (rovnaký kľúč) s odstupom
-        hours = [int(h) for h in cfg.csv(cfg.shift_change_hours)]
-        key = f"{loc.date().isoformat()}-{loc.hour:02d}"
+        # odovzdávka služby v hodinách výmeny; kto ju nedostal, dostane tú istú správu (rovnaký kľúč) s odstupom.
+        # Zmeškaná výmena (agent stál, cyklus s dlhým čítaním schránky prekryl okno) sa doplní do HANDOVER_LATE_MIN.
+        shift = _last_shift_change(loc, [int(h) for h in cfg.csv(cfg.shift_change_hours)])
+        key = f"{shift.date().isoformat()}-{shift.hour:02d}" if shift is not None else ""
         done = get_kv(s, "handover_done")
-        if loc.hour in hours and done.get("key") != key and loc.minute < 30:
+        if shift is not None and done.get("key") != key and loc - shift < timedelta(minutes=HANDOVER_LATE_MIN):
             rep = create_report(s, now, notify=False)
             send_report(s, rep)
             set_kv(s, "handover_done", {"key": key, "report_id": rep.id,
@@ -361,27 +430,27 @@ def _periodic(now: datetime, summary: dict) -> None:
 
             ok, detail = health_status(ignore_keys=(f"daily:{dkey}",))  # vlastný zlyhaný pokus sa nepočíta
             borders = s.scalar(select(BorderCrossing.id).limit(1)) is not None
-            from ..models import AgentHealth, Email, ExtractedEvent
+            from ..models import AgentHealth, Email
+            from .zdravie import queue_counts
 
             day_ago = now - timedelta(hours=24)
             mails = s.scalar(select(func.count(Email.id)).where(Email.received_at >= day_ago)) or 0
             quarantined = s.scalar(select(func.count(Email.id)).where(Email.received_at >= day_ago,
                                                                       Email.verdict == "karantena")) or 0
-            from ..posta.spracovanie import failed_confirmations  # potvrdené, ale zápis zlyhal – čakajú vo fronte
-
-            waiting = (s.scalar(select(func.count(ExtractedEvent.id)).where(
-                ExtractedEvent.status == "navrh", ExtractedEvent.needs_confirmation.is_(True))) or 0) + \
-                len(failed_confirmations(s))
+            queue = queue_counts(s)  # rovnaké číslo ako fronta na webe (aj automaticky zapísané, neoverené výluky)
             last_mail = s.scalar(select(AgentHealth).where(AgentHealth.component == "schranka")
                                  .order_by(AgentHealth.id.desc()))
+            # nedoručené = správy (príjemca a kanál), ktoré stále čakajú – nie počet neúspešných pokusov
+            pending = len(undelivered(s, now, (f"daily:{dkey}",)))
             failed = s.scalar(select(func.count(Notification.id)).where(Notification.created_at >= day_ago,
                                                                         Notification.status == "chyba")) or 0
             body = "\n".join([f"Denná správa Agenta dispečera ({dkey})", "",
                               *(f"{k}: {v}" for k, v in detail.items()),
                               f"posledný stav čítania schránky: {last_mail.status if last_mail else 'neznámy'}",
                               f"e-maily za 24 h: {mails} (v karanténe {quarantined})",
-                              f"udalosti čakajúce na potvrdenie: {waiting}",
-                              f"nedoručené správy za 24 h: {failed}",
+                              f"udalosti čakajúce na potvrdenie: {queue['total']}"
+                              + (f" (z toho zapísané automaticky – overte: {queue['auto']})" if queue["auto"] else ""),
+                              f"nedoručené správy: {pending} (neúspešné pokusy o doručenie za 24 h: {failed})",
                               f"hraničné priechody v databáze: {'áno' if borders else 'NIE'}",
                               f"tieňová prevádzka: {'áno' if cfg.shadow_mode else 'nie'}"])
             send_internal(s, "zdravie", f"[AGENT] Denná správa – {'OK' if ok else 'PROBLÉM'}", body, "INFO",
@@ -397,8 +466,16 @@ def _periodic(now: datetime, summary: dict) -> None:
             summary["retention"] = retention_purge(s, now)
             set_kv(s, "retention_done", {"date": dkey})
 
-    for name, task in (("súhrn", digest), ("odovzdávka", handover), ("denná správa", daily),
-                       ("uchovávanie", retention)):
+    def one_shot(s) -> None:
+        # jednorazové upozornenia (hlásenie rušňovodiča z webu, pripomienka výluky do odvolania), ktoré neprišli
+        from ..notifikacie.odosielanie import retry_one_shot
+
+        out = retry_one_shot(s, now)
+        if out:
+            summary["one_shot_retried"] = len(out)
+
+    for name, task in (("opakovanie upozornení", one_shot), ("súhrn", digest), ("odovzdávka", handover),
+                       ("denná správa", daily), ("uchovávanie", retention)):
         try:
             with session_scope() as s:
                 task(s)
@@ -414,6 +491,7 @@ def run_agent(once: bool = False) -> int:
         if s.scalar(select(BorderCrossing.id).limit(1)) is None:
             seed_borders(s)
         audit(s, "agent", "start", "agent", "", once=once, pid=os.getpid())
+    _print_config_warnings()
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
     cfg = settings()
@@ -421,6 +499,7 @@ def run_agent(once: bool = False) -> int:
     try:
         while True:
             started = time.monotonic()
+            summary: dict = {}
             try:
                 summary = run_cycle()
                 failures = 0
@@ -434,6 +513,8 @@ def run_agent(once: bool = False) -> int:
             if once or _STOP["flag"]:
                 break
             sleep = max(5.0, cfg.mail_poll_seconds - (time.monotonic() - started))
+            if _backlog(summary):
+                sleep = BACKLOG_PAUSE_S  # nahromadená pošta: ďalšia dávka hneď (cyklus ostáva krátky)
             if failures:
                 sleep = max(sleep, min(300.0, 10.0 * 2 ** min(failures, 5)))  # postupne dlhšia pauza
             end = time.monotonic() + sleep
@@ -444,6 +525,18 @@ def run_agent(once: bool = False) -> int:
     finally:
         _release_lock()
     return 0
+
+
+def _print_config_warnings() -> None:
+    """Pri štarte: kanál s príjemcami bez servera správ alebo neznáma premenná VLAKY_* (preklep) – do logu."""
+    try:
+        from .zdravie import config_status
+
+        ok, text = config_status()
+        if text != "ok":
+            print(f"Agent – {'CHYBA' if not ok else 'upozornenie'} v nastavení odosielania: {text}", flush=True)
+    except Exception:  # noqa: BLE001 – kontrola nastavení nesmie zastaviť agenta
+        print("Agent – kontrolu nastavení sa nepodarilo urobiť:\n" + traceback.format_exc(), flush=True)
 
 
 def _release_lock() -> None:
@@ -465,6 +558,72 @@ _SOURCE_ERROR_PREFIXES = ("Zdroj pošty zlyhal", "Príjem pošty zlyhal", "IMAP"
 
 def _is_source_error(message: str) -> bool:
     return str(message).startswith(_SOURCE_ERROR_PREFIXES)
+
+
+def _last_shift_change(loc: datetime, hours: list) -> datetime | None:
+    """Posledná výmena služby (miestny čas, celá hodina z VLAKY_SHIFT_CHANGE_HOURS) najneskôr v čase loc."""
+    best = None
+    for day in (loc, loc - timedelta(days=1)):
+        for h in hours:
+            if not 0 <= h <= 23:
+                continue
+            t = day.replace(hour=h, minute=0, second=0, microsecond=0)
+            if t <= loc and (best is None or t > best):
+                best = t
+    return best
+
+
+def _retry_trains(session, train_ids: list, now: datetime, trigger: str) -> list:
+    """Znova prepočíta len vlaky, ktorých prepočet po e-maile zlyhal (každý vo vlastnom SAVEPOINT, chyba jedného
+    nezastaví ostatné). Vráti chyby ako evaluate_all: [{"train_id", "error"}]. Záznam o chybe výpočtu (ESKALOVAŤ –
+    posúďte vlak bez agenta) vlak dostal už pri prepočte po e-maile; trvalo chybný vlak sa tak nepočíta celý vozový
+    park dvakrát v každom cykle s e-mailom."""
+    from ..db import prepare_savepoints
+    from ..planovanie.planovac import evaluate_train
+
+    errors: list = []
+    prepare_savepoints(session)
+    for tid in train_ids:
+        try:
+            with session.begin_nested():
+                evaluate_train(session, tid, now, trigger)
+        except Exception as exc:  # noqa: BLE001 – jeden chybný vlak nesmie zastaviť ostatné
+            errors.append({"train_id": tid, "error": repr(exc)[:300]})
+    return errors
+
+
+def _mailbox_downgrade(session, rec) -> bool:
+    """Odporúčanie len zhoršilo semafor ZELENÁ → ORANŽOVÁ pri rovnakom rozhodnutí ako predchádzajúce odporúčanie
+    vlaku (DÔLEŽITÉ). Nie KRITICKÉ, nie zmena rozhodnutia, nie prvé odporúčanie vlaku – tie sa posielajú hneď."""
+    if rec.priority != "DÔLEŽITÉ" or rec.color != "ORANŽOVÁ":
+        return False
+    prev = session.scalar(select(Recommendation).where(Recommendation.train_id == rec.train_id,
+                                                        Recommendation.id < rec.id)
+                          .order_by(Recommendation.id.desc()).limit(1))
+    return prev is not None and prev.decision == rec.decision and prev.color == "ZELENÁ"
+
+
+def _catching_up(mail_state: dict, now: datetime) -> bool:
+    """Nahromadená pošta sa dočítava (ďalší cyklus o pár sekúnd) a netrvá to dlhšie ako VLAKY_REEVALUATE_MINUTES.
+
+    Pravidelný prepočet vtedy počká na dočítanie: plánovač by všetkým vlakom dal ORANŽOVÚ (schránka nie je dočítaná)
+    a po dočítaní znova ZELENÚ – dispečeri by dostali dve zbytočné správy o každom vlaku. Prepočet po e-maile (napr.
+    nová výluka) beží hneď; jeho zhoršenie ZELENÁ → ORANŽOVÁ pri rovnakom rozhodnutí sa medzitým neposiela
+    (_mailbox_downgrade) a po dočítaní sa vlaky hneď prepočítajú (``neuplna_schranka`` v ``last_evaluate``)."""
+    if not mail_state.get("partial"):
+        return False
+    try:
+        since = datetime.fromisoformat(str(mail_state.get("since")))
+    except (TypeError, ValueError):
+        return False
+    return (now - since).total_seconds() < settings().reevaluate_minutes * 60
+
+
+def _backlog(summary: dict) -> bool:
+    """Cyklus prečítal schránku len čiastočne (ďalšie e-maily čakajú) – ďalší cyklus má prísť hneď. Nie pri chybe
+    (napr. e-mail sa nedal uložiť): jeho ďalší pokus má prísť s bežným odstupom, nie o pár sekúnd."""
+    mail = summary.get("mail") or {}
+    return bool(mail.get("fetch_ok")) and mail.get("drained") is False and not mail.get("errors")
 
 
 def _process_mailbox(fn, session, now: datetime) -> dict:

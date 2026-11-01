@@ -374,25 +374,39 @@ def _evaluate_after_report(throttle: _TrainThrottle, train_id: int, trigger: str
         evaluate_train_bg(train_id, trigger)
 
 
-def _notify_problem(number: str, relation: str, text: str, now=None) -> None:
+def _notify_problem(number: str, relation: str, text: str, now=None) -> Optional[str]:
     """Upozornenie dispečerom (iba interný zoznam – odosielacia služba iných príjemcov odmietne).
 
     Najviac jedno upozornenie za 10 min na vlak (deduplikácia podľa časového okna, nie podľa textu) –
-    ďalšie hlásenia sú v audite a v detaile vlaku. Text sa posiela ako obyčajný text.
-    """
-    try:
-        from ..notifikacie.odosielanie import send_internal
+    ďalšie hlásenia sú v audite a v detaile vlaku. Text sa posiela ako obyčajný text. Zlyhané doručenie
+    (napr. výpadok servera správ) agent zopakuje (retry_one_shot) a zdravie ho hlási, kým nepríde.
 
-        bucket = int((now or now_utc()).timestamp() // PROBLEM_WINDOW_S)
+    Vráti None, ak upozornenie prišlo aspoň jednému dispečerovi (alebo ho dispečer z toho istého okna už má);
+    inak text pre rušňovodiča, že sa odoslať nepodarilo – aplikácia nesmie tvrdiť, že je odoslané.
+    """
+    when = now or now_utc()
+    not_sent = ("Hlásenie je uložené, ale upozornenie dispečerovi sa teraz nepodarilo odoslať – agent ho zopakuje. "
+                "Ak ide o niečo naliehavé, zavolajte dispečerovi.")
+    try:
+        from ..notifikacie.odosielanie import SENT_STATES, send_internal
+
+        bucket = int(when.timestamp() // PROBLEM_WINDOW_S)
         with session_scope() as s:
-            send_internal(s, "upozornenie", f"[AGENT][DÔLEŽITÉ] Vlak {number}: hlásenie rušňovodiča – problém",
-                          f"Vlak {number} ({relation})\nRušňovodič hlási problém (text od rušňovodiča, "
-                          f"neoverený):\n\n{text}\n\nĎalšie hlásenia sú v detaile vlaku a v audite.", "DÔLEŽITÉ",
-                          dedup_key=f"problem:{number}:{bucket}")
+            out = send_internal(s, "upozornenie", f"[AGENT][DÔLEŽITÉ] Vlak {number}: hlásenie rušňovodiča – problém",
+                                f"Vlak {number} ({relation})\nNahlásené: {fmt(when)}\nRušňovodič hlási problém (text "
+                                f"od rušňovodiča, neoverený):\n\n{text}\n\nĎalšie hlásenia sú v detaile vlaku a v "
+                                f"audite.", "DÔLEŽITÉ", dedup_key=f"problem:{number}:{bucket}")
+            if any(n.status in SENT_STATES or n.status == "potlacena" for n in out):
+                return None
+            if not out:
+                return ("Hlásenie je uložené, ale upozornenie sa nedá poslať (nie je nastavený zoznam dispečerov). "
+                        "Zavolajte dispečerovi.")
+            return not_sent
     except NotImplementedError:
         log.warning("Odosielanie upozornení zatiaľ nie je k dispozícii")
     except Exception:  # noqa: BLE001 – hlásenie je uložené v audite aj tak
         log.exception("Upozornenie o probléme sa nepodarilo odoslať")
+    return not_sent
 
 
 DRIVER_MAX_AGE = timedelta(minutes=15)   # poloha z mobilu musí byť aktuálna (nie spätné prepisovanie stopy)

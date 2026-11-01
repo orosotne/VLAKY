@@ -128,20 +128,25 @@ class _Retries:
         return n
 
 
-def _fetch_and_store(session: Session, errors: list[str]) -> tuple[list[Email], bool]:
-    """Vráti (uložené e-maily, či sa zdroj pošty podarilo prečítať)."""
+def _fetch_and_store(session: Session, errors: list[str]) -> tuple[list[Email], bool, bool]:
+    """Vráti (uložené e-maily, či sa zdroj pošty podarilo prečítať, či je schránka dočítaná).
+
+    Schránka je dočítaná, keď zdroj nehlási ďalšie e-maily nad dávku (BATCH) a za chybným e-mailom neostali
+    neprečítané (zdroj s poradím – IMAP – sa pri chybe zastaví). Inak je čítanie len čiastočné (napr. nahromadená
+    pošta po výpadku agenta) a nesmie sa počítať ako úspešná kontrola schránky."""
     try:
         src = get_source(session)
         raws = src.fetch_new()
     except MailSourceError as exc:
         errors.append(str(exc))
-        return [], False
+        return [], False, False
     except Exception as exc:  # zdroj pošty nesmie zastaviť agenta
         errors.append(f"Zdroj pošty zlyhal: {type(exc).__name__}: {_short(exc)}")
-        return [], False
+        return [], False, False
     stored: list[Email] = []
     retries = _Retries(session)
-    for raw in raws:
+    unread_left = False                  # zdroj s poradím sa zastavil – za chybným e-mailom ostali ďalšie
+    for i, raw in enumerate(raws):
         try:
             email = _store_one(session, raw)
             retries.forget(raw)
@@ -152,6 +157,7 @@ def _fetch_and_store(session: Session, errors: list[str]) -> tuple[list[Email], 
             email = _store_failed(session, retries, raw, exc, errors)
             if email is None:            # skúsi sa znova pri ďalšom cykle (zdroj sa neposunie)
                 if src.sequential:
+                    unread_left = i < len(raws) - 1
                     break
                 continue
         try:
@@ -163,10 +169,11 @@ def _fetch_and_store(session: Session, errors: list[str]) -> tuple[list[Email], 
             session.rollback()
             errors.append(f"E-mail {raw.uid} sa nepodarilo označiť ako spracovaný ({type(exc).__name__}).")
             if src.sequential:
+                unread_left = i < len(raws) - 1
                 break
         if email is not None:
             stored.append(email)
-    return stored, True
+    return stored, True, not unread_left and not bool(getattr(src, "more", False))
 
 
 def _store_failed(session: Session, retries: _Retries, raw: RawMail, exc: Exception,
@@ -1801,7 +1808,9 @@ def process_mailbox(session: Session, now: Optional[datetime] = None) -> dict:
     """Jeden cyklus: načítaj a ulož poštu, extrahuj udalosti, automaticky zapíš bezpečné, prepočítaj plán.
 
     ``now`` – čas cyklu (predvolene teraz). Po úspešnom načítaní schránky sa hneď uloží ``mail_last_ok``
-    (plánovač podľa neho posudzuje čerstvosť výluk); ak sa schránku prečítať nepodarilo, nemení sa.
+    (plánovač podľa neho posudzuje čerstvosť výluk); ak sa schránku prečítať nepodarilo, nemení sa. Kým v schránke
+    ostávajú ďalšie e-maily nad dávku (``summary["drained"]`` je False), záznam hovorí o čiastočnom čítaní – nie
+    je to úspešná kontrola schránky (zdroje.mailbox_check).
     Dokončí aj udalosti, ktoré ostali nezapísané po páde, a posunie technický koniec výluk do odvolania.
     Nikdy nevyhodí výnimku – chyby sú v ``summary["errors"]``.
     """
@@ -1812,20 +1821,23 @@ def process_mailbox(session: Session, now: Optional[datetime] = None) -> dict:
                                "quarantined_email_ids": [], "recovered_event_ids": [], "planning": None}
     errors: list[str] = summary["errors"]
     try:
-        new, fetch_ok = _fetch_and_store(session, errors)
+        new, fetch_ok, drained = _fetch_and_store(session, errors)
     except Exception as exc:  # pragma: no cover - posledná poistka
         session.rollback()
         errors.append(f"Príjem pošty zlyhal: {type(exc).__name__}: {_short(exc)}")
-        new, fetch_ok = [], False
+        new, fetch_ok, drained = [], False, False
     summary["fetch_ok"] = fetch_ok
+    summary["drained"] = drained
     summary["fetched"] = len(new)
     summary["email_ids"] = [e.id for e in new]
     summary["quarantined_email_ids"] = [e.id for e in new if e.verdict == KARANTENA]
     summary["quarantined"] = len(summary["quarantined_email_ids"])
     summary["suspicious"] = sum(1 for e in new if e.verdict == PODOZRIVY)
     if fetch_ok:
-        try:     # schránka je prečítaná – plánovač v tomto cykle už vidí čerstvý stav
-            kv_set(session, "mail_last_ok", {"ts": now.isoformat(), "fetched": len(new)})
+        try:     # schránka je prečítaná – plánovač v tomto cykle už vidí čerstvý stav (čiastočné čítanie nie)
+            from .zdroje import mailbox_check
+
+            kv_set(session, "mail_last_ok", mailbox_check(kv_get(session, "mail_last_ok"), now, len(new), drained))
             session.commit()
         except Exception as exc:
             session.rollback()

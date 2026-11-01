@@ -1,6 +1,6 @@
 # Agent dispečer – webová aplikácia (inštalácia BEZ Dockera; pri Dockeri sa nepoužíva)
 #
-# Predpoklady (docs/PREVADZKA.md, kapitola 15):
+# Predpoklady (docs/PREVADZKA.md, kapitola 16):
 #   kód v /opt/vlaky/app, Python venv v /opt/vlaky/venv, konfigurácia /etc/vlaky/vlaky.env
 #   (VLAKY_DATABASE_URL na PostgreSQL, VLAKY_MAIL_DIR=/var/lib/vlaky/schranka,
 #    VLAKY_OUTBOX_DIR=/var/lib/vlaky/odoslane), Caddy pred aplikáciou (VLAKY_UPSTREAM=127.0.0.1:8000)

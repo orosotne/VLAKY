@@ -4,7 +4,11 @@
 #   - voľné miesto na disku a inódy (/, Docker, zálohy)
 #   - vek poslednej zálohy databázy
 #   - bežia a sú zdravé kontajnery db, web, agent, caddy (alebo služby systemd)
-#   - HTTPS https://DOMÉNA/health cez lokálny Caddy a platnosť certifikátu
+#   - zdravie agenta (python -m vlaky health: cyklus, schránka, doručovanie, nastavenie) – pri Dockeri ho
+#     kontroluje healthcheck kontajnera agent, bez Dockera (systemd) ho spustí tento skript
+#   - HTTPS https://DOMÉNA/health cez lokálny Caddy a platnosť certifikátu; doména z CHECK_URL, VLAKY_DOMAIN
+#     alebo VLAKY_PUBLIC_URL (súbor CHECK_ENV_FILE: pri Dockeri .env, bez Dockera /etc/vlaky/vlaky.env) –
+#     neznáma doména je CHYBA (HTTPS ani certifikát by sa nekontrolovali)
 #   - upozornenia: čakajúci reštart po aktualizácii, chýbajúca záloha mimo servera, práva .env
 #
 # Návratový kód: 0 = OK (môžu byť upozornenia POZOR), 1 = aspoň jedna CHYBA (dôvod je vo výpise).
@@ -32,9 +36,12 @@ CHECK_URL=${CHECK_URL:-}
 CHECK_HEARTBEAT_URL=${CHECK_HEARTBEAT_URL:-}
 if [[ $DEPLOY_MODE == docker ]]; then
   CHECK_SERVICES=${CHECK_SERVICES:-db web agent caddy}
+  CHECK_ENV_FILE=${CHECK_ENV_FILE:-$APP_DIR/.env}
 else
   CHECK_SERVICES=${CHECK_SERVICES:-vlaky-web vlaky-agent postgresql caddy}
+  CHECK_ENV_FILE=${CHECK_ENV_FILE:-/etc/vlaky/vlaky.env}
 fi
+CHECK_PYTHON=${CHECK_PYTHON:-/opt/vlaky/venv/bin/python}
 
 FAILS=()
 WARNS=()
@@ -51,7 +58,7 @@ check_disk() {
     if [[ ! $pct =~ ^[0-9]+$ ]]; then
       notice "disk $p: zaplnenie sa nedá zistiť"
     elif (( pct >= CHECK_DISK_MAX_PCT )); then
-      fail "disk $p je zaplnený na $pct % (limit $CHECK_DISK_MAX_PCT %) – pozri docs/PREVADZKA.md, kapitola 12"
+      fail "disk $p je zaplnený na $pct % (limit $CHECK_DISK_MAX_PCT %) – pozri docs/PREVADZKA.md, kapitola 13 (Plný disk)"
     else
       pass "disk $p: $pct % zaplnené"
     fi
@@ -100,11 +107,34 @@ check_services() {
   done
 }
 
+# Doména aplikácie: VLAKY_DOMAIN (prostredie alebo CHECK_ENV_FILE), inak hostiteľ z https:// VLAKY_PUBLIC_URL
+app_domain() {
+  local domain public
+  domain=${VLAKY_DOMAIN:-$(read_env_var VLAKY_DOMAIN "$CHECK_ENV_FILE")}
+  if [[ -z $domain ]]; then
+    public=${VLAKY_PUBLIC_URL:-$(read_env_var VLAKY_PUBLIC_URL "$CHECK_ENV_FILE")}
+    if [[ $public == https://* ]]; then
+      domain=${public#https://}
+      domain=${domain%%/*}
+      domain=${domain%%:*}
+    fi
+  fi
+  printf '%s' "$domain"
+}
+
 check_https() {
-  local domain url code end end_s days curl_args=(-s -o /dev/null -w '%{http_code}' -m 15)
-  domain=${VLAKY_DOMAIN:-$(read_env_var VLAKY_DOMAIN "$APP_DIR/.env")}
+  local domain url code end end_s days hint_web hint_cert curl_args=(-s -o /dev/null -w '%{http_code}' -m 15)
+  # ďalší krok podľa spôsobu inštalácie (bez Dockera nie sú príkazy docker compose k dispozícii)
+  if [[ $DEPLOY_MODE == docker ]]; then
+    hint_web="docker compose ps; docker compose logs --tail 100 caddy web"
+    hint_cert="docker compose logs caddy | grep -i acme"
+  else
+    hint_web="systemctl status caddy vlaky-web; journalctl -u caddy -u vlaky-web --since -1h"
+    hint_cert="journalctl -u caddy --since -24h | grep -i acme"
+  fi
+  domain=$(app_domain)
   if [[ -z $domain && -z $CHECK_URL ]]; then
-    notice "neznáma doména (VLAKY_DOMAIN v .env alebo CHECK_URL) – kontrola HTTPS sa preskakuje"
+    fail "HTTPS a certifikát sa NEKONTROLUJÚ: neznáma doména – nastav CHECK_URL v ops.env alebo VLAKY_DOMAIN či VLAKY_PUBLIC_URL (https://…) v $CHECK_ENV_FILE"
     return 0
   fi
   url=${CHECK_URL:-https://$domain/health}
@@ -114,9 +144,9 @@ check_https() {
   if [[ $code == 200 ]]; then
     pass "$url odpovedá 200"
   elif [[ -z $code || $code == 000 ]]; then
-    fail "$url je nedostupné (spojenie/TLS zlyhalo) – docker compose ps; docker compose logs --tail 100 caddy web"
+    fail "$url je nedostupné (spojenie/TLS zlyhalo) – $hint_web"
   else
-    fail "$url odpovedá $code (očakávané 200) – docker compose logs --tail 100 caddy web"
+    fail "$url odpovedá $code (očakávané 200) – $hint_web"
   fi
 
   [[ -n $domain ]] || return 0
@@ -130,10 +160,58 @@ check_https() {
   end_s=$(date -d "$end" +%s)
   days=$(( (end_s - $(date +%s)) / 86400 ))
   if (( days < CHECK_CERT_MIN_DAYS )); then
-    fail "certifikát pre $domain vyprší o $days dní ($end) – docker compose logs caddy | grep -i acme"
+    fail "certifikát pre $domain vyprší o $days dní ($end) – $hint_cert"
   else
     pass "certifikát pre $domain platí ešte $days dní"
   fi
+}
+
+# Zdravie agenta (DB, posledný cyklus, schránka, nedoručené správy, nastavenie odosielania). Pri Dockeri ho
+# každú minútu overuje healthcheck kontajnera agent (stav „unhealthy“ ohlási check_services); bez Dockera ho
+# spustí tento skript s konfiguráciou služieb (CHECK_ENV_FILE) – inak by sa chyba zdravia nikde neohlásila.
+check_agent_health() {
+  local out rc
+  if [[ $DEPLOY_MODE == docker ]]; then
+    return 0
+  fi
+  if [[ ! -x $CHECK_PYTHON ]]; then
+    fail "zdravie agenta sa nedá overiť: chýba $CHECK_PYTHON (nastav CHECK_PYTHON v ops.env)"
+    return 0
+  fi
+  if [[ ! -r $CHECK_ENV_FILE ]]; then
+    fail "zdravie agenta sa nedá overiť: konfigurácia $CHECK_ENV_FILE sa nedá čítať (CHECK_ENV_FILE v ops.env)"
+    return 0
+  fi
+  rc=0
+  out=$(cd "$APP_DIR" && run_with_env_file "$CHECK_ENV_FILE" timeout 120 "$CHECK_PYTHON" -m vlaky health 2>&1) || rc=$?
+  out=$(printf '%s' "$out" | tail -n 3 | tr '\n' ' ')
+  if (( rc == 0 )); then
+    pass "zdravie agenta: OK"
+  else
+    # podrobnosti len do výpisu (môžu obsahovať interné adresy) – na externý monitoring ide len riadok CHYBA
+    fail "zdravie agenta: PROBLÉM (python -m vlaky health, kód $rc) – podrobnosti vo výpise a na stránke /zdravie; docs/PREVADZKA.md, kapitola 13"
+    printf '       %s\n' "${out:0:800}"
+  fi
+}
+
+# Spustí príkaz s premennými zo súboru KĽÚČ=hodnota (ako EnvironmentFile služieb systemd), bez vykonania
+# obsahu súboru ako skriptu (hodnoty s medzerami, úvodzovky okolo hodnoty sa odstránia).
+run_with_env_file() {
+  local file=$1 line key val
+  shift
+  (
+    while IFS= read -r line || [[ -n $line ]]; do
+      line=${line%$'\r'}
+      [[ $line =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+      key=${BASH_REMATCH[1]}
+      val=${BASH_REMATCH[2]}
+      if [[ $val == \"*\" || $val == \'*\' ]]; then
+        val=${val:1:${#val}-2}
+      fi
+      export "$key=$val"
+    done < "$file"
+    "$@"
+  )
 }
 
 check_misc() {
@@ -153,6 +231,7 @@ printf 'Kontrola servera %s – %s (režim %s)\n' "$(hostname)" "$(date '+%Y-%m-
 check_disk
 check_backup
 check_services
+check_agent_health
 check_https
 check_misc
 
