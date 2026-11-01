@@ -55,6 +55,11 @@ def zsr_entries() -> list[str]:
     Odvodené zo zoznamu povolených odosielateľov (napr. ``zsr.sk``, ``or.zsr.sk``) – iné povolené domény
     (partneri, zákazníci, vlastní dispečeri) výluky ani trasy ŽSR automaticky meniť nesmú.
     """
+    from ..config import settings
+
+    explicit = [e.strip().lower() for e in settings().csv(settings().zsr_senders) if e.strip()]
+    if explicit:
+        return explicit
     return [e for e in _allowed_entries() if e and _org(e.split("@")[-1]).split(".")[0] == "zsr"]
 
 

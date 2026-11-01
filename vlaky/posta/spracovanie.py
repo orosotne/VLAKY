@@ -840,6 +840,12 @@ def _write_pending(session: Session, ev: ExtractedEvent) -> Optional[Closure]:
     email = session.get(Email, ev.email_id) if ev.email_id else None
     if email is not None and email.verdict == KARANTENA:
         return None
+    if email is not None and email.verdict == PODOZRIVY:
+        # podozrivý e-mail (napr. prompt injection) sa nikdy nepoužije automaticky – ani na plánovanie;
+        # dispečer ho vidí vo fronte a po potvrdení sa výluka zapíše
+        _set_pending_info(ev, None, None, "podozrivý e-mail – do plánovania sa nezapočíta, kým ho dispečer "
+                                          "nepotvrdí")
+        return None
     if (ev.validation or {}).get("blocking"):
         _set_pending_info(ev, None, None, "údaje nestačia na záznam výluky (úsek alebo čas)")
         return None

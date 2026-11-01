@@ -260,9 +260,9 @@ def test_prompt_injection_is_never_auto_applied(env, session, monkeypatch):
     assert ev.needs_confirmation and ev.status == "navrh" and ev.confidence <= 0.5
     ev.needs_confirmation = False                                # ani ručne zmenený príznak nepomôže
     assert apply_event(session, ev)["ok"] is False
-    # plánovač s výlukou počíta len ako s nepotvrdenou: záznam „navrh“ udalosti, ktorá sa nezapísala
-    (c,) = session.query(Closure).all()
-    assert c.status == "navrh" and c.source_event_id == ev.id and ev.status == "navrh"
+    # podozrivý e-mail neovplyvní ani plánovanie (žiadny záznam „navrh“), kým ho neoverí človek
+    assert session.query(Closure).count() == 0
+    assert "podozrivý e-mail" in (ev.validation or {}).get("pending_closure", {}).get("note", "")
     confirm_event(session, ev.id, "dispecer1")                   # človek to overil a potvrdil
     assert session.query(Closure).one().status == "overene"
 
@@ -304,9 +304,9 @@ def test_process_mailbox_end_to_end_over_samples(env, session, planner):
     waiting = {session.get(ExtractedEvent, i).kind for i in s["waiting_event_ids"]}
     assert waiting == {"vyluka_zrusenie", "mimoriadnost", "trasa_zrusena", "avizo", "vyluka_nova", "vyluka_zmena",
                        "ine", "pomala_jazda"}
-    # 8 zapísaných výluk + 4 záznamy „navrh“ čakajúcich udalostí (mimoriadnosť, POTR do odvolania, výluka
-    # z podozrivého e-mailu, dočasný záznam zmeny z preposlaného e-mailu) – plánovač počíta aj s nimi
-    assert session.query(Closure).count() == 12 and session.query(Order).count() == 1
+    # 8 zapísaných výluk + 3 záznamy „navrh“ čakajúcich udalostí (mimoriadnosť, POTR do odvolania, dočasný
+    # záznam zmeny z preposlaného e-mailu) – plánovač počíta aj s nimi; výluka z podozrivého e-mailu nie
+    assert session.query(Closure).count() == 11 and session.query(Order).count() == 1
     assert session.query(Closure).filter(Closure.proposed_change_of.is_not(None)).count() == 1
     assert {p.status for p in session.query(TrainPath)} == {"zmenena", "ponuka"}
     assert all(e.status in ("spracovany",) for e in session.query(Email))
@@ -315,7 +315,7 @@ def test_process_mailbox_end_to_end_over_samples(env, session, planner):
     s2 = process_mailbox(session)
     assert s2["fetched"] == 0 and s2["events"] == 0 and len(planner) == 1
     assert session.query(Email).count() == 18 and session.query(ExtractedEvent).count() == 21
-    assert session.query(Closure).count() == 12
+    assert session.query(Closure).count() == 11
 
 
 def test_planner_errors_are_reported_not_raised(env, session, monkeypatch):

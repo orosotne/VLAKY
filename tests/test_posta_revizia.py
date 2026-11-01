@@ -1058,3 +1058,15 @@ def test_mail_last_ok_only_after_successful_fetch(env, session, monkeypatch, fix
     s = process_mailbox(session, now=later)
     assert s["fetch_ok"] is True and s["errors"]
     assert get_kv(session, "mail_last_ok") == {"ts": later.isoformat(), "fetched": 0}
+
+
+def test_zsr_odosielatelia_z_nastavenia(cfg):
+    from vlaky.config import override_settings
+    from vlaky.posta.overenie import zsr_entries, zsr_sender
+
+    assert zsr_sender("vyluky@zsr.example")              # odvodené z povolených domén zsr.*
+    assert not zsr_sender("objednavky@zakaznik.example")
+    override_settings(**{**cfg.model_dump(), "zsr_senders": "kis@zsr.example, or.zsr.example"})
+    assert zsr_entries() == ["kis@zsr.example", "or.zsr.example"]
+    assert zsr_sender("kis@zsr.example") and zsr_sender("vyluky@or.zsr.example")
+    assert not zsr_sender("vyluky@zsr.example")           # nie je vo výslovnom zozname

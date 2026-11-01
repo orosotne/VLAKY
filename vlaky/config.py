@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     mail_poll_seconds: int = 60
     # povolení odosielatelia (domény alebo adresy), čiarkou oddelené; ostatné ide do karantény
     allowed_senders: str = "zsr.sk"
+    # odosielatelia ŽSR (domény alebo adresy), ktorých výluky, pomalé jazdy, mimoriadnosti a trasy sa smú zapísať
+    # automaticky; prázdne = povolené domény „zsr.*“ zo zoznamu allowed_senders
+    zsr_senders: str = ""
     require_dmarc_pass: bool = True                    # vyžadovať SPF/DKIM/DMARC pass v Authentication-Results
     trusted_authserv_ids: str = ""                     # authserv-id vášho poštového servera (čiarkou); prázdne = akceptovať prvú hlavičku
     max_attachment_mb: int = 15
@@ -128,10 +131,11 @@ def reset_settings_cache() -> None:
     get_settings.cache_clear()
 
 
-# rezervované pre testy: umožní prepísať nastavenia
+# rezervované pre testy: umožní prepísať nastavenia (bez načítania súboru .env – testy nesmú závisieť
+# od lokálnej konfigurácie, napr. .env skopírovaného z .env.demo)
 def override_settings(**kwargs) -> Settings:
     reset_settings_cache()
-    s = Settings(**kwargs)
+    s = Settings(_env_file=None, **kwargs)
     get_settings.cache_clear()
     _OVERRIDE["s"] = s
     return s
