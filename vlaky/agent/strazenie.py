@@ -106,8 +106,38 @@ def standing_alerts(session: Session, now: datetime) -> int:
     return sent
 
 
+def _purge_outbox(directory, cutoff: datetime) -> int:
+    """Zmaže kópie správ v outboxe staršie ako cutoff (čas z názvu súboru, inak čas zmeny súboru)."""
+    from datetime import timezone
+
+    removed = 0
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return 0
+    for name in names:
+        path = os.path.join(directory, name)
+        if not name.endswith(".txt") or not os.path.isfile(path):
+            continue
+        try:
+            ts = datetime.strptime(name[:15], "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            try:
+                ts = datetime.fromtimestamp(os.path.getmtime(path), timezone.utc)
+            except OSError:
+                continue
+        if ts < cutoff:
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
 def retention_purge(session: Session, now: datetime) -> dict:
-    """GDPR: zmaže staré polohy a obsah starých e-mailov (metadáta a audit ostávajú)."""
+    """GDPR: zmaže staré polohy a obsah starých e-mailov (metadáta a audit ostávajú); správy agenta (záznamy
+    aj kópie v outboxe, vrátane zopakovaných pokusov pri výpadku servera správ) po rovnakej dobe ako e-maily."""
     cfg = settings()
     gps_cut = now - timedelta(days=cfg.retention_gps_days)
     res = session.execute(delete(PositionReport).where(PositionReport.ts_utc < gps_cut))
@@ -127,7 +157,15 @@ def retention_purge(session: Session, now: datetime) -> dict:
                 pass
         e.raw_path = ""
     out = {"positions_deleted": res.rowcount or 0, "emails_redacted": len(emails)}
-    if out["positions_deleted"] or out["emails_redacted"]:
+    # správy agenta sú komunikácia ako e-maily (opakovanie a monitoring doručenia potrebujú najviac 48 h)
+    from ..models import Notification
+
+    notify_cut = now - timedelta(days=max(3, cfg.retention_email_days))
+    deleted = session.execute(delete(Notification).where(Notification.created_at < notify_cut)).rowcount or 0
+    files = _purge_outbox(cfg.outbox_dir, ensure_utc(notify_cut))
+    if deleted or files:
+        out.update(notifications_deleted=deleted, outbox_files_deleted=files)
+    if any(out.values()):
         audit(session, "agent", "retention_purge", "", "", **out)
     return out
 
