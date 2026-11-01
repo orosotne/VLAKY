@@ -193,10 +193,100 @@ def _segment_edges(net: Network, groute: GRoute, waypoints: list) -> list:
     return out
 
 
+def affected_route_edges(net: Network, groute: GRoute, wps: list, a_name: str, b_name: str) -> set:
+    """Hrany trasy v úseku a_name – b_name (body z build_segments) – napr. na zákaz pri hľadaní obchádzky.
+
+    Pokrýva aj výluku priradenú poistkou podľa dopravní (_waypoint_segments), ktorej koľaje v modeli siete
+    trasu nepretínajú, takže samotné closure_edges by obchádzku od úseku neodklonili.
+    """
+    out: set = set()
+    for (a, b), edges in zip(zip(wps, wps[1:]), _segment_edges(net, groute, wps)):
+        if a.name == a_name and b.name == b_name:
+            out |= edges
+    return out
+
+
+def _name_keys(name: str) -> set:
+    from ..siet.graf import expand_aliases, norm
+
+    n = norm(name or "")
+    return {n, expand_aliases(n)} - {""}
+
+
+def _station_keys(net: Network, name: str) -> set:
+    """Kľúče názvu dopravne z výluky: zapísaný tvar aj názov, ktorý našlo vyhľadávanie v sieti
+    (skratky, napr. „Zvolen“ → „Zvolen osobná stanica“, „Výh. Paludza“ → „výhybňa Paludza“)."""
+    keys = _name_keys(name)
+    st = net.find_station(name) if keys else None
+    if st is not None:
+        keys |= _name_keys(st.name)
+    return keys
+
+
+def _waypoint_segments(net: Network, groute: GRoute, wp_keys: list, wps: list, w, spec: TrainSpec,
+                       keys, section_ok: bool) -> set:
+    """Poistka priradenia výluky podľa dopravní na trase vlaku → indexy úsekov medzi body wps.
+
+    Výluka v jednej dopravni (od = do), ktorá je bodom trasy, sa priradí úsekom pred ňou aj za ňou – aj keď
+    sa koľaje jej obvodu v modeli siete s trasou nepretnú. Výluka medzi dvoma dopravňami, ktoré sú obe bodmi
+    trasy, sa priradí úsekom medzi nimi, ak jej úsek v sieti trasu vôbec nezasiahol (napr. dopravne ležia na
+    koľajach zriaďovacej stanice vedľa hlavnej trate) a nie je overený číslom trate z výluky (section_ok).
+    Dopravňa sa počíta, len ak obsluhuje rozchod vlaku – výluka v stanici Ruskov sa vlaku na súbežnej ŠRT
+    netýka. wp_keys = [(bod celej trasy, kľúče jeho názvu)], keys(názov) = kľúče názvu z výluky.
+    """
+    from_keys, to_keys = keys(w.from_station), keys(w.to_station)
+    if not from_keys or not to_keys:
+        return set()
+    stations = {st.name: st for st, _km, _mins in groute.stations}
+
+    def positions(k: set) -> list:
+        out = []
+        for wp, wk in wp_keys:
+            if not (wk & k):
+                continue
+            st = stations.get(wp.name)
+            if st is not None and spec.gauge not in net.station_gauges(st):
+                continue
+            out.append(wp.km)
+        return out
+
+    pairs = list(zip(wps, wps[1:]))
+    if from_keys & to_keys:  # výluka v jednej dopravni
+        pts = positions(from_keys)
+        return {i for i, (a, b) in enumerate(pairs) for x in pts if a.km - 1e-6 <= x <= b.km + 1e-6}
+    if section_ok:
+        return set()
+    pa, pb = positions(from_keys), positions(to_keys)
+    if not pa or not pb:
+        return set()
+    x, y = min(((p, q) for p in pa for q in pb), key=lambda pq: abs(pq[0] - pq[1]))
+    lo, hi = min(x, y), max(x, y)
+    if hi - lo < 1e-6:
+        return {i for i, (a, b) in enumerate(pairs) if a.km - 1e-6 <= lo <= b.km + 1e-6}
+    return {i for i, (a, b) in enumerate(pairs) if a.km < hi - 1e-6 and b.km > lo + 1e-6}
+
+
+def _closure_line_refs(session: Session, windows: list) -> dict:
+    """Čísla tratí výluk (Closure.line_ref) – spresnia úsek, ak by mohol viesť po oboch rozchodoch."""
+    ids = {w.closure_id for w in windows if w.closure_id is not None}
+    if not ids:
+        return {}
+    return {cid: ref or "" for cid, ref in session.execute(select(Closure.id, Closure.line_ref)
+                                                           .where(Closure.id.in_(ids)))}
+
+
 def build_segments(net: Network, groute: GRoute, windows: list, t0: datetime, spec: TrainSpec,
                    session: Session, start_km: float = 0.0, run_scale: float = 1.0) -> tuple:
-    """Rozdelí trasu na úseky medzi dopravňami a priradí im výluky (s typom a časom)."""
-    cfg = settings()
+    """Rozdelí trasu na úseky medzi dopravňami a priradí im výluky (s typom a časom).
+
+    Výluka patrí úseku, ktorého koľaje zasahuje (closure_edges), a poistkou aj podľa dopravní na trase
+    (_waypoint_segments). Blokujúca výluka je časové okno (Closure). Výluka koľaje a pomalá jazda sú časovo
+    obmedzené predĺženie jazdy (Slowdown): rozhodovací modul ich započíta len vtedy, keď vlak ide úsekom počas
+    ich platnosti, a každú výluku najviac raz (nie raz za každé denné opakovanie v prehľadávanom období).
+    """
+    from ..rozhodovanie import Slowdown
+    from ..siet.graf import norm_line_ref
+
     wps = [w for w in _waypoints(groute) if w.km >= start_km - 1e-6]
     all_wps = _waypoints(groute)
     if start_km > 0:
@@ -207,6 +297,32 @@ def build_segments(net: Network, groute: GRoute, windows: list, t0: datetime, sp
     if len(wps) < 2:
         wps = all_wps[:1] + all_wps[-1:] if len(all_wps) >= 2 else all_wps
     seg_edges = _segment_edges(net, groute, wps)
+    route_edges = set(groute.edges)
+    line_refs = _closure_line_refs(session, windows)
+    wp_keys = [(wp, _name_keys(wp.name)) for wp in all_wps]
+    key_cache: dict = {}
+
+    def keys(name: str) -> set:
+        if name not in key_cache:
+            key_cache[name] = _station_keys(net, name)
+        return key_cache[name]
+
+    mapped = []  # (okno, koľaje úseku výluky, indexy úsekov trasy)
+    by_closure: dict = {}  # okná tej istej výluky (denné opakovanie) majú rovnaké úseky
+    for w in windows:
+        ref = norm_line_ref(line_refs.get(w.closure_id, ""))
+        ck = (w.from_station, w.to_station, ref)
+        if ck not in by_closure:
+            sec = net.closure_edges(w.from_station, w.to_station, ref)
+            idx = {i for i, edges in enumerate(seg_edges) if sec & edges}
+            # úsek na trati s číslom z výluky je overený – poistka podľa dopravní ho neprepíše (iný rozchod)
+            on_line = bool(ref) and any(ref in net.line_refs(e) for e in sec)
+            idx |= _waypoint_segments(net, groute, wp_keys, wps, w, spec, keys,
+                                      bool(sec & route_edges) or on_line)
+            by_closure[ck] = (sec, idx)
+        sec, idx = by_closure[ck]
+        if idx:
+            mapped.append((w, sec, idx))
     info = {li.station: li for li in session.scalars(select(LocationInfo))}
     from .kalibracia import delay_defaults
 
@@ -217,31 +333,42 @@ def build_segments(net: Network, groute: GRoute, windows: list, t0: datetime, sp
         run = max(0.5, (b.minutes - a.minutes) * (run_scale if run_scale != 1.0 else 1 + RUN_MARGIN))
         p50 = max(0.3, d50 * km / 100.0)
         p90 = max(p50 * 1.5 + 0.5, d90 * km / 100.0)
-        closures = []
+        closures, slowdowns = [], []
         edges = seg_edges[i] if i < len(seg_edges) else set()
-        for w in windows:
-            sec = net.closure_edges(w.from_station, w.to_station)
-            if not sec or not (sec & edges):
+        for w, sec, idx in mapped:
+            if i not in idx:
                 continue
             affecting.append((w, a.name, b.name))
+            ws, we = _min(t0, w.start), _min(t0, w.end)
             if w.kind in BLOCKING:
-                closures.append(DClosure(start=_min(t0, w.start), end=_min(t0, w.end),
-                                         electric_only=w.electric_only, label=f"výluka #{w.closure_id}"))
+                closures.append(DClosure(start=ws, end=we, electric_only=w.electric_only,
+                                         label=f"výluka #{w.closure_id}"))
             elif w.kind == "kolaj":
-                p50 += 3.0
-                p90 += 15.0
+                slowdowns.append(Slowdown(ws, we, extra_p50=3.0, extra_p90=15.0, group=w.closure_id,
+                                          label=f"výluka koľaje #{w.closure_id}"))
             elif w.kind == "pomala_jazda":
                 v_seg = km / (run / 60.0) if run > 0 else 60.0
-                if w.speed_kmh and w.speed_kmh < v_seg:
-                    sec_km = min(km, sum(net.edges[e].len_m for e in (sec & edges)) / 1000.0)
-                    run += sec_km * (60.0 / w.speed_kmh - 60.0 / v_seg)
+                sec_km = min(km, sum(net.edges[e].len_m for e in (sec & edges)) / 1000.0)
+                if w.speed_kmh and w.speed_kmh < v_seg and sec_km > 0:
+                    extra = sec_km * (60.0 / w.speed_kmh - 60.0 / v_seg)
                 else:
-                    run += 5.0
+                    extra = 5.0
+                slowdowns.append(Slowdown(ws, we, extra_run=round(extra, 1), group=w.closure_id,
+                                          label=f"pomalá jazda #{w.closure_id}"))
         li = info.get(a.name)
         can_wait = (a.type in WAIT_TYPES or a.type == "position") if li is None else li.can_wait
         segments.append(Segment(f"{a.name} – {b.name}", round(run, 1), round(p50, 1), round(p90, 1),
-                                tuple(closures), can_wait))
+                                tuple(closures), can_wait, tuple(slowdowns)))
     return merge_segments(segments), wps, affecting
+
+
+def _merge_slowdowns(a: Segment, b: Segment) -> tuple:
+    """Obmedzenia zlúčeného úseku a+b; každé si ponechá polohu svojej časti (podiel jazdnej doby)."""
+    total = a.run_min + b.run_min
+    fa = a.run_min / total if total > 0 else 0.5
+    return tuple([replace(s, part_from=s.part_from * fa, part_to=s.part_to * fa) for s in a.slowdowns] +
+                 [replace(s, part_from=fa + s.part_from * (1 - fa), part_to=fa + s.part_to * (1 - fa))
+                  for s in b.slowdowns])
 
 
 def _combine(a: Segment, b: Segment, closures: tuple, can_wait: bool) -> Segment:
@@ -249,14 +376,16 @@ def _combine(a: Segment, b: Segment, closures: tuple, can_wait: bool) -> Segment
     spread = math.sqrt((a.delay_p90 - a.delay_p50) ** 2 + (b.delay_p90 - b.delay_p50) ** 2)
     name = a.name.split(" – ")[0] + " – " + b.name.split(" – ")[-1]
     return Segment(name, round(a.run_min + b.run_min, 1), round(p50, 1), round(p50 + spread, 1), closures,
-                   can_wait)
+                   can_wait, _merge_slowdowns(a, b))
 
 
 def merge_segments(segments: list) -> list:
     """Zlúči susedné úseky s rovnakými výlukami (menej úsekov = rýchlejšia simulácia).
 
     Úsek s výlukou, pred ktorým sa nedá čakať, sa predĺži dozadu až po dopravňu, kde čakať možno
-    (bod, odkiaľ niet návratu – sekcia 10.2 PROMPT.md).
+    (bod, odkiaľ niet návratu – sekcia 10.2 PROMPT.md). Časovo obmedzené predĺženie jazdy (pomalá jazda,
+    výluka koľaje) zostane viazané na svoju časť zlúčeného úseku (podiel jazdnej doby), takže obmedzenie
+    mimo času jazdy výsledok nezmení.
     """
     out: list = []
     for seg in segments:

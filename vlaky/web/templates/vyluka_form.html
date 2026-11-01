@@ -5,7 +5,7 @@
 <div class="page-head">
   <p class="crumbs"><a href="/vyluky">Výluky</a></p>
   <h1>{{ "Upraviť výluku " ~ closure.from_station ~ " – " ~ closure.to_station if closure else "Nová výluka" }}</h1>
-  <p class="muted">Úsek sa vyhľadá v modeli siete (všetky koľaje medzi dopravňami). Časy v miestnom čase ({{ tz }}).</p>
+  <p class="muted">Úsek sa vyhľadá v modeli siete (všetky koľaje medzi dopravňami). Výluka alebo mimoriadnosť v jednej dopravni: zadajte tú istú dopravňu do oboch polí – platí pre všetky koľaje v jej obvode. Časy v miestnom čase ({{ tz }}).</p>
 </div>
 {% if errors %}<div class="flash flash-chyba" role="alert">Formulár obsahuje chyby – opravte označené polia.</div>{% endif %}
 <form method="post" action="{{ '/vyluky/' ~ closure.id ~ '/upravit' if closure else '/vyluky/nova' }}" class="card form-grid" novalidate>
@@ -14,7 +14,7 @@
     <legend>Úsek</legend>
     <div class="grid-3">
       {{ m.field("from_station", "Od dopravne", values, errors, required=True, attrs={"data-autocomplete": "stanice", "autocomplete": "off", "maxlength": 120}) }}
-      {{ m.field("to_station", "Po dopravňu", values, errors, required=True, attrs={"data-autocomplete": "stanice", "autocomplete": "off", "maxlength": 120}) }}
+      {{ m.field("to_station", "Po dopravňu", values, errors, required=True, help="Výluka v jednej dopravni: rovnaká dopravňa ako v poli Od.", attrs={"data-autocomplete": "stanice", "autocomplete": "off", "maxlength": 120}) }}
       {{ m.select("kind", "Druh", CLOSURE_KIND.items(), values, errors, required=True) }}
       {{ m.field("line_ref", "Číslo trate", values, errors, attrs={"maxlength": 40}) }}
       {{ m.field("track", "Koľaj", values, errors, attrs={"maxlength": 40}) }}
