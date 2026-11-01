@@ -37,7 +37,7 @@ from email import policy as _mail_policy
 from email.parser import BytesHeaderParser
 from email.utils import parseaddr
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from sqlalchemy import DateTime, and_, or_, select
 from sqlalchemy.orm import Session, object_session
@@ -530,7 +530,7 @@ def _register_check(session: Session, kind: str, data: dict, now: datetime) -> t
         elif kind == "avizo":
             eta = parse_utc(data.get("eta"))
             day = data.get("date") or (local(eta).date().isoformat() if eta else None)
-            train = find_train(session, data.get("train_number"), day, undated=True)
+            train = find_train(session, data.get("train_number"), day, avizo=True)
             h = _train_handover(session, train.id) if train is not None else None
             if h is not None:
                 reasons += _handover_guard(session, h, now, None)
@@ -1374,11 +1374,12 @@ def _apply_avizo(session: Session, ev: ExtractedEvent, confirmed: bool) -> dict:
     if eta is None:
         raise ApplyError("Chýba predpokladaný čas príchodu (ETA).")
     day = d.get("date") or local(eta).date().isoformat()
-    train = find_train(session, d.get("train_number"), day, undated=True)
+    train = find_train(session, d.get("train_number"), day, avizo=True)
     if train is None:
         num = d.get("train_number")
         shown_day = _day_text(day)
-        # vlak s týmto číslom v systéme je, len s iným dátumom jazdy (alebo viac vlakov bez dátumu) – iná rada
+        # vlak s týmto číslom v systéme je, len s iným dátumom jazdy, viac vlakov bez dátumu alebo len ukončená
+        # jazda (napr. minulý týždeň) – iná rada
         why = train_mismatch(session, num, day)
         val = dict(ev.validation or {})
         msg = (f"vlak nenájdený – avízo je na {shown_day}, ale {why}" if why else
@@ -1947,13 +1948,15 @@ def _waiting(ev: ExtractedEvent) -> bool:
     return (ev.status == "navrh" and bool(ev.needs_confirmation)) or apply_failed(ev)
 
 
-def _blind_reason(session: Session, ev: ExtractedEvent) -> str:
+def _blind_reason(session: Session, ev: ExtractedEvent, with_rows: Optional[set] = None) -> str:
     """Prečo plánovač s čakajúcou udalosťou nevie počítať („“ = počíta s ňou alebo ju nepotrebuje).
 
     Čakajúce zrušenie či zmena pridelenej trasy: plánovač počíta s trasou v registri, ktorá nemusí platiť.
     Výluka, pomalá jazda či mimoriadnosť bez záznamu pre plánovač (termín sa nepodarilo prečítať, podozrivý
     e-mail, chyba zápisu): plánovač o nej nevie. Zrušenie výluky ani výluka, ktorá už v registri je, sem
-    nepatria (plánovač počíta s výlukou v registri – bezpečnejší variant)."""
+    nepatria (plánovač počíta s výlukou v registri – bezpečnejší variant); ani výluka, ktorej záznam prevzala
+    novšia zapísaná udalosť. ``with_rows`` – vopred zistené čísla udalostí, ktoré majú platný záznam výluky
+    (jeden dotaz pre všetky udalosti namiesto dotazu pre každú)."""
     if not _waiting(ev):
         return ""
     val = ev.validation if isinstance(ev.validation, dict) else {}
@@ -1967,8 +1970,15 @@ def _blind_reason(session: Session, ev: ExtractedEvent) -> str:
         # výluka je v registri, zrušila ju novšia udalosť, alebo udalosť zámerne nemá záznam a plánovač nemení
         # (napr. oznámenie o ukončení mimoriadnosti – ``pending_closure.bez_vplyvu``)
         return ""
-    own, temp = _event_closures(session, ev.id)
-    if own is not None or temp is not None:
+    if with_rows is not None:
+        if ev.id in with_rows:
+            return ""
+    elif any(c is not None for c in _event_closures(session, ev.id)):
+        return ""
+    row = session.get(Closure, info["id"]) if isinstance(info.get("id"), int) else None
+    if row is not None and _newer_owner(session, row, ev) is not None:
+        # záznam udalosti medzitým prevzala novšia zapísaná udalosť (potvrdená zmena alebo zrušenie tej istej
+        # výluky) – register má jej stav, ktorý má prednosť; staršia udalosť ho po potvrdení nezmení (nahradená)
         return ""
     applied = val.get("apply_result") if isinstance(val.get("apply_result"), dict) else {}
     blocking = ", ".join(str(x) for x in val.get("blocking") or [])
@@ -1986,8 +1996,45 @@ def _blind_targets(session: Session, ev: ExtractedEvent) -> bool:
     return bool(d.get("from_station") or d.get("to_station"))
 
 
-def _name_key(name: Any) -> str:
-    return " ".join(fold(str(name or "")).split())
+def _route_cover(route: Any) -> Callable[[str, str, Any], bool]:
+    """Funkcia „leží úsek výluky a – b (výluka v jednej dopravni: a = b) na trase vlaku?“ pre trasu z plánovača
+    (``vlaky.siet.graf.Route``; trasa sa pripraví raz na vyhodnotenie vlaku).
+
+    Rovnako ako plánovač umiestňuje výluky z registra (pravidlo 2): koľaje úseku v modeli siete (closure_edges)
+    zasahujú hrany trasy – aj keď vlak začína alebo končí vnútri úseku; poistkou ležia na trase obe dopravne
+    úseku. Úsek, ktorý sa v sieti nenašiel: dopravňa úseku leží na trase, alebo sa nenašla ani jedna dopravňa –
+    vtedy ho nemožno vylúčiť (ako plánovač pri výluke z registra, ktorú nevie umiestniť na sieť)."""
+    from ..siet.graf import expand_aliases, network, norm, norm_line_ref
+
+    net = network()
+    edges = set(route.edges)
+    on_route: set = set()
+    for st, _km, _mins in route.stations:
+        n = norm(st.name)
+        on_route |= {n, expand_aliases(n)}
+    cache: dict = {}
+
+    def keys(name: str) -> tuple[set, bool]:
+        if name not in cache:
+            n = norm(name or "")
+            out = {n, expand_aliases(n)} - {""}
+            st = net.find_station(name) if out else None
+            if st is not None:
+                m = norm(st.name)
+                out |= {m, expand_aliases(m)}
+            cache[name] = (out, st is not None)
+        return cache[name]
+
+    def covers(a: str, b: str, line_ref: Any = "") -> bool:
+        (ka, found_a), (kb, found_b) = keys(a), keys(b)
+        sec = net.closure_edges(a, b, norm_line_ref(str(line_ref or "")))
+        if sec:
+            return bool(sec & edges) or (bool(ka & on_route) and bool(kb & on_route))
+        if not found_a and not found_b:
+            return True
+        return bool(ka & on_route) or bool(kb & on_route)
+
+    return covers
 
 
 def _day_text(day: Any) -> str:
@@ -1997,8 +2044,8 @@ def _day_text(day: Any) -> str:
         return str(day or "?")
 
 
-def pending_uncertainty(session: Session, train: Train, route_stations: Iterable[str] = (),
-                        paths: Iterable[Any] = (), window: Optional[tuple] = None) -> list[str]:
+def pending_uncertainty(session: Session, train: Train, route: Any = None, paths: Iterable[Any] = (),
+                        window: Optional[tuple] = None) -> list[str]:
     """Dôvody, prečo vlak nesmie byť ZELENÝ pre čakajúce udalosti z e-mailov, s ktorými plánovač nevie počítať.
 
     Volá plánovač pri každom vyhodnotení vlaku (sekcia 2.1 – kým zmena nie je potvrdená, počíta sa s oboma
@@ -2006,20 +2053,21 @@ def pending_uncertainty(session: Session, train: Train, route_stations: Iterable
 
     * zrušenie alebo zmena trasy vlaku čaká na potvrdenie a týka sa trasy, s ktorou plánovač počíta (``paths``
       – pridelené trasy vlaku),
-    * výluka, pomalá jazda či mimoriadnosť z e-mailu čaká na potvrdenie bez záznamu pre plánovač a jej dopravne
-      ležia na trase vlaku (``route_stations`` – názvy dopravní trasy; prázdne = trasa neznáma, posúdi sa
-      konzervatívne). Známy začiatok či koniec mimo obdobia ``window`` (od, do – UTC) ju vylúči.
+    * výluka, pomalá jazda či mimoriadnosť z e-mailu čaká na potvrdenie bez záznamu pre plánovač a jej úsek leží
+      na trase vlaku (``route`` – trasa vlaku z plánovača, ``vlaky.siet.graf.Route``; úsek sa umiestni na sieť
+      rovnako ako výluka z registra, :func:`_route_cover`; None = trasa neznáma, posúdi sa konzervatívne).
+      Známy začiatok či koniec mimo obdobia ``window`` (od, do – UTC) ju vylúči.
 
     Prázdny zoznam = žiadna taká udalosť. Chyba pri zisťovaní nesmie dať ZELENÚ – vráti všeobecný dôvod."""
     try:
-        return _pending_uncertainty(session, train, route_stations, paths, window)
+        return _pending_uncertainty(session, train, route, paths, window)
     except Exception as exc:  # noqa: BLE001 – plánovanie nesmie zastaviť, ale ani dať ZELENÚ naslepo
         logging.getLogger("vlaky.posta").exception("Čakajúce udalosti pre vlak %s sa nepodarilo overiť", train.id)
         return [f"Čakajúce udalosti z e-mailov sa nepodarilo overiť ({type(exc).__name__}) – kým sa to nevyrieši, "
                 "vlak nemôže byť ZELENÝ."]
 
 
-def _pending_uncertainty(session: Session, train: Train, route_stations: Iterable[str], paths: Iterable[Any],
+def _pending_uncertainty(session: Session, train: Train, route: Any, paths: Iterable[Any],
                          window: Optional[tuple]) -> list[str]:
     rows = list(session.scalars(select(ExtractedEvent).where(
         ExtractedEvent.kind.in_(UNCERTAIN_PATH_KINDS + CLOSURE_EVENT_KINDS),
@@ -2029,10 +2077,13 @@ def _pending_uncertainty(session: Session, train: Train, route_stations: Iterabl
         return []
     number = train_digits(train.number)
     path_ids = {p.id for p in paths}
-    route = {_name_key(n) for n in route_stations if n}
+    ids = [ev.id for ev in rows if ev.kind in CLOSURE_EVENT_KINDS]
+    with_rows = set(session.scalars(select(Closure.source_event_id).where(
+        Closure.source_event_id.in_(ids), Closure.status != "zrusene"))) if ids else set()
+    covers: Optional[Callable[[str, str, Any], bool]] = None
     out: list[str] = []
     for ev in rows:
-        why = _blind_reason(session, ev)
+        why = _blind_reason(session, ev, with_rows)
         if not why:
             continue
         d = ev.data if isinstance(ev.data, dict) else {}
@@ -2049,9 +2100,12 @@ def _pending_uncertainty(session: Session, train: Train, route_stations: Iterabl
                        "nezamietne, vlak nemôže byť ZELENÝ.")
             continue
         a, b = d.get("from_station"), d.get("to_station")
-        keys = [_station_key(x) for x in (a, b) if x]
-        if not keys or (route and not all(k in route for k in keys)):
+        if not (a or b):
             continue
+        if route is not None:
+            covers = covers or _route_cover(route)
+            if not covers(str(a or b), str(b or a), d.get("line_ref")):
+                continue
         start, end = parse_utc(d.get("start")), parse_utc(d.get("end"))
         if window and ((start is not None and start > window[1]) or (end is not None and end < window[0])):
             continue

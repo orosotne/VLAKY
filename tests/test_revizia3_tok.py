@@ -498,7 +498,7 @@ def test_ui2_avizo_nejednoznacny_alebo_iny_datum_jazdy(strict, session, planner)
                      Train(number="Nex 47250", run_date="", origin="Čadca", destination="Žilina",
                            status="planovany")])
     session.commit()
-    assert find_train(session, "47250", "2026-11-03", undated=True) is None
+    assert find_train(session, "47250", "2026-11-03", avizo=True) is None
     confirm_event(session, ev.id, "dispecer1")
     assert "bez dátumu jazdy" in ev.validation["apply_result"]["error"]
     for t in list(session.scalars(select(Train))):
@@ -521,11 +521,11 @@ def test_ui2_avizo_nejednoznacny_alebo_iny_datum_jazdy(strict, session, planner)
 
 
 # ====================================================================== MR2 čakajúce udalosti mimo plánovača
-def _route_stations(origin: str, destination: str) -> list[str]:
+def _route(origin: str, destination: str):
+    """Trasa vlaku tak, ako ju plánovač odovzdá do pending_uncertainty (vlaky.siet.graf.Route)."""
     from vlaky.siet.graf import TrainSpec, network
 
-    r = network().route(origin, destination, TrainSpec(traction="E", gauge="1435", vmax_kmh=100))
-    return [st.name for st, _km, _mins in r.stations]
+    return network().route(origin, destination, TrainSpec(traction="E", gauge="1435", vmax_kmh=100))
 
 
 def _alerts(session) -> list[Notification]:
@@ -568,7 +568,7 @@ def test_mr2_cakajuce_zrusenie_trasy_nie_je_neviditelne(strict, session, fixed_n
     assert all("zrušenie trasy" in n.subject and f"/fronta#udalost-{ev.id}" in n.body for n in alerts)
     from vlaky.posta.spracovanie import pending_uncertainty
 
-    route = _route_stations("Čadca", "Žilina")
+    route = _route("Čadca", "Žilina")
     notes = pending_uncertainty(session, t, route, allocated_paths(session, t, None, fixed_now))
     assert len(notes) == 1 and "Zrušenie trasy vlaku 12345" in notes[0] and f"#{ev.id}" in notes[0]
     assert "ZELENÝ" in notes[0]
@@ -616,11 +616,11 @@ def test_mr2_vyluka_s_neprecitanym_terminom_nie_je_neviditelna(strict, session):
     assert not any(f"/fronta#udalost-{ok_ev.id}" in n.body for n in alerts)
     from vlaky.posta.spracovanie import pending_uncertainty
 
-    route_a = _route_stations("Poprad-Tatry", "Liptovský Mikuláš")
+    route_a = _route("Poprad-Tatry", "Liptovský Mikuláš")
     notes = pending_uncertainty(session, a, route_a, window=(now, now + timedelta(hours=30)))
     assert len(notes) == 1 and "Poprad-Tatry – Liptovský Mikuláš" in notes[0] and "nevie počítať" in notes[0]
     assert "chýba začiatok" in notes[0] and f"#{ev.id}" in notes[0]
-    assert pending_uncertainty(session, b, _route_stations("Čadca", "Žilina")) == []
+    assert pending_uncertainty(session, b, _route("Čadca", "Žilina")) == []
     confirm_event(session, ev.id, "dispecer1", edits={"start": "2026-11-12T07:00:00+00:00",
                                                       "end": "2026-11-13T13:00:00+00:00"})
     session.commit()
