@@ -22,8 +22,9 @@ from typing import Callable, Optional
 from ..cas import local_naive_to_utc
 from . import datumy
 from .datumy import Period
+from .parser import is_reply_subject, reply_quote_spans
 from .stanice import StationMatch, find_borders_in_text, stations, tokens
-from .text import SECTION_DASHES, fold, one_line
+from .text import SECTION_DASHES, clean_text, fold, one_line
 from .udalosti import ExtractedItem, MailDocument, normalize_data
 
 RULES_VERSION = "pravidla-2026.11"
@@ -35,12 +36,17 @@ def _rx(*parts: str) -> re.Pattern:
 
 
 # ------------------------------------------------------------------ klasifikácia
+# predmet zrušenia je pomalá jazda / POTR / obmedzenie rýchlosti (nie výluka): „Po skončení výluky sa ruší POTR“
+_SPEED_OBJ = (r"(?:pomal\w*\s+j[ai]zd\w*|potr\b|(?:docasn|prechodn)\w*\s+(?:obmedzen|omezen)\w*\s+(?:tratov\w*\s+)?"
+              r"rychlost\w*|(?:obmedzen|omezen)\w*\s+(?:tratov\w*\s+)?rychlost\w*)")
+_NOT_SPEED_OBJ = r"(?!\w*\s+(?:\w+\s+){0,2}?" + _SPEED_OBJ + ")"
 _KIND_PATTERNS: dict[str, re.Pattern] = {
     "vyluka_zrusenie": _rx(
         r"zrusen\w*\s+(?:\w+\s+){0,2}(?:vyluk|rov\b|rozkaz\w* o vyluke)",
-        r"(?:vyluk\w*|\brov\b)(?:\s+c\.)?(?:\s+[\w/.-]+)?\s+(?:sa\s+)?(?:rusi|zrusuje|nekona|nebude konat|odvolava|je zrusen|bola zrusen|sa zrusil)",
+        r"(?:vyluk\w*|\brov\b)(?:\s+c\.)?(?:\s+[\w/.-]+)?\s+(?:sa\s+)?(?:rusi|zrusuje|nekona|nebude konat|odvolava|je zrusen|bola zrusen|sa zrusil)"
+        + _NOT_SPEED_OBJ,
         r"odvolan\w*\s+(?:\w+\s+)?vyluk", r"rusime\s+(?:\w+\s+)?vyluk", r"storn\w*\s+(?:\w+\s+)?vyluk",
-        r"vyluk\w*\s+(?:\w+\s+){0,3}sa\s+(?:nekona|rusi)"),
+        r"vyluk\w*\s+(?:\w+\s+){0,3}sa\s+(?:nekona|rusi)" + _NOT_SPEED_OBJ),
     "vyluka_zmena": _rx(
         r"zmen\w*\s+(?:\w+\s+){0,2}(?:vyluk|rov\b|rozkaz\w* o vyluke)",
         r"(?:vyluk\w*|\brov\b)(?:\s+c\.)?(?:\s+[\w/.-]+)?\s+(?:sa\s+)?(?:meni|posuva|predlzuje|skracuje|presuva)",
@@ -89,6 +95,22 @@ _FAMILIES = {
     "objednavka": ("objednavka",),
 }
 _FAMILY_ORDER = ("vyluka", "trasa", "avizo", "mimoriadnost", "objednavka")
+# zrušenie pomalej jazdy / POTR: „ruší sa pomalá jazda … zavedená TLG č. 37/2026“, „Odvolávame POTR č. 12/2026“,
+# „pomalá jazda … sa ruší“, „zrušenie pomalej jazdy“ (podstatné meno – nie „do odvolania pomalá jazda“, nie
+# „zrušenie pomalej jazdy oznámime“); budúce „ktorá sa zruší po oprave“ nie je zrušenie
+_SPEED_CANCEL = re.compile(
+    r"\b(?:rusi|zrusuje|rusime|zrusujeme|rusia|odvolava|odvolavame|odvolavaju)\s+(?:sa\s+|se\s+)?(?:\w+\s+){0,2}?"
+    + _SPEED_OBJ +
+    r"|\b" + _SPEED_OBJ + r"(?:(?!vyluk|\brov\b)[^;]){0,160}?\s(?:sa\s+|se\s+)?(?:rusi\b|zrusuje\b|odvolava\b"
+    r"|je\s+zrusen|bola\s+zrusen|bol\s+zrusen|je\s+odvolan|bola\s+odvolan|bol\s+odvolan|zrusil)"
+    r"|(?P<noun>\b(?:zrusen|odvolan|storn)\w*\s+(?:\w+\s+){0,2}?" + _SPEED_OBJ + ")")
+# oznámenie budúceho zrušenia („zrušenie pomalej jazdy oznámime telegramom“) – nie je to zrušenie
+_FUTURE_NOTICE = re.compile(r"\b(?:oznamime|oznami|oznamia|oznamene\s+bude|bude\s+oznamen\w*|budu\s+oznamen\w*|budeme"
+                            r"|zverejnime|informujeme|bude\s+nasledovat)\b")
+# veta, ktorá pomalú jazdu zavádza („zavedenie pomalej jazdy …, potom sa ruší“) – nie je zrušením
+_INTRODUCES = re.compile(r"\bzavadz\w*|\bzavedeni[eu]?\b")
+# slová novej výluky či pomalej jazdy – e-mail, ktorý ich má aj mimo vety o zrušení pomalej jazdy, je nová výluka
+_NEW_RESTRICTION = re.compile(_KIND_PATTERNS["vyluka_nova"].pattern + "|" + _KIND_PATTERNS["pomala_jazda"].pattern)
 
 # ------------------------------------------------------------------ druh obmedzenia
 _SPEED_WORDS = re.compile(r"pomal\w*\s+j[ai]zd|\bpotr\b|(?:obmedzen|omezen|znizen|snizen)\w*\s+(?:tratov\w*\s+)?rychlost"
@@ -150,6 +172,10 @@ _CLOSURE_REF_RES = [
     re.compile(r"\b(?:id|oznacenie|evidencne\s+cislo|ev\.\s*c\.)\s+(?:vyluky|obmedzenia)?\s*:?\s*" + _REF_VALUE),
     re.compile(r"\b(?:nase\s+)?c\.\s*j\.\s*:?\s*" + _REF_VALUE),
 ]
+# dokument, ktorý rušenú pomalú jazdu zaviedol: „zavedená TLG č. 37/2026“, „uvedená v POTR č. 12/2026“; dokument,
+# na základe ktorého sa niečo ruší („na základe TLG č. 50/2026“, „v zmysle telegramu …“), ním nie je
+_REF_TARGET_BEFORE = re.compile(r"(?:zaveden|uveden|vydan|oznamen)\w*(?:\s+(?:v|vo))?\s*\(?\s*$")
+_REF_AUTHORITY_BEFORE = re.compile(r"(?:na\s+zaklade|v\s+zmysle|v\s+sulade\s+s|podla)\s*\(?\s*$")
 _PATH_REF_RES = [
     re.compile(r"\b(?:id\s+trasy|cislo\s+trasy|c\.\s*trasy|id\s+poziadavky|cislo\s+poziadavky|c\.\s*poziadavky"
                r"|cislo\s+ziadosti|c\.\s*ziadosti|ziadost\w*\s+c\.|id\s+ponuky|cislo\s+ponuky|ponuk\w*\s+c\."
@@ -167,6 +193,30 @@ _OLD_PERIOD = re.compile(r"povodn|puvodn|doterajs|predchadzajuc|predosl|stary\b|
 # riadok s údajmi o dokumente či kontakte (vybavuje, telefón, podpis) – dátum v ňom nie je termínom výluky
 _DOC_LINE = re.compile(r"\b(?:vybavuj\w*|vyhotovil\w*|vypracoval\w*|spracoval\w*|schvalil\w*|podpis\w*|telefon\w*|tel\."
                        r"|mobil\w*|e-mail|fax|kontakt\w*)")
+# dátum v novom texte odpovede, ktorý nie je termínom: zmienka o oznámení, prijatí či odoslaní („ako bolo oznámené
+# 30.10.2026“, „prijaté 2.11.2026“), dátum za pozdravom (podpis); termín má pri sebe slová termínu výluky
+_MENTION_BEFORE = re.compile(r"\b(?:oznamen|oznamil|prijat|prijal|dorucen|odoslan|zaslan|poslan|napisal|zverejnen"
+                             r"|uverejnen|informoval|vybaven|potvrden)\w*\s*(?:dna\s+|dne\s+|zo\s+dna\s+)?$")
+_CLOSING = re.compile(r"\bs\s+(?:pozdravom|pozdravem|uctou|pranim)\b|\bdakujem\b|\bdekuji\b|\b(?:best|kind)\s+regards\b"
+                      r"|\bregards\b|\bmit\s+freundlichen\b")
+_TERM_CONTEXT = re.compile(r"vyluk|termin|presuv|presun|posuv|posun|meni|zmen|plati|nekona|kona|\bod\b|\bdo\b|\bdna\b"
+                           r"|\bdne\b|v\s+case|\bnoc|\bhod\b|obmedzen|pomal\w*\s+jazd|potr\b|\brov\b")
+
+
+def _reply_term(f: str, t: datumy.Temporal, pers: list[Period], floor: int) -> bool:
+    """Dátum ``t`` v novom texte odpovede je termínom (patrí k obdobiu alebo je pri ňom slovo termínu) – nie dátum
+    vydania, oznámenia či prijatia ani dátum v podpise."""
+    if any(p.pos <= t.start < p.end_pos for p in pers):
+        return True
+    ls = f.rfind("\n", 0, t.start) + 1
+    le = f.find("\n", t.end)
+    le = len(f) if le == -1 else le
+    if datumy.not_term_date(f, t, floor) or _DOC_LINE.search(f, ls, le) or \
+            _MENTION_BEFORE.search(f, max(floor, t.start - 30), t.start) or _CLOSING.search(f, floor, t.start):
+        return False
+    return bool(_TERM_CONTEXT.search(f, ls, le))
+
+
 # holé čísla dní pred dátumom, ktoré sa nepodarilo prečítať („v dňoch 3, 4 a 5.11.“, „5. a 3.11.“): aspoň dve
 # čísla, alebo jedno so spojkou „a“ (nie „Rozkaz č. 5, 12.11.“)
 _LOOSE_DAYS = re.compile(r"(?<![\d.,/:])(?<!c\.\s)(?<!c\.)\d{1,2}\.?(?:(?:\s*(?:,|;|\+|&|a|aj)\s*\d{1,2}\.?)+"
@@ -200,6 +250,14 @@ def _iso(local_dt: Optional[datetime]) -> Optional[str]:
     return local_naive_to_utc(local_dt).isoformat()
 
 
+def _from_iso(value: Optional[str]) -> Optional[datetime]:
+    """Čas ISO z :func:`_iso` späť na datetime (UTC); neplatný → None."""
+    try:
+        return datetime.fromisoformat(str(value)) if value else None
+    except ValueError:
+        return None
+
+
 def _lines(text: str, start: int = 0, end: Optional[int] = None) -> list[tuple[int, int]]:
     end = len(text) if end is None else end
     out, pos = [], start
@@ -212,6 +270,50 @@ def _lines(text: str, start: int = 0, end: Optional[int] = None) -> list[tuple[i
         out.append((pos, nl))
         pos = nl + 1
     return out
+
+
+def _blank(text: str, spans: list[tuple[int, int]]) -> str:
+    """Text s medzerami namiesto znakov v ``spans`` (dĺžka a konce riadkov ostávajú)."""
+    chars = list(text)
+    for s, e in spans:
+        for i in range(max(0, s), min(len(chars), e)):
+            if chars[i] != "\n":
+                chars[i] = " "
+    return "".join(chars)
+
+
+# koniec vety: „.“, „!“, „?“ pred veľkým písmenom – nie za skratkou („v žst. Kraľovany“, „č. 5“); nový riadok len
+# vtedy, keď riadok končí interpunkciou, ďalší riadok začína veľkým písmenom či odrážkou alebo je prázdny (zalomený
+# riadok pokračuje tou istou vetou)
+_SENTENCE_END = re.compile(r"\n|[.!?](?=[ \t]+\S)")
+_ABBREV_END = re.compile(r"(?:^|[^a-z])(?:zst|st|c|tel|napr|resp|hod|tzv|cca|ing|mgr|odb|vyh|zast|zel|ul|min|max|km)$")
+
+
+def _sentence_spans(text: str, f: str, start: int, end: int) -> list[tuple[int, int]]:
+    """Vety v ``text[start:end]`` (``f`` je zložený text rovnakej dĺžky) ako (začiatok, koniec)."""
+    out, s = [], start
+    for m in _SENTENCE_END.finditer(f, start, end):
+        nxt = text[m.end():end].lstrip(" \t")[:1]
+        if m.group(0) != "\n":
+            if not nxt.isupper() or _ABBREV_END.search(f[max(start, m.start() - 6):m.start()]):
+                continue
+        elif nxt and nxt != "\n" and not nxt.isupper() and nxt not in "-•*>" and \
+                not f[s:m.start()].rstrip().endswith((".", "!", "?", ":", ";")) and f[s:m.start()].strip():
+            continue
+        if f[s:m.start()].strip():
+            out.append((s, m.start() + (0 if m.group(0) == "\n" else 1)))
+        s = m.end()
+    if f[s:end].strip():
+        out.append((s, end))
+    return out
+
+
+def _clause_span(f: str, sentence: tuple[int, int], pos: int) -> tuple[int, int]:
+    """Časť vety ``sentence`` medzi čiarkami či bodkočiarkami, v ktorej je pozícia ``pos``."""
+    s, e = sentence
+    a = max(f.rfind(",", s, pos), f.rfind(";", s, pos))
+    b = min([x for x in (f.find(",", pos, e), f.find(";", pos, e)) if x != -1] or [e])
+    return (a + 1 if a != -1 else s), b
 
 
 def _flag_notes(p: Optional[Period]) -> list[str]:
@@ -230,6 +332,9 @@ def _flag_notes(p: Optional[Period]) -> list[str]:
         notes.append("Čas začiatku nie je uvedený – predpokladá sa 00:00.")
     if "denne" in p.flags:
         notes.append(f"Opakuje sa denne {p.daily_from} – {p.daily_to}.")
+    if "zle_poradie" in p.flags:
+        notes.append("Dni v zozname nie sú v chronologickom poradí – rok je doplnený podľa ďalšieho dátumu, "
+                     "overte termín.")
     return notes
 
 
@@ -246,12 +351,45 @@ class _Ctx:
         self.f = fold(self.text)
         self.subject_f = self.f[: self.subject_end]
         self.ref: date = doc.ref_date()
-        self.toks = datumy.scan(self.f, self.ref)
-        self.periods = datumy.periods(self.f, self.toks)
+        # odpoveď s citovanou pôvodnou správou: termíny (dátumy, časy) sa berú len z nového textu – citácia ostáva
+        # len súvislosťou (úsek, číslo výluky); ``fq`` je text s vymazanou citáciou
+        self.quotes: list[tuple[int, int]] = []
+        self.quoted_terms = False
+        self.fq = self._without_quotes(doc)
+        self.toks = datumy.scan(self.fq, self.ref)
+        self.periods = datumy.periods(self.fq, self.toks)
         self.st = stations()
         self.blocks = self._blocks()
         self.tables = self._tables()
         self._sec_cache: dict = {}
+        # vety, ktoré rušia pomalú jazdu či POTR (určí klasifikácia); ``speed_cancel`` – celý e-mail je takéto zrušenie
+        self.cancels: list[tuple[int, int]] = []
+        self.speed_cancel = False
+
+    def _without_quotes(self, doc: MailDocument) -> str:
+        """Text bez citovanej pôvodnej správy (pozície ostávajú), ak má nový text odpovede vlastný termín; inak
+        celý text (citácia je jediný zdroj termínu, napr. „Potvrdzujeme.“ nad citovaným ROV). Dátum, ktorý termínom
+        nie je („ako bolo oznámené 30.10.2026“, „zo dňa 2.11.2026“, „prijaté 2.11.2026“, dátum v podpise), citáciu
+        nevymaže."""
+        body_start = self.subject_end + 2
+        body_end = min(len(self.f), body_start + len(clean_text(doc.body).strip()))
+        spans = reply_quote_spans(doc.subject, self.f, body_start, body_end)
+        if not spans:
+            return self.f
+        blanked = _blank(self.f, spans)
+        toks = datumy.scan(blanked, self.ref)
+        pers = datumy.periods(blanked, toks)
+        if not any(t.kind in ("date", "datetime") and body_start <= t.start < body_end
+                   and _reply_term(blanked, t, pers, body_start) for t in toks):
+            return self.f
+        self.quotes = spans
+        self.quoted_terms = any(any(s <= t.start < e for s, e in spans) for t in datumy.scan(self.f, self.ref))
+        if is_reply_subject(doc.subject):
+            blanked = _blank(blanked, [(0, self.subject_end)])    # predmet „RE:“ je predmet pôvodnej správy
+        return blanked
+
+    def in_quote(self, pos: int) -> bool:
+        return any(s <= pos < e for s, e in self.quotes)
 
     # -------------------------------------------------------------- členenie textu
     def _blocks(self) -> list[tuple[int, int]]:
@@ -287,6 +425,9 @@ class _Ctx:
 
         for s, e in _lines(self.text, self.subject_end + 1):
             line = self.text[s:e]
+            if self.in_quote(s):          # tabuľka v citovanej pôvodnej správe nie je nový termín
+                flush()
+                continue
             if line.count("\t") >= 2:
                 cells = [c.strip() for c in line.split("\t")]
             elif line.count(";") >= 2 and len(line) < 400:
@@ -405,16 +546,38 @@ class _Ctx:
         return found
 
     # -------------------------------------------------------------- drobné polia
-    def first_group(self, patterns: list[re.Pattern], start: int, end: int) -> Optional[str]:
+    def first_group(self, patterns: list[re.Pattern], start: int, end: int,
+                    skip: list[tuple[int, int]] = ()) -> Optional[str]:
+        """Prvá hodnota skupiny 1 niektorého vzoru v ``[start, end)`` (mimo úsekov ``skip``)."""
         best = None
         for pat in patterns:
             for m in pat.finditer(self.f, start, end):
+                if any(s <= m.start() < e for s, e in skip):
+                    continue
                 if best is None or m.start(1) < best[0]:
                     best = (m.start(1), m.end(1))
                 break
         if not best:
             return None
         return self.text[best[0]:best[1]].rstrip(".,;)")
+
+    def speed_ref(self, start: int, end: int) -> Optional[str]:
+        """Číslo rušenej pomalej jazdy: dokument, ktorý ju zaviedol („zavedená TLG č. 37/2026“), alebo jej vlastné
+        číslo („POTR č. 12/2026“, „č. pomalej jazdy 5/2026“) – nie číslo telegramu, ktorý ju ruší, ani dokumentu,
+        na základe ktorého sa ruší („na základe TLG č. 50/2026“)."""
+        best = None
+        for i, pat in enumerate(_CLOSURE_REF_RES):
+            for m in pat.finditer(self.f, start, end):
+                before = self.f[max(start, m.start() - 30):m.start()]
+                if _REF_AUTHORITY_BEFORE.search(before):
+                    continue
+                attached = bool(_REF_TARGET_BEFORE.search(before))
+                own = i == 4 or (i == 2 and bool(re.search(r"potr|pomal|obmedzen", m.group(0))))
+                if attached or own:
+                    key = (0 if attached else 1, m.start(1))
+                    if best is None or key < best[0]:
+                        best = (key, m.start(1), m.end(1))
+        return self.text[best[1]:best[2]].rstrip(".,;)") if best else None
 
     def line_of(self, pos: int) -> str:
         s = self.text.rfind("\n", 0, pos) + 1
@@ -430,8 +593,8 @@ class _Ctx:
             out.append((num, cat.capitalize() if cat else None, m.start(), m.end()))
         return out
 
-    def speed(self, start: int, end: int) -> Optional[int]:
-        for m in _SPEED_RE.finditer(self.f, start, end):
+    def speed(self, start: int, end: int, f: Optional[str] = None) -> Optional[int]:
+        for m in _SPEED_RE.finditer(f or self.f, start, end):
             v = int(m.group(1))
             if 5 <= v <= 160:
                 return v
@@ -535,6 +698,9 @@ class RuleExtractor:
                 it.notes.append("Druh e-mailu je určený len z textu (nie z predmetu).")
             if hint and family in ("vyluka", "mimoriadnost"):
                 it.notes.append("Zdroj: telegram / správa kontrolného dispečera ŽSR (neplánovaná zmena).")
+            if c.quoted_terms:
+                it.notes.append("Odpoveď s citovanou pôvodnou správou – termín je len z nového textu; citácia slúži "
+                                "len na úsek a číslo výluky.")
             it.data = normalize_data(it.kind, it.data)
         return items
 
@@ -559,10 +725,18 @@ class RuleExtractor:
             for k in ("vyluka_zrusenie", "vyluka_zmena"):
                 if k in subj:
                     return best_fam, k, scores
+            # zrušenie pomalej jazdy / POTR je zrušením celého e-mailu, len ak e-mail inde neohlasuje novú výluku
+            # či pomalú jazdu s termínom – inak by sa nová výluka stratila (zrušenie je potom ďalšia udalosť)
+            c.cancels = [] if c.tables else _speed_cancels(c)
+            sole = bool(c.cancels) and not _new_restriction_outside(c, c.cancels)
+            if sole and any(s < c.subject_end for s, _ in c.cancels):
+                return best_fam, self._speed_cancel_kind(c, scores), scores
             if not c.tables:   # súborný prehľad (tabuľka) môže spomínať zmeny aj zrušenia – berie sa ako nové
                 for k in ("vyluka_zrusenie", "vyluka_zmena"):
                     if scores.get(k, 0) >= 1:
                         return best_fam, k, scores
+            if sole:
+                return best_fam, self._speed_cancel_kind(c, scores), scores
             if scores.get("pomala_jazda", 0) > scores.get("vyluka_nova", 0) or \
                     ("pomala_jazda" in subj and "vyluka_nova" not in subj):
                 return best_fam, "pomala_jazda", scores
@@ -574,6 +748,15 @@ class RuleExtractor:
                     return best_fam, k, scores
             return best_fam, max(kinds, key=lambda k: (scores.get(k, 0), -kinds.index(k))), scores
         return best_fam, kinds[0], scores
+
+    @staticmethod
+    def _speed_cancel_kind(c: _Ctx, scores: dict) -> str:
+        """E-mail je zrušením pomalej jazdy či POTR (číslo rušeného dokumentu hľadá :meth:`_Ctx.speed_ref`)."""
+        c.speed_cancel = True
+        in_subject = sum(1 for s, _ in c.cancels if s < c.subject_end)
+        scores["vyluka_zrusenie"] = max(scores.get("vyluka_zrusenie", 0),
+                                        3 * in_subject + min(3, len(c.cancels) - in_subject))
+        return "vyluka_zrusenie"
 
     # -------------------------------------------------------------- výluky a pomalé jazdy
     def _closures(self, c: _Ctx, kind: str) -> list[ExtractedItem]:
@@ -589,7 +772,32 @@ class RuleExtractor:
         if not items:
             items.append(self._closure_item(c, kind, None, c.periods[0] if c.periods else None,
                                             (0, len(c.text)), True))
-        return _dedupe(items)
+        items = _dedupe(items)
+        if kind != "vyluka_zrusenie" and c.cancels:
+            items += self._secondary_speed_cancels(c, items)
+        return items
+
+    def _secondary_speed_cancels(self, c: _Ctx, items: list[ExtractedItem]) -> list[ExtractedItem]:
+        """Zrušenie pomalej jazdy (POTR) v e-maile, ktorý ohlasuje novú výluku či pomalú jazdu: s číslom rušeného
+        dokumentu je to ďalšia udalosť (zrušenie vždy potvrdzuje dispečer), bez čísla len upozornenie pri výluke."""
+        out: list[ExtractedItem] = []
+        for s, e in c.cancels:
+            sentence = one_line(c.text[s:e], 160)
+            ref = c.speed_ref(s, e)
+            if not ref:
+                for it in items:
+                    it.notes.append(f"E-mail ruší aj pomalú jazdu („{sentence}“), jej číslo sa nenašlo – overte ju a "
+                                    "zrušte v registri výluk ručne.")
+                continue
+            secs = [x for x in c.sections(s, e) if not x.line_desc]
+            pers = [p for p in c.periods if s <= p.pos < e]
+            data = {"external_ref": ref, "from_station": secs[0].a.text if secs else None,
+                    "to_station": secs[0].b.text if secs else None, "start": _iso(pers[0].start) if pers else None}
+            notes = ["Zrušenie pomalej jazdy uvedené v e-maile spolu s novou výlukou či pomalou jazdou – overte, ktorú "
+                     "pomalú jazdu ruší a odkedy."]
+            out.append(ExtractedItem("vyluka_zrusenie", data, _confidence(2, 2, 0.05), notes, {"external_ref": 0.8},
+                                     {"zrusenie": sentence}))
+        return out
 
     def _pair_sections(self, c: _Ctx, kind: str, fallback: bool = True
                        ) -> list[tuple[Optional[Section], Optional[Period], tuple[int, int]]]:
@@ -646,8 +854,11 @@ class RuleExtractor:
     def _closure_item(self, c: _Ctx, kind: str, sec: Optional[Section], per: Optional[Period],
                       span: tuple[int, int], single: bool) -> ExtractedItem:
         bs, be = (0, len(c.text)) if single else span
-        ctx_f = c.f[bs:be] if not single else c.f
-        rkind, assumed = restriction_kind(ctx_f if not single else c.f[c.subject_end:] + " " + c.subject_f)
+        # nová výluka v e-maile, ktorý ruší aj pomalú jazdu: vety o zrušení sa do druhu, rýchlosti ani čísla nerátajú
+        skip = c.cancels if kind != "vyluka_zrusenie" else []
+        f = _blank(c.f, skip) if skip else c.f
+        ctx_f = f[bs:be] if not single else f
+        rkind, assumed = restriction_kind(ctx_f if not single else f[c.subject_end:] + " " + f[:c.subject_end])
         item_kind = kind
         if kind == "vyluka_nova" and rkind == "pomala_jazda":
             item_kind = "pomala_jazda"
@@ -685,6 +896,8 @@ class RuleExtractor:
             notes += _flag_notes(per)
             if "rok_doplneny" in per.flags:
                 penalties += 0.03
+            if "zle_poradie" in per.flags:
+                penalties += 0.1
             fc["start"] = 0.85
             fc["end"] = 0.85 if per.end else 0.0
             ev["obdobie"] = c.line_of(per.pos)
@@ -700,14 +913,19 @@ class RuleExtractor:
                 notes.append("V texte je dátum " + ", ".join(f"„{x}“" for x in loose_days[:3]) +
                              ", ktorý sa nepodarilo priradiť k obdobiu – overte termín.")
         a, b = (bs, be) if not single else (0, len(c.text))
-        ref = c.first_group(_CLOSURE_REF_RES, a, b) or (c.first_group(_CLOSURE_REF_RES, 0, len(c.text))
-                                                        if item_kind in ("vyluka_zmena", "vyluka_zrusenie") else None)
+        # zrušenie pomalej jazdy: číslo rušeného dokumentu („ruší sa pomalá jazda zavedená TLG č. 37/2026“,
+        # „Odvolávame POTR č. 12/2026“), nie číslo telegramu, ktorý ju ruší
+        ref = (c.speed_ref(a, b) or c.speed_ref(0, len(c.text))) if item_kind == "vyluka_zrusenie" and \
+            c.speed_cancel else None
+        ref = ref or c.first_group(_CLOSURE_REF_RES, a, b, skip) or (
+            c.first_group(_CLOSURE_REF_RES, 0, len(c.text), skip) if item_kind in ("vyluka_zmena", "vyluka_zrusenie")
+            else None)
         if ref:
             data["external_ref"] = ref
         data["line_ref"] = c.line_ref(a, b)
         data["track"] = c.track(a, b)
         if item_kind == "pomala_jazda" or rkind == "pomala_jazda":
-            data["speed_kmh"] = c.speed(a, b)
+            data["speed_kmh"] = c.speed(a, b, f)
         reason = c.reason(a, b)
         if reason:
             data["note"] = reason
@@ -972,35 +1190,81 @@ class RuleExtractor:
             fc["from_station"] = fc["to_station"] = 0.8
             ev["usek"] = c.line_of(secs[0].start)
         else:
-            m = re.search(r"\bv\s+(?:zst\.?|z\.\s?st\.|zel\.\s?st\.|stanici|zelezničnej stanici|dopravni|zastavke)\s+",
-                          c.f)
-            if m:
-                st = c.st.prefix(tokens(c.text[m.end():m.end() + 80], m.end()), c.text)
-                if st:
-                    data["from_station"] = data["to_station"] = st.text
-                    fc["from_station"] = fc["to_station"] = 0.75
-                    notes.append("Mimoriadnosť v stanici – úsek je len táto dopravňa.")
-        end_m = _END_LABEL.search(c.f, c.subject_end)
+            st = _station_place(c)
+            if st:
+                data["from_station"] = data["to_station"] = st.text
+                fc["from_station"] = fc["to_station"] = 0.75
+                ev["usek"] = c.line_of(st.start)
+                notes.append("Mimoriadnosť v stanici – úsek je len táto dopravňa.")
+        end_notice = _incident_end_match(c)
+        if end_notice is not None:
+            return self._incident_end(c, data, fc, ev, end_notice)
+        end_m = _END_LABEL.search(c.fq, c.subject_end)
+
+        def estimate(t: datumy.Temporal) -> bool:     # čas predpokladaného konca („predpokladané obnovenie … o 9:00“)
+            return bool(end_m) and end_m.start() <= t.start <= end_m.end() + 60
+
+        # obdobie „od … do …“ (mimoriadnosť nie je do odvolania) – len z vety o mimoriadnosti, nie okno náhradnej
+        # dopravy či kontaktu na dispečera („Náhradná autobusová doprava od 6:00 do 22:00“)
+        sentences = _sentence_spans(c.text, c.fq, c.subject_end, len(c.text))
+        pers = [p for p in c.periods if p.pos >= c.subject_end and not c.in_table(p.pos) and not c.is_old_period(p)
+                and _incident_clause(c, sentences, p.pos)] or [p for p in c.periods if p.pos < c.subject_end]
         start_tok = None
-        for t in c.toks:
-            if t.start >= c.subject_end and t.kind == "datetime" and not (end_m and t.start >= end_m.start()
-                                                                           and t.start <= end_m.end() + 60):
-                start_tok = t
-                break
-        if start_tok is not None:
-            data["start"] = _iso(start_tok.dt)
-            fc["start"] = 0.8
-            ev["zaciatok"] = c.line_of(start_tok.start)
-        if end_m:
-            got = datumy.first_datetime_after(c.f, c.toks, end_m.end(), 80,
-                                              fallback_day=start_tok.day if start_tok else None)
+        if pers:
+            start_dt = min(p.start for p in pers)
+            spans = [(p.pos, p.end_pos) for p in pers]
+            # uvedený skorší začiatok mimo obdobia („od 02.11.2026 04:30 …, neprejazdná v čase 6:00 – 13:00“) –
+            # začiatok nie je neskorší (prísnejší prípad)
+            early = [t.dt for t in c.toks if t.kind == "datetime" and t.start >= c.subject_end and not estimate(t)
+                     and not any(a <= t.start < b for a, b in spans) and _incident_clause(c, sentences, t.start)
+                     and t.dt < start_dt]
+            start_dt = min(early + [start_dt])
+            data["start"] = _iso(start_dt)
+            fc["start"] = 0.85
+            ev["zaciatok"] = c.line_of(pers[0].pos)
+            if all(p.end is not None for p in pers):
+                data["end"] = _iso(max(p.end for p in pers))
+                fc["end"] = 0.85
+                ev["obdobie"] = c.line_of(pers[0].pos)
+            for p in pers:
+                notes += [n for n in _flag_notes(p) if n not in notes]
+            if any("rok_doplneny" in p.flags for p in pers):
+                penalties += 0.03
+            if any("zle_poradie" in p.flags for p in pers):
+                penalties += 0.1
+        else:
+            cands = [t for t in c.toks if t.start >= c.subject_end and t.kind == "datetime" and not estimate(t)]
+            start_tok = next((t for t in cands if _incident_clause(c, sentences, t.start)), None) or \
+                next(iter(cands), None)
+            if start_tok is not None:
+                data["start"] = _iso(start_tok.dt)
+                fc["start"] = 0.8
+                ev["zaciatok"] = c.line_of(start_tok.start)
+        if end_m and not (pers and not data.get("end")):
+            got = datumy.first_datetime_after(c.fq, c.toks, end_m.end(), 80,
+                                              fallback_day=start_tok.day if start_tok else (
+                                                  pers[0].start.date() if pers else None))
             if got:
                 end_dt = got[0]
-                if start_tok is not None and end_dt <= start_tok.dt:
+                start_dt = start_tok.dt if start_tok is not None else (min(p.start for p in pers) if pers else None)
+                if start_dt is not None and end_dt <= start_dt:
                     end_dt += timedelta(days=1)
-                data["end"] = _iso(end_dt)
-                fc["end"] = 0.7
-                notes.append("Koniec je predpokladaný (odhad ŽSR), nie záväzný.")
+                known = _from_iso(data.get("end"))
+                if known is None or local_naive_to_utc(end_dt) > known:   # predpokladaný neskorší koniec – prísnejší
+                    data["end"] = _iso(end_dt)
+                    fc["end"] = 0.7
+                    notes.append("Koniec je predpokladaný (odhad ŽSR), nie záväzný.")
+        if not data.get("end") and not re.search(r"do\s+odvolani", c.fq):
+            # bez konca platí mimoriadnosť do odvolania – čas, ktorý sa nepriradil (aj okno, ktoré nepatrí
+            # k mimoriadnosti, napr. náhradná doprava), môže byť neprečítaný koniec
+            spans = [(p.pos, p.end_pos) for p in pers]
+            loose = [one_line(c.text[t.start:t.end], 40) for t in c.toks
+                     if t.kind in ("time", "datetime") and t.start >= c.subject_end and t is not start_tok
+                     and not any(a <= t.start and t.end <= b for a, b in spans)]
+            if loose:
+                penalties += 0.1
+                notes.append("V texte je čas " + ", ".join(f"„{x}“" for x in loose[:3]) + ", ktorý sa nepodarilo "
+                             "priradiť – koniec mimoriadnosti nie je určený (platí do odvolania), overte koniec.")
         desc = _incident_sentence(c)
         if desc:
             data["description"] = desc
@@ -1009,6 +1273,57 @@ class RuleExtractor:
         if not data.get("from_station"):
             notes.append("Miesto mimoriadnosti (úsek alebo stanica) sa nenašlo.")
         return [ExtractedItem("mimoriadnost", data, _confidence(found, 3, penalties), notes, fc, ev)]
+
+    def _incident_end(self, c: _Ctx, place: dict, fc: dict, ev: dict, m: re.Match) -> list[ExtractedItem]:
+        """Oznámenie o skončení mimoriadnosti („prevádzka je obnovená“) nie je nová mimoriadnosť – do registra výluk
+        sa nič nezapíše (ani záznam „navrh“ do odvolania) a čaká vo fronte ako „iné“ s vysvetlením. Mimoriadnosť
+        v registri sa automaticky neruší: oznámenie nemá číslo a podľa úseku by sa mohla zrušiť iná výluka (napr.
+        plánovaná výluka na tom istom úseku) – ukončí ju dispečer. Obmedzenie rýchlosti po obnovení prevádzky
+        („rýchlosť obmedzená na 30 km/h“) je samostatná pomalá jazda."""
+        body_dates = [t for t in c.toks if t.start >= c.subject_end and t.day]
+        # čas obnovenia – nie koniec obmedzenia za ním („… s obmedzením rýchlosti na 40 km/h do 18:00“)
+        toks = [t for t in c.toks if not re.search(r"\bdo\s*$", c.fq[max(0, t.start - 4):t.start])]
+        got = datumy.first_datetime_after(c.fq, toks, m.start(), 400,
+                                          fallback_day=body_dates[0].day if body_dates else c.ref)
+        if got is None:
+            first = next((t for t in c.toks if t.start >= c.subject_end and t.kind == "datetime"), None)
+            got = (first.dt, first) if first is not None else None
+        reopen = got[0] if got else None
+        sec = {k: place.get(k) for k in ("from_station", "to_station")}
+        a, b = sec.get("from_station"), sec.get("to_station")
+        where = (f" v dopravni {a}" if a == b else f" v úseku {a} – {b}") if a else ""
+        notes = [f"Oznámenie o skončení mimoriadnosti{where} (prevádzka obnovená" +
+                 (f" od {reopen:%d.%m.%Y %H:%M}" if reopen else "") + ") – nie je to nová mimoriadnosť a do registra "
+                 "výluk sa nezapisuje. Ak ŽSR mimoriadnosť ukončila, ukončite ju v registri výluk ručne: automaticky "
+                 "sa nezruší, lebo oznámenie nemá číslo a podľa úseku by sa mohla zrušiť iná výluka."]
+        evidence = {**ev, "skoncenie_mimoriadnosti": c.line_of(m.start())}
+        if got:
+            evidence["obnovenie"] = c.line_of(got[1].start)
+        items = [ExtractedItem("ine", {}, 0.5, notes, {}, evidence)]
+        if _SPEED_AFTER.search(c.fq, c.subject_end) and c.speed(c.subject_end, len(c.text)):
+            items.append(self._speed_after_incident(c, sec, reopen, fc, ev))
+        return items
+
+    def _speed_after_incident(self, c: _Ctx, sec: dict, reopen: Optional[datetime], fc: dict,
+                              ev: dict) -> ExtractedItem:
+        """Pomalá jazda po obnovení prevádzky (od obnovenia; do odvolania, ak nie je uvedený koniec)."""
+        notes = ["Obmedzenie rýchlosti po skončení mimoriadnosti – zapisuje sa ako pomalá jazda."]
+        pers = [p for p in c.periods if p.pos >= c.subject_end and p.end is not None]
+        data: dict = {"kind": "pomala_jazda", **sec, "start": _iso(reopen) if reopen else None,
+                      "speed_kmh": c.speed(c.subject_end, len(c.text))}
+        if pers:
+            data["start"] = data["start"] or _iso(pers[0].start)
+            data["end"] = _iso(max(p.end for p in pers))
+        elif re.search(r"do\s+odvolani", c.fq):
+            data["until_revoked"] = True
+            notes.append("Platí do odvolania – koniec nie je určený.")
+        required = ["from_station", "to_station", "start", "end", "speed_kmh"]
+        found = sum(1 for k in required if data.get(k)) + (0.5 if data.get("until_revoked") else 0)
+        missing = [k for k in required if not data.get(k) and not (k == "end" and data.get("until_revoked"))]
+        if missing:
+            notes.append("Chýbajú polia: " + ", ".join(missing) + ".")
+        return ExtractedItem("pomala_jazda", data, _confidence(found, len(required)), notes,
+                             {k: v for k, v in fc.items() if k in sec}, dict(ev))
 
     # -------------------------------------------------------------- objednávka
     def _order(self, c: _Ctx, kind: str) -> list[ExtractedItem]:
@@ -1321,6 +1636,138 @@ _END_LABEL = re.compile(
     r"|odstranenie\s+(?:poruchy|nasledkov)\s+(?:sa\s+)?predpoklad\w*")
 _INCIDENT_WORDS = re.compile(r"mimoriadn|mimoradn|porucha|poruchy|poruchu|nehod|neprejazd|nesjizd|vykolaj|vykolej|"
                              r"zrazk|prerusen|preruseni|pretrhnut|lom\s+kolajnice|poskoden")
+# mimoriadnosť v jednej dopravni: „v (železničnej) stanici X“, „v žst. X“, „v ŽST X“, „v obvode stanice X“,
+# „v dopravni X“, „v zastávke X“ (česky „ve stanici X“, „v železniční stanici X“)
+_STATION_PLACE = re.compile(r"\bv[eo]?\s+(?:obvode\s+|obvodu\s+)?(?:(?:zeleznicn\w*\s+)?(?:stanici|stanice|dopravni"
+                            r"|dopravne|zastavke|zastavky)|zst\b\.?|z\.\s?st\.|zel\.\s?st\.|zel\.\s+stanici)\s*")
+# oznámenie o skončení mimoriadnosti (nie nová mimoriadnosť): „ukončenie mimoriadnej udalosti“, „mimoriadna udalosť
+# bola ukončená“, „prevádzka je obnovená“, „obe koľaje sú zjazdné“, „porucha bola odstránená“, „trakčné vedenie je
+# opäť pod napätím“; záporná veta („prevádzka nebola obnovená“, „zatiaľ nie je obnovená“) skončením nie je
+_INCIDENT_END = re.compile(
+    r"\bukoncen\w*\s+(?:\w+\s+){0,2}?(?:mimoriadn|mimoradn|prerusen\w*\s+(?:prevadzk|doprav|provoz))"
+    r"|\b(?:mimoriadn|mimoradn)\w*(?:\s+udalost\w*)?(?:\s+\S+){0,8}?\s+(?:je|bola|byla|bol|byl)\s+ukoncen"
+    r"|\b(?:je|su|bola|boli|bol|byla|byly|byl|bylo|jsou)\s+(?:opat\s+|znovu\s+|uz\s+)?"
+    r"(?:obnoven(?:a|y|e|o)?|zjazdn\w*|prejazdn\w*|sjizdn\w*|sprejazdnen\w*|uvolnen\w*|pod\s+napatim)\b"
+    r"|\b(?:prevadzk|doprav|provoz|premavk)\w*(?:\s+\S+){0,10}?\s+obnoven(?:a|y|e|o)\b"
+    r"|\b(?:porucha|poruchu|poruchy|nehoda|nehodu|prekazka|prekazku|nasledky|zavada|zavadu)\b(?:\s+\S+){0,4}?\s+"
+    r"(?:je|bola|boli|bol|byla|byly|byl)\s+(?:uz\s+)?odstranen"
+    r"|\bprerusen\w*(?:\s+\S+){0,8}?\s+(?:je|bolo|bola|bol|bylo|byla|byl)\s+(?:uz\s+)?ukoncen")
+_NEGATION = re.compile(r"\b(?:nie|nebol\w*|nebyl\w*|neni|nejsou|nebude|nebudu)\b")
+# … ale mimoriadnosť ešte trvá (predpokladaný či budúci koniec, prerušená či vylúčená doprava, vypnuté trakčné
+# vedenie, odklon, náhradná doprava, len jedna koľaj či len niektoré vlaky, obnovenie s obmedzením) – vtedy je to
+# mimoriadnosť (prísnejší prípad); „ukončenie prerušenia dopravy“ sa za trvanie nepočíta a meškanie vlakov
+# („predpokladané meškanie 20 minút“, „odhad 15 min“) tiež nie
+_INCIDENT_ONGOING = re.compile(
+    r"(?:predpoklad|ocakav|ocekav|odhad)\w*(?:\s+[^\s,;]+){0,3}?\s+(?:obnoven|ukoncen|odstranen|sprejazdnen|uvolnen"
+    r"|zprovozn|koniec|konec|zjazdn|prejazdn|sjizdn)"
+    r"|(?:obnoveni|ukonceni|odstraneni|sprejazdneni|uvolneni|zprovozneni)\w*(?:\s+[^\s,;]+){0,3}?\s+(?:sa\s+|se\s+)?"
+    r"(?:predpoklad|ocakav|ocekav|odhad)"
+    r"|\b(?:bude|budu)\s+(?:\w+\s+){0,2}?(?:obnoven|sprejazdnen|zjazdn|prejazdn|uvolnen|ukoncen|odstranen)"
+    r"|(?:prerusen|neprejazdn|nezjazdn|nesjizdn|uzavret|uzavren|uzatvoren|zatvoren|vylucen|zablokovan|zastaven)"
+    r"|vypnut|bez\s+napati|beznapat|nefunkcn|mimo\s+prevadzk|obmedzen\w*\s+(?:prevadzk|doprav)|odklon|odklan"
+    r"|nahradn\w*\s+(?:autobusov\w*\s+)?doprav|\bnad\b|motorov"
+    r"|\b(?:len|iba|jen|pouze)\s+(?:po|pre|pro)\b|jednokol[ae]j|po\s+jednej\s+kol[ae]j"
+    r"|po\s+\d\.\s*(?:tratov\w*\s+|stanicn\w*\s+|hlavn\w*\s+)?kol[ae]j|\b\d\.\s*(?:tratov\w*\s+|stanicn\w*\s+"
+    r"|hlavn\w*\s+)?kol[ae]j\w*\s+(?:je|bola|bol)\b|kol[ae]j\w*\s+c\.\s*\d+\w?\s+(?:je|bola|bol)\b"
+    r"|kol[ae]j\w*\s+(?:je\s+|su\s+)?obsaden|s\s+obmedzen\w*\b(?!\s+(?:tratov\w*\s+)?rychlost)|privolavac")
+# mimoriadnosť ešte trvá: „Mimoriadnosť v ŽST Kraľovany trvá.“ (nie „pomalá jazda trvá do odvolania“)
+_INCIDENT_CONTINUES = re.compile(r"\b(?:trva|trvaju|pretrvava|pretrvavaju)\b")
+# skončenie prerušenia („ukončenie prerušenia dopravy“, „prerušenie dopravy … je ukončené“) nie je trvanie
+_INCIDENT_END_PHRASE = re.compile(r"\bukoncen\w*\s+(?:\w+\s+){0,2}?(?:mimoriadn|mimoradn|prerusen)\w*"
+                                  r"|\bprerusen\w*(?:\s+\S+){0,8}?\s+(?:je|bolo|bola|bol|bylo|byla|byl)\s+(?:uz\s+)?"
+                                  r"ukoncen\w*")
+# obmedzenie rýchlosti po obnovení prevádzky („rýchlosť cez stanicu obmedzená na 30 km/h“)
+_SPEED_AFTER = re.compile(_SPEED_WORDS.pattern + r"|rychlost\w*(?:\s+\S+){0,4}?\s+(?:obmedzen|omezen|znizen|snizen)"
+                          r"|\d{1,3}\s?km\s?/\s?h")
+
+
+def _incident_end_match(c: _Ctx) -> Optional[re.Match]:
+    """Oznámenie o skončení mimoriadnosti (prvá nezáporná zmienka) – None, ak ho niet alebo text ukazuje, že
+    mimoriadnosť ešte trvá. Posudzuje sa po vetách: zápor v tej istej časti vety („prevádzka zatiaľ nie je
+    obnovená“) zmienku ruší a sám znamená trvanie."""
+    found = None
+    ongoing = False
+    for s, e in [(0, c.subject_end)] + _sentence_spans(c.text, c.fq, c.subject_end, len(c.text)):
+        for m in _INCIDENT_END.finditer(c.fq, s, e):
+            a, _b = _clause_span(c.fq, (s, e), m.start())
+            if _NEGATION.search(c.fq, a, m.end()):
+                ongoing = True
+            elif found is None:
+                found = m
+        rest = _INCIDENT_END_PHRASE.sub(lambda x: " " * len(x.group(0)), c.fq[s:e])
+        if _INCIDENT_ONGOING.search(rest) or (_INCIDENT_CONTINUES.search(rest) and _INCIDENT_WORDS.search(rest)
+                                              and not _SPEED_AFTER.search(rest)):
+            ongoing = True
+    if found is None or ongoing:
+        return None
+    rest = _INCIDENT_END_PHRASE.sub(" ", c.fq)
+    if re.search(r"do\s+odvolani", rest) and not _SPEED_AFTER.search(rest):
+        return None                       # „… do odvolania“ bez obmedzenia rýchlosti – mimoriadnosť trvá
+    return found
+
+
+# veta o mimoriadnosti (porucha, prerušená, neprejazdná, vylúčená doprava …) a časť vety s vedľajšou informáciou
+# (náhradná doprava, kontakt na dispečera, informácie pre cestujúcich) – jej okno nie je obdobím mimoriadnosti
+_INCIDENT_CLAUSE = re.compile(_INCIDENT_WORDS.pattern + r"|nezjazdn|uzavret|uzavren|uzatvoren|vylucen|zablokovan"
+                              r"|zastaven|vypnut|obmedzen\w*\s+(?:prevadzk|doprav)")
+_SIDE_INFO = re.compile(r"nahrad\w*|autobus\w*|k\s+dispozici\w*|kontakt\w*|\btel\b|telefon\w*|cestujuc\w*"
+                        r"|informaci\w*\s+(?:pre|podav\w*|poskyt\w*)|infolink")
+
+
+def _incident_clause(c: _Ctx, sentences: list[tuple[int, int]], pos: int) -> bool:
+    """Pozícia ``pos`` je vo vete o mimoriadnosti a nie v časti vety s vedľajšou informáciou (náhradná doprava,
+    kontakt na dispečera)."""
+    sent = next(((s, e) for s, e in sentences if s <= pos < e), None)
+    if sent is None or not _INCIDENT_CLAUSE.search(c.fq, *sent):
+        return False
+    a, b = _clause_span(c.fq, sent, pos)
+    return not (_SIDE_INFO.search(c.fq, a, b) or re.search(r"\bNAD\b", c.text[a:b]))
+
+
+def _speed_cancels(c: _Ctx) -> list[tuple[int, int]]:
+    """Vety, ktoré rušia pomalú jazdu či POTR (predmet je jedna veta): nie „do odvolania pomalá jazda“, nie
+    oznámenie budúceho zrušenia („zrušenie pomalej jazdy oznámime“) ani veta, ktorá pomalú jazdu zavádza."""
+    out = []
+    for s, e in [(0, c.subject_end)] + _sentence_spans(c.text, c.fq, c.subject_end, len(c.text)):
+        if _INTRODUCES.search(c.fq, s, e):
+            continue
+        for m in _SPEED_CANCEL.finditer(c.fq, s, e):
+            if m.group("noun") and (re.search(r"\bdo\s*$", c.fq[max(s, m.start() - 4):m.start()])
+                                    or _FUTURE_NOTICE.search(c.fq, s, e)):
+                continue
+            out.append((s, e))
+            break
+    return out
+
+
+def _new_restriction_outside(c: _Ctx, spans: list[tuple[int, int]]) -> bool:
+    """E-mail mimo viet ``spans`` ohlasuje výluku či pomalú jazdu s termínom: v odseku sú slová výluky či pomalej
+    jazdy (z predmetu sa počíta len výluka – „ROV č. …“; pomalá jazda v predmete patrí aj k jej zrušeniu) a termín
+    (obdobie či dátum, ktorý nie je pôvodným termínom ani dátumom vydania)."""
+    rest = _blank(c.fq, spans)
+    subject_new = bool(_KIND_PATTERNS["vyluka_nova"].search(rest, 0, c.subject_end))
+
+    def outside(pos: int) -> bool:
+        return not any(s <= pos < e for s, e in spans) and not c.in_table(pos)
+
+    for bs, be in c.blocks[1:]:
+        if not (subject_new or _NEW_RESTRICTION.search(rest, bs, be)):
+            continue
+        if any(bs <= p.pos < be and outside(p.pos) and not c.is_old_period(p) for p in c.periods) or \
+                any(bs <= t.start < be and t.kind in ("date", "datetime") and outside(t.start)
+                    and not datumy.not_term_date(c.fq, t) for t in c.toks):
+            return True
+    return False
+
+
+def _station_place(c: _Ctx, start: int = 0, end: Optional[int] = None) -> Optional[StationMatch]:
+    """Jedna dopravňa za „v (železničnej) stanici“, „v žst.“ a pod. (prvá, za ktorou je názov dopravne)."""
+    end = len(c.text) if end is None else end
+    for m in _STATION_PLACE.finditer(c.f, start, end):
+        st = c.st.prefix(tokens(c.text[m.end():min(end, m.end() + 80)], m.end()), c.text)
+        if st:
+            return st
+    return None
 
 
 def _incident_sentence(c: _Ctx) -> Optional[str]:

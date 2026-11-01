@@ -211,6 +211,55 @@ def inline_forwards(subject: str, body: str) -> list[ForwardedMessage]:
     return out
 
 
+# odpoveď („RE:“, „Odp:“) s citovanou pôvodnou správou – citácia nie je nový obsah
+_REPLY_SUBJECT = re.compile(r"^\s*(?:\[[^\]]{0,40}\]\s*)?(?:re|odp|aw|sv|vs|odpoved\w*)\s*(?:\[\d+\])?\s*:", re.I)
+# „Dňa 2.11.2026 o 9:00 ŽSR OR Poprad napísal(a):“, „On … wrote:“ (riadok končí dvojbodkou)
+_ATTRIBUTION = re.compile(r"^[^\n]{0,300}?\b(?:napisal|napisala|napsal|napsala|wrote|schrieb)(?:\s*\(a\))?"
+                          r"[ \t]*:[ \t]*$", re.M)
+_ATTRIBUTION_HEAD = re.compile(r"[ \t>]*(?:dna|dne|on|am|le)\b")      # len cez .match(text, začiatok riadka)
+_QUOTED_LINE = re.compile(r"^[ \t]*>[^\n]*", re.M)
+
+
+def is_reply_subject(subject: str) -> bool:
+    """Predmet odpovede („RE:“, „Odp:“, „AW:“) – je to predmet pôvodnej správy."""
+    return bool(_REPLY_SUBJECT.match(subject or ""))
+
+
+def reply_quote_spans(subject: str, folded: str, start: int, end: int) -> list[tuple[int, int]]:
+    """Úseky citovanej pôvodnej správy v odpovedi v ``folded[start:end]`` (text z :func:`vlaky.posta.text.fold`).
+
+    Citácia: všetko od riadku „Dňa … napísal(a):“ / „On … wrote:“, pri predmete odpovede („RE:“) aj od oddeľovača
+    („-----Original Message-----“, „Pôvodná správa“, čiara z podčiarkovníkov) či bloku hlavičiek pôvodnej správy
+    („Od: … Odoslané: … Predmet: …“); ďalej každý riadok začínajúci „>“. Bez predmetu odpovede môže byť obsah pod
+    oddeľovačom preposlanou správou, pri preposlaní („Fwd:“) ním je – vtedy nevráti nič."""
+    if _FWD_SUBJECT.match(subject or ""):
+        return []
+    reply = bool(_REPLY_SUBJECT.match(subject or ""))
+    cut: Optional[int] = None
+    m = _REPLY_MARKER.search(folded, start, end) if reply else None
+    if m is not None:
+        cut = m.start()
+    a = _ATTRIBUTION.search(folded, start, end)
+    if a is not None and (cut is None or a.start() < cut):
+        s = a.start()
+        if not _ATTRIBUTION_HEAD.match(folded, s, a.end()):
+            # zalomený riadok „Dňa 2.11.2026 o 9:00 …\nnapísal(a):“ – citácia začína predchádzajúcim riadkom
+            ps = max(start, folded.rfind("\n", start, max(start, s - 1)) + 1)
+            if ps < s and _ATTRIBUTION_HEAD.match(folded, ps, s):
+                s = ps
+        cut = s
+    if cut is None and reply:
+        for f in _FROM_LINE.finditer(folded, start, end):
+            block = folded[f.start():min(end, f.start() + 400)]
+            if len(_HEAD_LINE.findall(block)) >= 3:      # „Od:“ a aspoň dve ďalšie hlavičky pôvodnej správy
+                cut = f.start()
+                break
+    spans = [(q.start(), q.end()) for q in _QUOTED_LINE.finditer(folded, start, end if cut is None else cut)]
+    if cut is not None:
+        spans.append((cut, end))
+    return spans
+
+
 def _part_bytes(part: Message) -> bytes:
     try:
         payload = part.get_payload(decode=True)
