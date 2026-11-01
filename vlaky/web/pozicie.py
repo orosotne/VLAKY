@@ -216,6 +216,9 @@ def ingest_running_event(s: Session, ev: RunningEventIn) -> dict:
             if border is not None and _same_station(net, st.name, names):
                 ho.arrived_utc = ts
                 ho.status = "prisiel"
+                from ..planovanie import stav  # začiatok státia na koľajach ŽSR rovnako ako pri zápise vo webe
+
+                stav.record_arrival(train, ho, ts)
                 audit(s, f"api:{ev.source}", "handover_arrived", "handover", ho.id, train_id=train.id,
                       station=st.name, ts=ts)
                 result["handover_id"] = ho.id

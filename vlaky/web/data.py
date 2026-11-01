@@ -7,7 +7,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from ..cas import ensure_utc, fmt, local, now_utc, tz
@@ -233,9 +233,12 @@ def current_shifts(s: Session, train_ids: list) -> dict:
     if not train_ids:
         return {}
     out: dict = {}
+    # prebiehajúca zmena má prednosť pred naplánovaným vystriedaním (rovnako ako planovac.active_shift) – inak by
+    # mapa a nástenka ukázali neskoršiu naplánovanú zmenu a nie rušňovodiča, ktorý je v službe
     rows = s.scalars(select(DriverShift).options(selectinload(DriverShift.driver))
                      .where(DriverShift.train_id.in_(train_ids), DriverShift.status != "ukoncena")
-                     .order_by(DriverShift.start_utc.desc(), DriverShift.id.desc()))
+                     .order_by(case((DriverShift.status == "prebieha", 0), else_=1),
+                               DriverShift.start_utc.desc(), DriverShift.id.desc()))
     for sh in rows:
         out.setdefault(sh.train_id, sh)
     return out
