@@ -264,8 +264,11 @@ def health_page(request: Request, user=Depends(view)):
         rows.sort(key=lambda r: ({"error": 0, "warn": 1}.get(r["c"].status, 2), r["c"].component))
         last_pos = s.scalar(select(func.max(PositionReport.received_utc)))
         last_mail = s.scalar(select(func.max(Email.received_at)))
-        queue = s.scalar(select(func.count(ExtractedEvent.id)).where(ExtractedEvent.needs_confirmation.is_(True),
-                                                                      ExtractedEvent.status == "navrh")) or 0
+        from ..posta.spracovanie import failed_confirmations  # potvrdené, ale zápis zlyhal – čakajú vo fronte
+
+        queue = (s.scalar(select(func.count(ExtractedEvent.id)).where(ExtractedEvent.needs_confirmation.is_(True),
+                                                                       ExtractedEvent.status == "navrh")) or 0) + \
+            len(failed_confirmations(s))
         quarantined = s.scalar(select(func.count(Email.id)).where(Email.verdict == "karantena",
                                                                   Email.received_at >= now - timedelta(hours=24))) or 0
         checks.append(("Databáza", "ok", "dostupná"))

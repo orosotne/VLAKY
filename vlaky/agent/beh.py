@@ -165,8 +165,9 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
         from .strazenie import crew_alerts, standing_alerts
 
         with session_scope() as s:
-            summary["crew_alerts"] = crew_alerts(s, now)
-            summary["standing_alerts"] = standing_alerts(s, now)
+            # chyba pri jednom vlaku/zmene nezastaví ostatné ani nevráti už odoslané upozornenia (SAVEPOINT na každé)
+            summary["crew_alerts"] = crew_alerts(s, now, summary["errors"])
+            summary["standing_alerts"] = standing_alerts(s, now, summary["errors"])
     except Exception as exc:  # noqa: BLE001
         summary["errors"].append(f"stráženie: {exc!r}")
 
@@ -366,8 +367,11 @@ def _periodic(now: datetime, summary: dict) -> None:
             mails = s.scalar(select(func.count(Email.id)).where(Email.received_at >= day_ago)) or 0
             quarantined = s.scalar(select(func.count(Email.id)).where(Email.received_at >= day_ago,
                                                                       Email.verdict == "karantena")) or 0
-            waiting = s.scalar(select(func.count(ExtractedEvent.id)).where(
-                ExtractedEvent.status == "navrh", ExtractedEvent.needs_confirmation.is_(True))) or 0
+            from ..posta.spracovanie import failed_confirmations  # potvrdené, ale zápis zlyhal – čakajú vo fronte
+
+            waiting = (s.scalar(select(func.count(ExtractedEvent.id)).where(
+                ExtractedEvent.status == "navrh", ExtractedEvent.needs_confirmation.is_(True))) or 0) + \
+                len(failed_confirmations(s))
             last_mail = s.scalar(select(AgentHealth).where(AgentHealth.component == "schranka")
                                  .order_by(AgentHealth.id.desc()))
             failed = s.scalar(select(func.count(Notification.id)).where(Notification.created_at >= day_ago,

@@ -4,6 +4,7 @@ Volá sa v každom cykle agenta (sekcie 7 – M7, M9 a 12 PROMPT.md).
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timedelta
 
@@ -19,90 +20,115 @@ from ..planovanie.planovac import DONE_STATES, current_params
 from ..siet.graf import haversine
 from .zdravie import get_kv, set_kv
 
+log = logging.getLogger("vlaky.agent")
 
-def crew_alerts(session: Session, now: datetime) -> int:
+
+def _isolated(session: Session, errors: list | None, what: str, fn) -> int:
+    """Jedno upozornenie v SAVEPOINT: chyba pri jednom vlaku alebo zmene vráti len jeho kroky, nie záznamy
+    upozornení, ktoré už v tomto cykle odišli (inak by sa pri trvalej chybe posielali znova v každom cykle)."""
+    try:
+        with session.begin_nested():
+            return fn()
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Stráženie zlyhalo: %s", what)
+        if errors is not None:
+            first = str(exc).splitlines()[0][:160] if str(exc) else ""
+            errors.append(f"stráženie ({what}): {type(exc).__name__}: {first}")
+        return 0
+
+
+def crew_alerts(session: Session, now: datetime, errors: list | None = None) -> int:
     """Upozornenia pri 90/60/30 min do limitu pracovného času (13 h) a pri jeho prekročení."""
     p = current_params(session)
     thresholds = sorted({int(x) for x in settings().csv(settings().crew_alert_minutes)}, reverse=True)
+    shifts = list(session.scalars(select(DriverShift).where(DriverShift.status.in_(("planovana", "prebieha")),
+                                                            DriverShift.start_utc <= now)))
+    return sum(_isolated(session, errors, f"zmena rušňovodiča #{sh.id}",
+                         lambda sh=sh: _crew_alert(session, now, sh, p, thresholds)) for sh in shifts)
+
+
+def _crew_alert(session: Session, now: datetime, sh: DriverShift, p, thresholds: list) -> int:
     sent = 0
-    shifts = session.scalars(select(DriverShift).where(DriverShift.status.in_(("planovana", "prebieha")),
-                                                       DriverShift.start_utc <= now))
-    for sh in shifts:
-        train = session.get(Train, sh.train_id) if sh.train_id else None
-        if train is not None and train.status in DONE_STATES:
-            continue
-        limit = ensure_utc(sh.start_utc) + timedelta(minutes=p.crew_max_duty_min)
-        left = (limit - now).total_seconds() / 60.0
-        name = sh.driver.name if sh.driver else f"#{sh.driver_id}"
-        vlak = f"vlak {train.number}" if train else "bez vlaku"
-        if left <= 0:
-            level, priority = "prekroceny", "KRITICKÉ"
-            head = f"PREKROČENÝ limit {p.crew_max_duty_min / 60:.0f} h"
-        else:
-            hit = [t for t in thresholds if left <= t]
-            if not hit:
-                continue
-            level = str(min(hit))
-            priority = "KRITICKÉ" if min(hit) <= 30 else "DÔLEŽITÉ"
-            head = f"do limitu {p.crew_max_duty_min / 60:.0f} h zostáva {left:.0f} min"
-        relieve_by = limit - timedelta(minutes=p.crew_post_min)
-        subject = f"[AGENT][{priority}] Rušňovodič {name} ({vlak}): {head}"
-        body = (f"Rušňovodič: {name}\nVlak: {vlak}"
-                f"{(' (' + train.origin + ' → ' + train.destination + ')') if train else ''}\n"
-                f"Nástup: {fmt(sh.start_utc)}   Limit: {fmt(limit)}\n"
-                f"Vystriedať najneskôr o: {fmt(relieve_by)} (vrátane {p.crew_post_min:.0f} min na odovzdanie rušňa)\n\n"
-                f"Agent dispečer iba upozorňuje. Výmenu rušňovodiča zabezpečí dispečer.\n"
-                f"Detail: {settings().public_url.rstrip('/')}/rusnovodici")
-        out = send_internal(session, "upozornenie", subject, body, priority, dedup_key=f"crew:{sh.id}:{level}")
-        if any(n.status in ("odoslana", "outbox") for n in out):
-            sent += 1
-            audit(session, "agent", "crew_alert", "driver_shift", sh.id, level=level, left_min=round(left))
+    train = session.get(Train, sh.train_id) if sh.train_id else None
+    if train is not None and train.status in DONE_STATES:
+        return 0
+    limit = ensure_utc(sh.start_utc) + timedelta(minutes=p.crew_max_duty_min)
+    left = (limit - now).total_seconds() / 60.0
+    name = sh.driver.name if sh.driver else f"#{sh.driver_id}"
+    vlak = f"vlak {train.number}" if train else "bez vlaku"
+    if left <= 0:
+        level, priority = "prekroceny", "KRITICKÉ"
+        head = f"PREKROČENÝ limit {p.crew_max_duty_min / 60:.0f} h"
+    else:
+        hit = [t for t in thresholds if left <= t]
+        if not hit:
+            return 0
+        level = str(min(hit))
+        priority = "KRITICKÉ" if min(hit) <= 30 else "DÔLEŽITÉ"
+        head = f"do limitu {p.crew_max_duty_min / 60:.0f} h zostáva {left:.0f} min"
+    relieve_by = limit - timedelta(minutes=p.crew_post_min)
+    subject = f"[AGENT][{priority}] Rušňovodič {name} ({vlak}): {head}"
+    body = (f"Rušňovodič: {name}\nVlak: {vlak}"
+            f"{(' (' + train.origin + ' → ' + train.destination + ')') if train else ''}\n"
+            f"Nástup: {fmt(sh.start_utc)}   Limit: {fmt(limit)}\n"
+            f"Vystriedať najneskôr o: {fmt(relieve_by)} (vrátane {p.crew_post_min:.0f} min na odovzdanie rušňa)\n\n"
+            f"Agent dispečer iba upozorňuje. Výmenu rušňovodiča zabezpečí dispečer.\n"
+            f"Detail: {settings().public_url.rstrip('/')}/rusnovodici")
+    out = send_internal(session, "upozornenie", subject, body, priority, dedup_key=f"crew:{sh.id}:{level}")
+    if any(n.status in ("odoslana", "outbox") for n in out):
+        sent += 1
+        audit(session, "agent", "crew_alert", "driver_shift", sh.id, level=level, left_min=round(left))
     return sent
 
 
-def standing_alerts(session: Session, now: datetime) -> int:
+def standing_alerts(session: Session, now: datetime, errors: list | None = None) -> int:
     """Vlak v jazde, ktorý sa ≥ N minút takmer nepohol (< 300 m), → upozornenie (M9)."""
     minutes = settings().standing_alert_minutes
+    trains = list(session.scalars(select(Train).where(Train.status == "v_jazde")))
+    return sum(_isolated(session, errors, f"vlak {t.number}", lambda t=t: _standing_alert(session, now, t, minutes))
+               for t in trains)
+
+
+def _standing_alert(session: Session, now: datetime, t: Train, minutes: int) -> int:
     sent = 0
-    for t in session.scalars(select(Train).where(Train.status == "v_jazde")):
-        reports = list(session.scalars(select(PositionReport).where(
-            PositionReport.train_id == t.id, PositionReport.ts_utc >= now - timedelta(minutes=minutes * 3))
-            .order_by(PositionReport.ts_utc.desc())))
-        if len(reports) < 2:
-            continue
-        last = reports[0]
-        if (now - ensure_utc(last.ts_utc)).total_seconds() > settings().position_stale_minutes * 60:
-            continue  # bez čerstvých dát sa státie neposudzuje (rieši to semafor)
-        lat0, lon0 = last.snapped_lat or last.lat, last.snapped_lon or last.lon
-        still_since = ensure_utc(last.ts_utc)
-        for r in reports[1:]:
-            if haversine(lat0, lon0, r.snapped_lat or r.lat, r.snapped_lon or r.lon) > 300:
-                break
-            still_since = ensure_utc(r.ts_utc)
-        kv_key = f"standing:{t.id}"
-        standing = (ensure_utc(last.ts_utc) - still_since).total_seconds() / 60.0
-        if standing < minutes:
-            if get_kv(session, kv_key):
-                set_kv(session, kv_key, {})  # vlak sa pohol – epizóda státia skončila
-            continue
-        # epizóda státia má stály začiatok (okno polôh je len 3×N min, takže still_since sa posúva)
-        episode = get_kv(session, kv_key)
-        if episode.get("since") and haversine(episode["lat"], episode["lon"], lat0, lon0) <= 300:
-            still_since = min(still_since, datetime.fromisoformat(episode["since"]))
-        else:
-            set_kv(session, kv_key, {"since": still_since.isoformat(), "lat": lat0, "lon": lon0})
-        standing = (ensure_utc(last.ts_utc) - still_since).total_seconds() / 60.0
-        where = last.nearest_station or f"{lat0:.4f}, {lon0:.4f}"
-        bucket = still_since.strftime("%Y%m%d%H%M")  # rovnaká epizóda = rovnaký kľúč (pripomenutie po dedup okne)
-        subject = f"[AGENT][DÔLEŽITÉ] Vlak {t.number} stojí {standing:.0f} min pri {where}"
-        body = (f"Vlak {t.number} ({t.origin} → {t.destination}) sa od {fmt(still_since)} pohol menej ako 300 m.\n"
-                f"Posledná poloha: {fmt(last.ts_utc)} ({last.source}), pri {where}.\n\n"
-                f"Overte dôvod (plánovaný pobyt, výluka, porucha, čakanie na trasu) a v prípade potreby "
-                f"informujte zákazníka. Detail: {settings().public_url.rstrip('/')}/")
-        out = send_internal(session, "upozornenie", subject, body, "DÔLEŽITÉ",
-                            dedup_key=f"standing:{t.id}:{bucket}")
-        if any(n.status in ("odoslana", "outbox") for n in out):
-            sent += 1
+    reports = list(session.scalars(select(PositionReport).where(
+        PositionReport.train_id == t.id, PositionReport.ts_utc >= now - timedelta(minutes=minutes * 3))
+        .order_by(PositionReport.ts_utc.desc())))
+    if len(reports) < 2:
+        return 0
+    last = reports[0]
+    if (now - ensure_utc(last.ts_utc)).total_seconds() > settings().position_stale_minutes * 60:
+        return 0  # bez čerstvých dát sa státie neposudzuje (rieši to semafor)
+    lat0, lon0 = last.snapped_lat or last.lat, last.snapped_lon or last.lon
+    still_since = ensure_utc(last.ts_utc)
+    for r in reports[1:]:
+        if haversine(lat0, lon0, r.snapped_lat or r.lat, r.snapped_lon or r.lon) > 300:
+            break
+        still_since = ensure_utc(r.ts_utc)
+    kv_key = f"standing:{t.id}"
+    standing = (ensure_utc(last.ts_utc) - still_since).total_seconds() / 60.0
+    if standing < minutes:
+        if get_kv(session, kv_key):
+            set_kv(session, kv_key, {})  # vlak sa pohol – epizóda státia skončila
+        return 0
+    # epizóda státia má stály začiatok (okno polôh je len 3×N min, takže still_since sa posúva)
+    episode = get_kv(session, kv_key)
+    if episode.get("since") and haversine(episode["lat"], episode["lon"], lat0, lon0) <= 300:
+        still_since = min(still_since, datetime.fromisoformat(episode["since"]))
+    else:
+        set_kv(session, kv_key, {"since": still_since.isoformat(), "lat": lat0, "lon": lon0})
+    standing = (ensure_utc(last.ts_utc) - still_since).total_seconds() / 60.0
+    where = last.nearest_station or f"{lat0:.4f}, {lon0:.4f}"
+    bucket = still_since.strftime("%Y%m%d%H%M")  # rovnaká epizóda = rovnaký kľúč (pripomenutie po dedup okne)
+    subject = f"[AGENT][DÔLEŽITÉ] Vlak {t.number} stojí {standing:.0f} min pri {where}"
+    body = (f"Vlak {t.number} ({t.origin} → {t.destination}) sa od {fmt(still_since)} pohol menej ako 300 m.\n"
+            f"Posledná poloha: {fmt(last.ts_utc)} ({last.source}), pri {where}.\n\n"
+            f"Overte dôvod (plánovaný pobyt, výluka, porucha, čakanie na trasu) a v prípade potreby "
+            f"informujte zákazníka. Detail: {settings().public_url.rstrip('/')}/")
+    out = send_internal(session, "upozornenie", subject, body, "DÔLEŽITÉ",
+                        dedup_key=f"standing:{t.id}:{bucket}")
+    if any(n.status in ("odoslana", "outbox") for n in out):
+        sent += 1
     return sent
 
 

@@ -16,29 +16,13 @@ def _latest_rec(session: Session, train_id: int):
                           .order_by(Recommendation.id.desc()))
 
 
-def _time(iso) -> str:
-    try:
-        return fmt(datetime.fromisoformat(iso)) if iso else ""
-    except (TypeError, ValueError):
-        return str(iso)
-
-
 def _crew_line(train: Train, crew: dict) -> str:
     """Riadok o rušňovodičovi blízko limitu. Pri chýbajúcom zázname o nástupe sú časy len odhad (nástup
     = odchod vlaku mínus príprava) – nikdy sa neuvádzajú ako fakt; bez odhadu sa limit nedá overiť."""
-    relieve = _time(crew.get("relieve_by"))
-    try:
-        max_h = f"{float(crew.get('max_duty_h') or 13):g}"
-    except (TypeError, ValueError):
-        max_h = "13"
-    if crew.get("unknown_start"):
-        if relieve:
-            return (f"  - vlak {train.number}: odhad: vystriedať najneskôr o {relieve} "
-                    f"(nástup rušňovodiča nie je zadaný)")
-        return f"  - vlak {train.number}: limit {max_h} h sa nedá overiť – zadajte nástup rušňovodiča"
-    if relieve:
-        return f"  - vlak {train.number}: vystriedať najneskôr o {relieve}"
-    return f"  - vlak {train.number}: čas vystriedania nie je známy – overte nástup rušňovodiča"
+    from ..notifikacie.texty import crew_relief_text  # rovnaký text ako v SMS, e-maile a na webe
+
+    text = crew_relief_text(crew) or "čas vystriedania nie je známy – overte nástup rušňovodiča"
+    return f"  - vlak {train.number}: {text}"
 
 
 def build_report(session: Session, now: datetime | None = None, hours: int = 12) -> tuple:
@@ -90,8 +74,11 @@ def build_report(session: Session, now: datetime | None = None, hours: int = 12)
     lines += ["", f"Nové alebo zmenené výluky za {hours} h:"]
     lines += [f"  - {c.from_station} – {c.to_station} {fmt(c.start_utc)} – {fmt(c.end_utc)} ({_state(c)})"
               for c in new_closures] or ["  (žiadne)"]
-    waiting = session.scalars(select(ExtractedEvent).where(ExtractedEvent.status == "navrh",
-                                                           ExtractedEvent.needs_confirmation.is_(True))).all()
+    waiting = list(session.scalars(select(ExtractedEvent).where(ExtractedEvent.status == "navrh",
+                                                                ExtractedEvent.needs_confirmation.is_(True))))
+    from ..posta.spracovanie import failed_confirmations  # potvrdené, ale zápis zlyhal – čakajú vo fronte
+
+    waiting += failed_confirmations(session)
     quarantined = session.scalars(select(Email).where(Email.verdict == "karantena",
                                                       Email.received_at >= since)).all()
     data["waiting"], data["quarantined"] = len(waiting), len(quarantined)

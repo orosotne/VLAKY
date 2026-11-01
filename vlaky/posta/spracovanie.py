@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -1111,6 +1112,8 @@ def _apply_path(session: Session, ev: ExtractedEvent, confirmed: bool) -> dict:
         return {"entity": "Path", "id": p.id, "action": "vytvorene", "status": p.status, "train_id": p.train_id,
                 "before": None}
     before = _snapshot(existing, _PATH_FIELDS)
+    if existing.status in ("pridelena", "zmenena"):
+        _pin_standing(session, existing.train_id)
     for k, v in fields.items():
         if k == "train_id" and v is None:
             continue
@@ -1119,6 +1122,23 @@ def _apply_path(session: Session, ev: ExtractedEvent, confirmed: bool) -> dict:
     session.flush()
     return {"entity": "Path", "id": existing.id, "action": "aktualizovane", "status": existing.status,
             "train_id": existing.train_id, "before": before}
+
+
+def _pin_standing(session: Session, train_id: Optional[int]) -> None:
+    """Pred zrušením, zmenou času alebo preradením trasy (aj pri vrátení zápisu) zapíše začiatok státia vlaku
+    podľa doterajších kotiev (napr. zmeškaná trasa, na ktorej vlak stál pripravený) – po zmene trasy by sa
+    limit 18 h inak počítal od neskoršieho času. Chyba tu nesmie zastaviť spracovanie e-mailu."""
+    if not train_id:
+        return
+    try:
+        from ..planovanie import stav
+
+        with session.begin_nested():  # pri chybe sa vráti len tento krok, nie spracovanie e-mailu
+            train = session.get(Train, train_id)
+            if train is not None:
+                stav.pin_standing(session, train)
+    except Exception:  # noqa: BLE001
+        logging.getLogger("vlaky.posta").exception("Začiatok státia vlaku %s sa nepodarilo zapísať", train_id)
 
 
 def _apply_path_cancel(session: Session, ev: ExtractedEvent, confirmed: bool) -> dict:
@@ -1138,6 +1158,8 @@ def _apply_path_cancel(session: Session, ev: ExtractedEvent, confirmed: bool) ->
     befores = []
     for p in keep:
         befores.append({"id": p.id, **_snapshot(p, _PATH_FIELDS)})
+        if p.status in ("pridelena", "zmenena"):
+            _pin_standing(session, p.train_id)
         p.status = "zrusena"
         p.source_event_id = ev.id
         p.note = "\n".join(filter(None, [p.note or "", f"Zrušené podľa udalosti #{ev.id} (e-mail #{ev.email_id})."]))
@@ -1508,6 +1530,7 @@ def _rollback(session: Session, ev: ExtractedEvent, applied: dict) -> Optional[s
                 continue
             snap = _effective_before(session, {k: v for k, v in b.items() if k != "id"}, entity, p.id)
             if isinstance(snap, dict):
+                _pin_standing(session, p.train_id)
                 _restore(p, snap)
                 restored.append(p.id)
         msg = "zrušenie trasy vrátené" if restored else ""
@@ -1523,6 +1546,8 @@ def _rollback(session: Session, ev: ExtractedEvent, applied: dict) -> Optional[s
         snap = _effective_before(session, before, entity, obj.id)
         if not isinstance(snap, dict):       # pôvodný záznam vznikol z udalosti, ktorú dispečer zamietol
             return _undo_creation(session, ev, entity, obj, applied)
+        if entity in ("Path", "Handover"):
+            _pin_standing(session, obj.train_id)
         _restore(obj, snap)
         if entity == "Handover":
             tb = applied.get("train_before") or {}
@@ -1539,12 +1564,14 @@ def _undo_creation(session: Session, ev: ExtractedEvent, entity: str, obj: Any, 
         obj.note = "\n".join(filter(None, [obj.note or "", f"Zamietnuté dispečerom (udalosť #{ev.id})."]))
         return "výluka zrušená"
     if entity == "Path":
+        _pin_standing(session, obj.train_id)
         obj.status = "zrusena"
         return "trasa zrušená"
     if entity == "Order":
         obj.status = "zamietnuta"
         return "objednávka zamietnutá"
     if entity == "Handover":
+        _pin_standing(session, obj.train_id)
         tb = applied.get("train_before") or {}
         tr = session.get(Train, obj.train_id)
         if tr is not None and tb:

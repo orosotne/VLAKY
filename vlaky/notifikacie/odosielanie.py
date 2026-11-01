@@ -528,6 +528,11 @@ def send_digest(session: Session, since: datetime, only: set | None = None) -> l
                                                              Recommendation.state == "nove")))
     waiting = list(session.scalars(select(ExtractedEvent).where(ExtractedEvent.status == "navrh",
                                                                 ExtractedEvent.needs_confirmation.is_(True))))
+    # potvrdené udalosti, ktoré sa nepodarilo zapísať (napr. avízo pre vlak, ktorý ešte nie je v systéme), čakajú
+    # vo fronte rovnako – súhrn ich nesmie vynechať
+    from ..posta.spracovanie import failed_confirmations
+
+    waiting += failed_confirmations(session)
     quarantined = list(session.scalars(select(Email).where(Email.received_at >= since,
                                                            Email.verdict == "karantena")))
     if not recs and not waiting and not quarantined:

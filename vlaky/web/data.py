@@ -564,7 +564,15 @@ def pending_queue_count(s: Session) -> int:
                     .select_from(ExtractedEvent).join(Closure, Closure.source_event_id == ExtractedEvent.id)
                     .where(ExtractedEvent.status == "aplikovane", ExtractedEvent.confirmed_at.is_(None),
                            Closure.status == "navrh")) or 0
-    return waiting + auto
+    # potvrdené udalosti, ktorých zápis zlyhal (napr. avízo pre vlak, ktorý ešte nie je v systéme), sú vo fronte tiež
+    try:
+        from ..posta.spracovanie import failed_confirmations
+
+        failed = len(failed_confirmations(s))
+    except Exception:  # noqa: BLE001 – počítadlo v hlavičke stránky nesmie zhodiť stránku
+        log.exception("Počet zlyhaných potvrdení sa nepodarilo zistiť")
+        failed = 0
+    return waiting + auto + failed
 
 
 # ---------------------------------------------------------------- upozornenia (pre dashboard)

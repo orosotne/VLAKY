@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     shadow_mode: bool = True                           # tieňová prevádzka: odporúčania len na shadow_emails
     shadow_emails: str = ""
     notify_transport: str = "smtp"                     # smtp | graph (Microsoft Graph sendMail z účtu agenta)
+    notify_connect_timeout_s: int = 10                 # limit spojenia so serverom správ (SMTP, Graph, Teams, SMS) v s
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

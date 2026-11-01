@@ -13,8 +13,8 @@ def _t(iso: str | None) -> str:
         return "—"
     try:
         return fmt(datetime.fromisoformat(iso))
-    except ValueError:
-        return iso
+    except (TypeError, ValueError):
+        return str(iso)
 
 
 def _duty_h(crew: dict) -> str:
