@@ -142,7 +142,8 @@ def closure_edges(c: Closure) -> set:
     if net is None:
         return set()
     try:
-        return set(net.closure_edges(c.from_station, c.to_station))
+        # s číslom trate ako v plánovači – mapa a zoznam výluk vlaku ukážu tie isté koľaje
+        return set(net.closure_edges(c.from_station, c.to_station, getattr(c, "line_ref", "") or ""))
     except Exception:  # noqa: BLE001
         log.exception("Úsek výluky %s sa nepodarilo nájsť", c.id)
         return set()

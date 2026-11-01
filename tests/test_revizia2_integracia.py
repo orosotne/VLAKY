@@ -200,3 +200,38 @@ def test_chyba_jedneho_upozornenia_nevrati_uz_odoslane(session, fixed_now, monke
     errors2: list = []
     assert strazenie.crew_alerts(session, fixed_now + timedelta(minutes=1), errors2) == 0
     assert len(errors2) == 1
+
+
+def test_obchadzka_okolo_vyluky_z_poistky_nie_je_ta_ista_trasa(session, fixed_now, monkeypatch):
+    """Výluka Žilina-Teplička – Varín sa vlaku priradí poistkou (jej koľaje v modeli siete trasu nepretínajú).
+    Obchádzka sa potom nesmie hľadať len okolo koľají výluky – vyšla by tá istá trasa s tou istou výlukou."""
+    from vlaky.hranice import seed_borders
+    from vlaky.models import Closure, Path, Train
+    from vlaky.planovanie import planovac
+
+    seed_borders(session)
+    t = Train(number="54399", run_date=fixed_now.date().isoformat(), origin="Žilina", destination="Poprad-Tatry",
+              traction="E", gauge="1435", vmax_kmh=100, status="planovany", ready_utc=fixed_now + timedelta(minutes=30),
+              deadline_utc=fixed_now + timedelta(hours=14))
+    session.add(t)
+    session.flush()
+    session.add(Path(train_id=t.id, train_number=t.number, status="pridelena",
+                     departure_utc=fixed_now + timedelta(minutes=30)))
+    session.add(Closure(kind="uplna", from_station="Žilina-Teplička", to_station="Varín", status="overene",
+                        start_utc=fixed_now - timedelta(minutes=30), end_utc=fixed_now + timedelta(hours=6)))
+    session.flush()
+    routes: list = []
+    real = planovac.build_segments
+
+    def spy(net, groute, *a, **kw):
+        routes.append(groute)
+        return real(net, groute, *a, **kw)
+
+    monkeypatch.setattr(planovac, "build_segments", spy)
+    planovac.evaluate_train(session, t.id, fixed_now, "test")
+    primary, *alternatives = routes
+    for alt in alternatives:
+        assert tuple(alt.edges) != tuple(primary.edges)
+        names = [s.name for s, _km, _m in alt.stations]
+        assert not ("Žilina-Teplička" in names and "Varín" in names and
+                    abs(names.index("Varín") - names.index("Žilina-Teplička")) <= 2)

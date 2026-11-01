@@ -30,8 +30,8 @@ from ..audit import audit
 from ..cas import ensure_utc, fmt, local, now_utc, plus_minutes, tz
 from ..config import settings
 from ..db import prepare_savepoints
-from ..models import (Closure, DriverShift, Handover, KeyValue, LocationInfo, Order, ParameterSet, Path,
-                      PositionReport, Recommendation, Train)
+from ..models import (Closure, DriverShift, KeyValue, LocationInfo, Order, ParameterSet, PositionReport,
+                      Recommendation, Train)
 from ..notifikacie.texty import crew_relief_text
 from ..rozhodovanie import (CERVENA, ESKALOVAT, ODSTAVIT, ORANZOVA, POCKAT, PRESMEROVAT, VYPRAVIT, ZELENA,
                             Closure as DClosure, Evaluation, Params, Recommendation as DRecommendation,
@@ -698,11 +698,20 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
     for w in {w.closure_id: w for w, _a, _b in affecting if w.note}.values():
         reasons.append(f"{_kind_label(w.kind)} {w.from_station} – {w.to_station}: {w.note}.")
 
-    # obchádzky okolo blokujúcich výluk na hlavnej trase
+    # obchádzky okolo blokujúcich výluk na hlavnej trase. Výluka priradená poistkou podľa dopravní (jej koľaje
+    # v modeli siete hlavnú trasu nepretínajú) zakáže aj dotknutý úsek hlavnej trasy – inak by „obchádzka“
+    # bola tá istá trasa s tou istou výlukou.
+    from ..siet.graf import norm_line_ref
+
     blocked: set = set()
-    for w, _a, _b in affecting:
+    route_set = set(primary.edges)
+    line_refs = _closure_line_refs(session, [w for w, _a, _b in affecting])
+    for w, a_name, b_name in affecting:
         if w.kind in BLOCKING and not (w.electric_only and spec.traction != "E"):
-            blocked |= net.closure_edges(w.from_station, w.to_station)
+            sec = net.closure_edges(w.from_station, w.to_station, norm_line_ref(line_refs.get(w.closure_id, "")))
+            blocked |= sec
+            if not (sec & route_set):
+                blocked |= affected_route_edges(net, primary, wps, a_name, b_name)
     alt_groutes = []
     if blocked and not running:
         ra, rb = net.resolve(train.origin, spec), net.resolve(train.destination, spec)
@@ -1097,7 +1106,7 @@ def _drafts(train: Train, decision: str, chosen: Optional[Evaluation], pp: dict,
         if deadline and arr50 > ensure_utc(deadline):
             late_h = (arr50 - ensure_utc(deadline)).total_seconds() / 3600.0
             lines.append(f"Oproti dohodnutému termínu {fmt(deadline)} očakávame meškanie približne {late_h:.1f} h.")
-    lines += ["", f"S pozdravom", f"dispečing {cfg.carrier_name}"]
+    lines += ["", "S pozdravom", f"dispečing {cfg.carrier_name}"]
     return {"zsr_path_request": zsr, "customer": "\n".join(lines)}
 
 

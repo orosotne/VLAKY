@@ -14,11 +14,16 @@ sys.path.insert(0, str(ROOT))
 
 @pytest.fixture()
 def cfg(tmp_path, monkeypatch):
-    """Izolované nastavenia pre test (vlastná SQLite DB, schránka, outbox)."""
+    """Izolované nastavenia pre test (vlastná SQLite DB, schránka, outbox).
+
+    VLAKY_TEST_DATABASE_URL (napr. postgresql+psycopg://postgres@127.0.0.1:55432/vlaky_test) – testy pobežia proti
+    tejto databáze (ako v ostrej prevádzke); pred každým testom sa jej tabuľky zmažú a vytvoria znova.
+    """
     from vlaky import config as config_mod
     from vlaky.db import dispose_all, init_db
 
-    db_url = f"sqlite:///{tmp_path / 'test.db'}"
+    test_db = os.environ.get("VLAKY_TEST_DATABASE_URL", "").strip()
+    db_url = test_db or f"sqlite:///{tmp_path / 'test.db'}"
     s = config_mod.override_settings(
         env="test",
         database_url=db_url,
@@ -37,6 +42,11 @@ def cfg(tmp_path, monkeypatch):
     )
     os.makedirs(s.mail_dir, exist_ok=True)
     os.makedirs(s.outbox_dir, exist_ok=True)
+    if test_db:
+        from vlaky import models  # noqa: F401  (registrácia tabuliek)
+        from vlaky.db import Base, engine
+
+        Base.metadata.drop_all(engine(db_url))
     init_db(db_url)
     # Plánovač bez úspešnej kontroly schránky nikdy nedá ZELENÚ (10.3). V testoch sa schránka považuje za
     # čerstvo skontrolovanú (čas ďaleko v budúcnosti); testy výpadku schránky tento záznam zmažú.
