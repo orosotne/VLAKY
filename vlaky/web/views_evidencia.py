@@ -265,14 +265,22 @@ def train_update(train_id: int, request: Request, background: BackgroundTasks, u
         for k, v in values.items():
             if k != "status":
                 setattr(t, k, v)
-        # stav cez spoločné pravidlo: začiatok státia (limit 18 h) a odchod; čas úpravy nie je skutočný odchod
-        stav.set_status(s, t, values["status"], actual=False)
+        # stav cez spoločné pravidlo: začiatok státia (limit 18 h) a odchod; čas úpravy nie je skutočný odchod.
+        # Návrat z jazdy krátko po odchode (vlak nevyšiel) je oprava – limit 18 h beží ďalej od začiatku státia.
+        corrected = stav.set_status(s, t, values["status"], actual=False)
         if changes:
-            audit(s, user.username, "train_update", "train", t.id, changes=changes)
-        number = t.number
+            extra = {"oprava_odchodu": True, "standing_since": iso(t.standing_since_utc)} if corrected else {}
+            audit(s, user.username, "train_update", "train", t.id, changes=changes, **extra)
+        number, since = t.number, t.standing_since_utc
     if changes and request.app.state.auto_evaluate:
         background.add_task(evaluate_train_bg, train_id, f"úprava vlaku ({', '.join(sorted(changes))})")
-    return redirect(f"/vlaky/{train_id}", f"Vlak {number} uložený." if changes else "Bez zmien.")
+    message = f"Vlak {number} uložený." if changes else "Bez zmien."
+    if corrected:
+        from ..cas import fmt
+
+        message += (" Odchod sa považuje za omyl (vlak nevyšiel) – limit 18 h státia beží ďalej"
+                    + (f" od {fmt(since)}." if since else "."))
+    return redirect(f"/vlaky/{train_id}", message)
 
 
 @router.post("/vlaky/{train_id}/prepocitat")
@@ -750,9 +758,32 @@ def drivers_page(request: Request, navrh: int = 0, user=Depends(view)):
                          "relieve_by": limit - timedelta(minutes=params["crew_post_min"]), "crew": crew_info})
         active_trains = list(s.scalars(select(Train).where(Train.status.notin_(DONE_TRAIN_STATES))
                                        .order_by(Train.number)))
+        # idúce vlaky bez záznamu o nástupe rušňovodiča (ako v plánovači: žiadna zmena, ktorá prebieha alebo už mala
+        # začať) – 13 h limit sa pri nich nedá overiť, stránka to musí ukázať (text ako v odporúčaní, len odhad)
+        from ..notifikacie.texty import crew_relief_text
+
+        known = {sh.train_id for sh in shifts if sh.train_id and (
+            sh.status == "prebieha" or (sh.status == "planovana" and ensure_utc(sh.start_utc) <= now))}
+        missing = [t for t in active_trains if t.status == "v_jazde" and t.id not in known]
+        missing_recs = latest_recommendations(s, [t.id for t in missing]) if missing else {}
+        crew_missing = []
+        for t in missing:
+            rec = missing_recs.get(t.id)
+            info = dict(rec.crew or {}) if rec is not None else {}
+            if not info.get("unknown_start"):
+                info = {"unknown_start": True, "max_duty_h": round(params["crew_max_duty_min"] / 60.0, 1)}
+            crew_missing.append({"train": t, "crew": info, "text": crew_relief_text(info)})
+        if proposal and crew_missing:
+            # návrh nasadenia rieši len vlaky pred odchodom – nesmie tvrdiť, že vlaky bez rušňovodiča nie sú
+            proposal = dict(proposal)
+            notes = ["Žiadne neobsadené vlaky pred odchodom v horizonte." if n.startswith(
+                "Žiadne vlaky bez rušňovodiča") else n for n in proposal.get("notes") or []]
+            notes.append(f"Návrh rieši len vlaky pred odchodom. Vlaky v jazde bez záznamu o nástupe rušňovodiča: "
+                         f"{len(crew_missing)} – pozri „Vlaky v jazde bez záznamu o nástupe rušňovodiča“.")
+            proposal["notes"] = notes
         return render(request, "rusnovodici.html", {"drivers": drivers, "rows": rows, "params": params,
                                                     "active_trains": active_trains, "proposal": proposal,
-                                                    "proposal_error": proposal_error,
+                                                    "proposal_error": proposal_error, "crew_missing": crew_missing,
                                                     "show_contacts": user.role != "obchod"}, user=user)
 
 
