@@ -889,6 +889,16 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
 
     # bez čerstvých a použiteľných dát nikdy zelená (10.3)
     stale = position_unusable or crew_unknown or bool(unmapped)
+    # čakajúce udalosti z e-mailov, s ktorými plánovač nevie počítať (zrušenie/zmena pridelenej trasy, výluka bez
+    # záznamu pre plánovač) – vlak, ktorého sa môžu týkať, nedostane ZELENÚ a dispečer vidí dôvod
+    from ..posta.spracovanie import pending_uncertainty
+
+    pending_notes = pending_uncertainty(session, train, primary, paths,
+                                        window=(min(now, ready) - timedelta(hours=2),
+                                                ready + timedelta(minutes=horizon_min) + timedelta(hours=30)))
+    if pending_notes:
+        stale = True
+        reasons.extend(pending_notes)
     mb_age = mailbox_age_minutes(session, now)
     if mb_age is not None:
         data_age["mailbox_min"] = round(mb_age, 1)
@@ -1211,6 +1221,15 @@ def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) 
                          for g, d in zip(groutes, droutes)}
     unmapped = list({w.closure_id: w for ws in unmapped_by_route.values() for w in ws}.values())
     mailbox_reason = _mailbox_reason(session, now)
+    # čakajúce výluky z e-mailov bez záznamu pre plánovač, ktorých úsek leží na trase variantu (ako pri vlaku)
+    from types import SimpleNamespace
+
+    from ..posta.spracovanie import pending_uncertainty
+
+    no_train = SimpleNamespace(id=None, number="")
+    pending_window = (min(now, ready) - timedelta(hours=2), ready + timedelta(hours=cfg.horizon_hours + 48))
+    pending_by_route = {d.name: pending_uncertainty(session, no_train, g, (), window=pending_window)
+                        for g, d in zip(groutes, droutes)}
     deadline_min = _min(now, order.deadline_utc) if order.deadline_utc else _min(now, ready) + NO_DEADLINE_MIN
     rec = two_stage_recommend(droutes, _min(now, ready), deadline_min, params, [NO_PATH_SENTINEL], None,
                               anchor=now)
@@ -1219,6 +1238,7 @@ def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) 
         out_ = [f"{_kind_label(w.kind)} {w.from_station} – {w.to_station} {fmt(w.start)} – {fmt(w.end)} sa "
                 f"nepodarilo umiestniť na sieť (neznámy úsek) – kým sa to neoverí, varianta nemôže byť ZELENÁ"
                 for w in unmapped_by_route.get(route, [])]
+        out_ += [n.rstrip(".") for n in pending_by_route.get(route, [])]
         return out_ + ([mailbox_reason.rstrip(".")] if mailbox_reason else [])
 
     explanation = []

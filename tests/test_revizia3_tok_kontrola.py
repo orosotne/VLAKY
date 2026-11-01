@@ -134,17 +134,12 @@ def test_mr2_vlak_zacina_alebo_konci_vnutri_useku_vyluky_bez_terminu(strict, ses
 
 
 def test_mr2_planovac_vlak_vnutri_useku_vyluky_bez_terminu(strict, session, planner):
-    """[MR2 – kontrola] Integrácia s plánovačom: keď plánovač volá posta.spracovanie.pending_uncertainty, vlak
+    """[MR2 – kontrola] Integrácia s plánovačom (planovac.evaluate_train volá posta.spracovanie.pending_uncertainty): vlak
     Štrba → Žilina (začína vnútri úseku oznámenej výluky bez prečítaného termínu) nie je VYPRAVIŤ ZELENÁ a dôvod
-    pomenuje udalosť; vlak Liptovský Mikuláš → Žilina ostáva bez obmedzenia. Kým napojenie v plánovači nie je,
-    test sa preskočí."""
-    import inspect
-
+    pomenuje udalosť; vlak Liptovský Mikuláš → Žilina ostáva bez obmedzenia."""
     from vlaky.cas import set_fake_now
     from vlaky.planovanie import planovac
 
-    if "pending_uncertainty" not in inspect.getsource(planovac):
-        pytest.skip("plánovač ešte nevolá posta.spracovanie.pending_uncertainty (zmena v planovac.evaluate_train)")
     now = utc(2026, 11, 12, 5)
     set_fake_now(now)
     drop(strict, "rov.eml", mail("rov2700", "ROV c. 2700/2026 Poprad-Tatry - Liptovsky Mikulas", ROV_2700,

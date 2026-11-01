@@ -629,15 +629,12 @@ def test_mr2_vyluka_s_neprecitanym_terminom_nie_je_neviditelna(strict, session):
 
 
 def test_mr2_planovac_s_napojenim_neda_zelenu(strict, session, fixed_now):
-    """[MR2] Integrácia s plánovačom: keď plánovač volá posta.spracovanie.pending_uncertainty (samostatná zmena
-    v evaluate_train), vlak s čakajúcim zrušením pridelenej trasy je ORANŽOVÝ a odporúčanie povie prečo; po
-    zamietnutí zrušenia je znova ZELENÝ. Kým napojenie v plánovači nie je, test sa preskočí."""
-    import inspect
+    """[MR2] Integrácia s plánovačom: planovac.evaluate_train volá posta.spracovanie.pending_uncertainty –
+    vlak s čakajúcim zrušením pridelenej trasy je ORANŽOVÝ a odporúčanie povie prečo; po
+    zamietnutí zrušenia je znova ZELENÝ."""
 
     from vlaky.planovanie import planovac
 
-    if "pending_uncertainty" not in inspect.getsource(planovac):
-        pytest.skip("plánovač ešte nevolá posta.spracovanie.pending_uncertainty (zmena v planovac.evaluate_train)")
     dep = fixed_now + timedelta(hours=3)
     t = Train(number="12345", origin="Čadca", destination="Žilina", traction="E", gauge="1435", vmax_kmh=90,
               status="planovany", run_date="2026-11-02", ready_utc=dep - timedelta(minutes=30),
