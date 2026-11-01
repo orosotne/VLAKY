@@ -32,6 +32,8 @@ class User(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
+    # história jedného záznamu (napr. detail vlaku) – audit sa nečistí, bez indexu by sa prechádzal celý
+    __table_args__ = (Index("ix_audit_log_entity_ts", "entity", "entity_id", "ts"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     actor: Mapped[str] = mapped_column(String(80))          # používateľ alebo "agent"
@@ -346,7 +348,8 @@ class Notification(Base):
     __tablename__ = "notifications"
     id: Mapped[int] = mapped_column(primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
-    recommendation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("recommendations.id"), nullable=True)
+    recommendation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("recommendations.id"), nullable=True,
+                                                             index=True)
     kind: Mapped[str] = mapped_column(String(30), default="odporucanie")
     # odporucanie|upozornenie|suhrn|zdravie|odovzdavka|test
     channel: Mapped[str] = mapped_column(String(10))                  # email|teams|sms|app

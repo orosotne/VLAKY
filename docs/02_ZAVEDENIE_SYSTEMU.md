@@ -44,7 +44,7 @@ Stav k 31. 10. 2026. Fakty sú overené v zdrojoch (zoznam v `docs/05_ZDROJE.md`
 Podrobný postup je v `docs/PREVADZKA.md`. Hlavné body:
 
 - VPS v EÚ (4 vCPU, 8 – 16 GB RAM, 160 GB SSD), doména, TLS, zálohy a externý monitoring.
-- Schránka na firemnej doméne (napr. `agent.dispecing@firma.sk`) a **kópie** prevádzkových e-mailov do nej. Ľudia dostávajú e-maily naďalej, agent ich iba číta navyše.
+- Schránka na firemnej doméne (napr. `agent.dispecing@dopravca.example`) a **kópie** prevádzkových e-mailov do nej. Ľudia dostávajú e-maily naďalej, agent ich iba číta navyše.
 - Zoznam povolených odosielateľov (domény ŽSR, partnerov, zákazníkov) a zoznam dispečerov, ktorým agent posiela odporúčania.
 
 ## 3. Mapa siete a údaje o infraštruktúre

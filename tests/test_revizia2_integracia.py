@@ -235,3 +235,22 @@ def test_obchadzka_okolo_vyluky_z_poistky_nie_je_ta_ista_trasa(session, fixed_no
         names = [s.name for s, _km, _m in alt.stations]
         assert not ("Žilina-Teplička" in names and "Varín" in names and
                     abs(names.index("Varín") - names.index("Žilina-Teplička")) <= 2)
+
+
+def test_init_db_doplni_chybajuce_indexy_existujucej_databazy(cfg):
+    """Aktualizácia: init_db doplní do existujúcich tabuliek nové indexy (audit sa nečistí – história záznamu
+    bez indexu by prechádzala celý audit; správy sa hľadajú podľa odporúčania)."""
+    from sqlalchemy import inspect, text
+
+    from vlaky.db import engine, init_db
+
+    eng = engine()
+    with eng.begin() as conn:  # databáza zo staršej verzie – indexy ešte neexistujú
+        conn.execute(text("DROP INDEX ix_audit_log_entity_ts"))
+        conn.execute(text("DROP INDEX ix_notifications_recommendation_id"))
+    names = lambda t: {ix["name"] for ix in inspect(eng).get_indexes(t)}  # noqa: E731
+    assert "ix_audit_log_entity_ts" not in names("audit_log")
+    init_db()
+    assert "ix_audit_log_entity_ts" in names("audit_log")
+    assert "ix_notifications_recommendation_id" in names("notifications")
+    init_db()  # opakované spustenie nič nemení

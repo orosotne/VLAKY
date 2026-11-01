@@ -983,6 +983,9 @@ def _write_pending_safe(session: Session, ev: ExtractedEvent) -> Optional[Closur
     pre PostgreSQL) nesmie zahodiť udalosť ani ostatné udalosti e-mailu (sekcia 2.1: nič sa nesmie stratiť).
     Udalosť ostane vo fronte s upozornením, že plánovač s ňou do potvrdenia nepočíta."""
     try:
+        from ..db import prepare_savepoints
+
+        prepare_savepoints(session)  # SQLite: SAVEPOINT len vnútri otvorenej transakcie
         with session.begin_nested():
             return _write_pending(session, ev)
     except Exception as exc:  # noqa: BLE001 – udalosť sa zachová, dispečer dostane upozornenie
@@ -1133,6 +1136,9 @@ def _pin_standing(session: Session, train_id: Optional[int]) -> None:
     try:
         from ..planovanie import stav
 
+        from ..db import prepare_savepoints
+
+        prepare_savepoints(session)  # SQLite: SAVEPOINT len vnútri otvorenej transakcie (inak by RELEASE potvrdil)
         with session.begin_nested():  # pri chybe sa vráti len tento krok, nie spracovanie e-mailu
             train = session.get(Train, train_id)
             if train is not None:

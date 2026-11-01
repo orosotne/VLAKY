@@ -12,7 +12,7 @@ Zoznam podkladov, prístupov a rozhodnutí na zavedenie systému. Je zoradený p
   - objednávky a zmeny od zákazníkov.
 
   Všetko aj s prílohami (PDF, Excel…), anonymizované (mená a telefóny môžu byť začiernené). Ideálne aj s tým, ako si to dispečer zapísal: to bude „správna odpoveď“ na testovanie presnosti AI.
-- [ ] **E-mailová adresa agenta.** Na akej doméne a v akom systéme ju zriadime (Microsoft 365, Google Workspace, iný), napr. `agent.dispecing@vasafirma.sk`. Ďalej treba rozhodnúť, ako sa na ňu dostanú prevádzkové e-maily: ŽSR, partneri a zákazníci ju pridajú do rozosielania, alebo sa budú automaticky preposielať kópie z dispečerskej schránky. Potrebný je aj kontakt na IT.
+- [ ] **E-mailová adresa agenta.** Na akej doméne a v akom systéme ju zriadime (Microsoft 365, Google Workspace, iný), napr. `agent.dispecing@vasafirma.example`. Ďalej treba rozhodnúť, ako sa na ňu dostanú prevádzkové e-maily: ŽSR, partneri a zákazníci ju pridajú do rozosielania, alebo sa budú automaticky preposielať kópie z dispečerskej schránky. Potrebný je aj kontakt na IT.
 - [ ] **Komu agent posiela odporúčania.** E-mailové adresy dispečerov, kanál v MS Teams a telefónne čísla na SMS pri naliehavých veciach. Mimo tohto zoznamu agent nesmie posielať nič.
 - [ ] **Dokumenty a prístupy k ŽSR.** Čo z toho máte a používate:
   - podmienky používania železničnej infraštruktúry ŽSR (verejný dokument),

@@ -110,8 +110,8 @@ _ADDRESS_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 def _from_addresses(msg: Message) -> tuple[str, str, int]:
     """(adresa, meno, počet adries) z hlavičiek From.
 
-    Počítajú sa aj neplatné a prázdne položky: „From: vyluky@zsr.sk <x@utocnik.example>“ knižnica rozoberie
-    ako „vyluky@zsr.sk, <>“ – skutočnú adresu zahodí. Taká hlavička má dve položky a ide do karantény.
+    Počítajú sa aj neplatné a prázdne položky: „From: vyluky@zsr.example <x@utocnik.example>“ knižnica rozoberie
+    ako „vyluky@zsr.example, <>“ – skutočnú adresu zahodí. Taká hlavička má dve položky a ide do karantény.
     """
     headers = _header_all(msg, "From")
     try:

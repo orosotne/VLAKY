@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..cas import ensure_utc, fmt
 from ..config import settings
+from ..db import prepare_savepoints
 from ..models import Attachment, DriverShift, Email, PositionReport, Train
 from ..notifikacie.odosielanie import send_internal
 from ..planovanie.planovac import DONE_STATES, current_params
@@ -43,6 +44,8 @@ def crew_alerts(session: Session, now: datetime, errors: list | None = None) -> 
     thresholds = sorted({int(x) for x in settings().csv(settings().crew_alert_minutes)}, reverse=True)
     shifts = list(session.scalars(select(DriverShift).where(DriverShift.status.in_(("planovana", "prebieha")),
                                                             DriverShift.start_utc <= now)))
+    if shifts:
+        prepare_savepoints(session)
     return sum(_isolated(session, errors, f"zmena rušňovodiča #{sh.id}",
                          lambda sh=sh: _crew_alert(session, now, sh, p, thresholds)) for sh in shifts)
 
@@ -85,6 +88,8 @@ def standing_alerts(session: Session, now: datetime, errors: list | None = None)
     """Vlak v jazde, ktorý sa ≥ N minút takmer nepohol (< 300 m), → upozornenie (M9)."""
     minutes = settings().standing_alert_minutes
     trains = list(session.scalars(select(Train).where(Train.status == "v_jazde")))
+    if trains:
+        prepare_savepoints(session)
     return sum(_isolated(session, errors, f"vlak {t.number}", lambda t=t: _standing_alert(session, now, t, minutes))
                for t in trains)
 

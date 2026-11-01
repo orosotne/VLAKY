@@ -16,7 +16,7 @@ sudo -iu vlaky
 cd /opt/vlaky/app
 ```
 
-Namiesto `agent.dopravca.sk`, `dopravca.sk` a `203.0.113.10` doplň svoje hodnoty.
+Namiesto `agent.dopravca.example`, `dopravca.example` a `203.0.113.10` doplň svoje hodnoty.
 
 ## Obsah
 
@@ -25,7 +25,7 @@ Namiesto `agent.dopravca.sk`, `dopravca.sk` a `203.0.113.10` doplň svoje hodnot
 3. [DNS](#3-dns)
 4. [Inštalácia s Dockerom – krok za krokom](#4-inštalácia-s-dockerom--krok-za-krokom)
 5. [Schránka agenta](#5-schránka-agenta)
-6. [Odosielanie upozornení (SMTP, SPF/DKIM/DMARC, Teams, SMS)](#6-odosielanie-upozornení)
+6. [Odosielanie upozornení (SMTP, SPF/DKIM/DMARC, Teams, SMS, výpadok servera správ)](#6-odosielanie-upozornení)
 7. [Interný zoznam príjemcov a tieňová prevádzka](#7-interný-zoznam-príjemcov-a-tieňová-prevádzka)
 8. [Jazykový model (LLM)](#8-jazykový-model-llm)
 9. [Železničná sieť z OpenStreetMap](#9-železničná-sieť-z-openstreetmap)
@@ -80,8 +80,8 @@ Kontajnery aplikácie bežia ako neprivilegovaný používateľ s koreňovým s�
   Poskytovateľ s dátovým centrom v EÚ, so zmluvou o spracúvaní osobných údajov (DPA), ideálne so
   šifrovaným diskom a snímkami (snapshots). Príklady poskytovateľov s dátovými centrami v EÚ: Hetzner,
   OVHcloud, Scaleway – len príklady, nie odporúčanie; podmienky a umiestnenie si overte.
-- **Doména alebo subdoména** pre aplikáciu, napr. `agent.dopravca.sk`, a prístup k nastaveniu DNS.
-- **Schránka agenta** na firemnej doméne, napr. `agent.dispecing@dopravca.sk` (kapitola 5).
+- **Doména alebo subdoména** pre aplikáciu, napr. `agent.dopravca.example`, a prístup k nastaveniu DNS.
+- **Schránka agenta** na firemnej doméne, napr. `agent.dispecing@dopravca.example` (kapitola 5).
 - **Odosielanie e-mailov** (SMTP) zo schránky alebo služby s SPF/DKIM/DMARC (kapitola 6).
 - **Externý monitoring** (napr. healthchecks.io + služba na kontrolu webu) – kapitola 12.
 - **Úložisko na zálohy mimo servera** (iný poskytovateľ alebo aspoň iný región v EÚ).
@@ -93,11 +93,11 @@ Kontajnery aplikácie bežia ako neprivilegovaný používateľ s koreňovým s�
 
 ## 3. DNS
 
-1. U správcu domény vytvor záznam **A** `agent.dopravca.sk → verejná IPv4 servera`
+1. U správcu domény vytvor záznam **A** `agent.dopravca.example → verejná IPv4 servera`
    (a **AAAA** na IPv6 – len ak IPv6 na serveri naozaj funguje; inak AAAA nevytváraj, Let's Encrypt by zlyhal).
    TTL napr. 300 s (ľahšia zmena pri sťahovaní servera).
-2. Over (z počítača): `dig +short agent.dopravca.sk` alebo `nslookup agent.dopravca.sk` → IP servera.
-3. Voliteľne záznam **CAA** na doméne: `dopravca.sk. CAA 0 issue "letsencrypt.org"`
+2. Over (z počítača): `dig +short agent.dopravca.example` alebo `nslookup agent.dopravca.example` → IP servera.
+3. Voliteľne záznam **CAA** na doméne: `dopravca.example. CAA 0 issue "letsencrypt.org"`
    (ak CAA záznamy už máte, pridajte Let's Encrypt; ak Caddy použije záložného vydavateľa ZeroSSL,
    treba povoliť aj `sectigo.com`).
 4. Porty **80 a 443** musia byť dostupné z internetu (Let's Encrypt overuje doménu cez ne) – setup.sh to zariadi.
@@ -182,7 +182,7 @@ v produkcii nespustia. Na začiatok stačí:
 
 | Nastavenie | Hodnota |
 |---|---|
-| `VLAKY_DOMAIN` | `agent.dopravca.sk` |
+| `VLAKY_DOMAIN` | `agent.dopravca.example` |
 | `VLAKY_CARRIER_NAME` | názov dopravcu |
 | `VLAKY_ALLOWED_SENDERS` | domény ŽSR, partnerov, zákazníkov, vlastná doména |
 | `VLAKY_NOTIFY_EMAILS` | dispečeri (interný zoznam) |
@@ -201,7 +201,7 @@ docker compose build             # zostaví obraz aplikácie (prvýkrát niekoľ
 docker compose up -d             # db → init-db → web + agent → caddy
 docker compose ps                # db, web, caddy: "healthy"; agent: "healthy" do ~3 min
 docker compose logs -f caddy     # hľadaj "certificate obtained successfully"; ukončenie Ctrl+C
-curl https://agent.dopravca.sk/health     # {"status":"ok","db":"ok",...}
+curl https://agent.dopravca.example/health     # {"status":"ok","db":"ok",...}
 ```
 
 Ak certifikát nevznikne, pozri kapitolu 13 („Problém s certifikátom“).
@@ -217,12 +217,12 @@ Tabuľky a hraničné priechody vytvorí automaticky jednorazová služba `init-
 ```bash
 read -rsp "Heslo pre nového používateľa: " PW; echo
 docker compose exec web python -m vlaky create-user admin --role admin --password "$PW" \
-    --full-name "Meno Priezvisko" --email spravca@dopravca.sk
+    --full-name "Meno Priezvisko" --email spravca@dopravca.example
 unset PW
 ```
 
 Roly: `dispecer`, `veduci`, `planovac`, `obchod`, `admin`. Heslo sa takto neuloží do histórie príkazov.
-Prihlás sa na `https://agent.dopravca.sk` a ďalších používateľov vytváraj podľa potreby.
+Prihlás sa na `https://agent.dopravca.example` a ďalších používateľov vytváraj podľa potreby.
 
 ### 4.9 Skúšobná správa
 
@@ -250,7 +250,7 @@ Podrobnosti: [deploy/backup/README.md](../deploy/backup/README.md) a
 
 ### 4.11 Kontrolný zoznam po inštalácii
 
-- [ ] `https://agent.dopravca.sk` má platný certifikát, `http://` presmeruje na `https://`
+- [ ] `https://agent.dopravca.example` má platný certifikát, `http://` presmeruje na `https://`
 - [ ] `docker compose ps` – všetky služby `healthy`
 - [ ] prihlásenie do aplikácie funguje, heslo admina je v trezore
 - [ ] `test-notify` doručil e-mail vedúcemu dispečingu
@@ -264,7 +264,7 @@ Podrobnosti: [deploy/backup/README.md](../deploy/backup/README.md) a
 
 ## 5. Schránka agenta
 
-Agent potrebuje **vlastnú schránku** na firemnej doméne (nie bezplatnú), napr. `agent.dispecing@dopravca.sk`.
+Agent potrebuje **vlastnú schránku** na firemnej doméne (nie bezplatnú), napr. `agent.dispecing@dopravca.example`.
 Prevádzkové e-maily musia **naďalej chodiť aj ľuďom** – agent dostáva kópiu:
 
 - **najlepšie:** adresa agenta je priamo v distribučných zoznamoch ŽSR, partnerov a zákazníkov
@@ -281,25 +281,27 @@ Exchange Online nepovoľuje IMAP s menom a heslom, preto sa používa Microsoft 
 oprávnením obmedzeným **len na schránku agenta**.
 
 1. **Schránka:** Microsoft 365 admin center → Teams & groups → Shared mailboxes → Add –
-   `agent.dispecing@dopravca.sk` (zdieľaná schránka nepotrebuje licenciu do 50 GB; prihlásenie do nej je zakázané).
+   `agent.dispecing@dopravca.example` (zdieľaná schránka nepotrebuje licenciu do 50 GB; prihlásenie do nej je zakázané).
 2. **Registrácia aplikácie:** Microsoft Entra admin center → Applications → App registrations →
    New registration: názov „Agent dispečer – čítanie schránky“, „Accounts in this organizational directory only“,
    bez Redirect URI. Zapíš **Application (client) ID** a **Directory (tenant) ID**.
 3. **Oprávnenie:** API permissions → Add a permission → Microsoft Graph → **Application permissions** →
-   `Mail.Read` → Add → **Grant admin consent**. (Agent schránku len číta – `Mail.Read` stačí.)
+   `Mail.Read` → Add → **Grant admin consent**. (Na čítanie schránky stačí `Mail.Read`. Ak má agent upozornenia
+   posielať aj cez Microsoft Graph – `VLAKY_NOTIFY_TRANSPORT=graph`, kapitola 6.1 –, pridaj aj `Mail.Send`;
+   obmedzenie na jednu schránku v kroku 5 platí pre obe oprávnenia.)
 4. **Tajomstvo:** Certificates & secrets → New client secret – platnosť napr. 12 mesiacov (Entra ID dovolí najviac 24).
    Hodnotu (Value) hneď skopíruj; **dátum vypršania zapíš do kalendára správcu** s mesačným predstihom.
 5. **Obmedzenie na jednu schránku** (inak by aplikácia mohla čítať všetky schránky firmy!) –
    v PowerShell s modulom ExchangeOnlineManagement:
    ```powershell
    Install-Module ExchangeOnlineManagement        # raz
-   Connect-ExchangeOnline -UserPrincipalName spravca@dopravca.sk
+   Connect-ExchangeOnline -UserPrincipalName spravca@dopravca.example
    New-DistributionGroup -Name "Agent dispecer - pristup aplikacie" -Alias agent-dispecer-pristup `
-       -Type Security -Members agent.dispecing@dopravca.sk
-   New-ApplicationAccessPolicy -AppId <CLIENT_ID> -PolicyScopeGroupId agent-dispecer-pristup@dopravca.sk `
+       -Type Security -Members agent.dispecing@dopravca.example
+   New-ApplicationAccessPolicy -AppId <CLIENT_ID> -PolicyScopeGroupId agent-dispecer-pristup@dopravca.example `
        -AccessRight RestrictAccess -Description "Agent dispecer smie citat len svoju schranku"
-   Test-ApplicationAccessPolicy -Identity agent.dispecing@dopravca.sk -AppId <CLIENT_ID>   # Granted
-   Test-ApplicationAccessPolicy -Identity niekto.iny@dopravca.sk     -AppId <CLIENT_ID>   # Denied
+   Test-ApplicationAccessPolicy -Identity agent.dispecing@dopravca.example -AppId <CLIENT_ID>   # Granted
+   Test-ApplicationAccessPolicy -Identity niekto.iny@dopravca.example     -AppId <CLIENT_ID>   # Denied
    ```
    Zmena začne platiť o niekoľko desiatok minút. Microsoft odporúča aj novší spôsob „RBAC for
    Applications“ v Exchange Online (rola `Application Mail.Read` s rozsahom na jednu schránku) –
@@ -310,7 +312,7 @@ oprávnením obmedzeným **len na schránku agenta**.
    VLAKY_GRAPH_TENANT_ID=<Directory (tenant) ID>
    VLAKY_GRAPH_CLIENT_ID=<Application (client) ID>
    VLAKY_GRAPH_CLIENT_SECRET=<Value>
-   VLAKY_GRAPH_MAILBOX=agent.dispecing@dopravca.sk
+   VLAKY_GRAPH_MAILBOX=agent.dispecing@dopravca.example
    ```
    `docker compose up -d` a `docker compose logs -f agent`; v aplikácii stránka stavu agenta.
 7. Server potrebuje odchádzajúci prístup na `login.microsoftonline.com` a `graph.microsoft.com` (HTTPS).
@@ -319,7 +321,7 @@ oprávnením obmedzeným **len na schránku agenta**.
 
 **IMAP s heslom aplikácie** (podporované aplikáciou):
 
-1. Admin console: vytvor používateľa `agent.dispecing@dopravca.sk` (vyžaduje licenciu) a povoľ IMAP
+1. Admin console: vytvor používateľa `agent.dispecing@dopravca.example` (vyžaduje licenciu) a povoľ IMAP
    (Apps → Google Workspace → Gmail → End User Access → POP and IMAP access).
 2. Prihlás sa ako agent, zapni **dvojstupňové overenie** a vytvor **heslo aplikácie**
    (Google účet → Security → App passwords). Heslo ulož do trezoru. (Podmienky Google sa menia – over aktuálny stav.)
@@ -328,7 +330,7 @@ oprávnením obmedzeným **len na schránku agenta**.
    VLAKY_MAIL_SOURCE=imap
    VLAKY_IMAP_HOST=imap.gmail.com
    VLAKY_IMAP_PORT=993
-   VLAKY_IMAP_USER=agent.dispecing@dopravca.sk
+   VLAKY_IMAP_USER=agent.dispecing@dopravca.example
    VLAKY_IMAP_PASSWORD=<heslo aplikácie bez medzier>
    VLAKY_IMAP_FOLDER=INBOX
    VLAKY_TRUSTED_AUTHSERV_IDS=mx.google.com
@@ -358,6 +360,16 @@ docker compose exec -T agent sh -c 'cat > /app/data/schranka/skuska.eml' < data/
 - `VLAKY_ALLOWED_SENDERS` – len tieto domény/adresy sa spracujú; ostatné idú do karantény (agent ich spomenie v súhrne).
 - `VLAKY_REQUIRE_DMARC_PASS=true` – vyžaduje výsledok SPF/DKIM/DMARC „pass“, ktorý zapísal **váš**
   poštový server (`VLAKY_TRUSTED_AUTHSERV_IDS`), aby sa nedalo podvrhnúť hlavičkou v e-maile.
+- **Preposlaný obsah** (príloha message/rfc822, priložený .eml, vložené preposlanie): pôvodný odosielateľ
+  musí byť povolený a overený, inak karanténa. Výnimka: preposiela overený odosielateľ ŽSR (citovaná správa
+  susednej správy, interný ROV bez hlavičiek overenia) – e-mail nejde do karantény, pôvodný odosielateľ sa zapíše
+  do `forwarded_from` a všetko z neho ide na potvrdenie dispečerom. Textová príloha sa považuje za priložený
+  e-mail, len keď začína skutočným blokom hlavičiek (From s adresou a aspoň jedna z hlavičiek Date, Subject,
+  Message-ID, Received, MIME-Version).
+- **Rovnaké Message-ID od iného odosielateľa** sa uloží ako samostatný e-mail (Message-ID s dodatkom `#<sha>`)
+  a zapíše sa do auditu (`email_message_id_kolizia`, kapitola 13); potichu sa preskočí len opakované doručenie
+  od toho istého odosielateľa. Microsoft Graph preto číta aj adresu odosielateľa (pole `from`, stačí oprávnenie
+  `Mail.Read`).
 - Obsah e-mailov je pre agenta len dáta – pokyny v e-mailoch nevykonáva a odkazy neotvára.
 
 ## 6. Odosielanie upozornení
@@ -371,7 +383,9 @@ Agent posiela e-maily cez `VLAKY_SMTP_HOST`/`PORT` (587 + STARTTLS) s menom a he
   v Exchange Online – over aktuálny stav. Možnosti: (a) SMTP relé cez konektor Exchange Online
   (port 25, overenie podľa IP servera; pozor, mnohí poskytovatelia VPS port 25 blokujú),
   (b) transakčná e-mailová služba so serverom v EÚ s SPF/DKIM pre vašu doménu,
-  (c) doplniť do aplikácie odosielanie cez Microsoft Graph (požiadavka na vývoj).
+  (c) odosielanie cez Microsoft Graph zo schránky agenta: `VLAKY_NOTIFY_TRANSPORT=graph` s údajmi
+  `VLAKY_GRAPH_*` z kapitoly 5.1 a oprávnením `Mail.Send` (obmedzeným na schránku agenta). Agent
+  posiela vždy jednému príjemcovi zo zoznamu, bez kópií.
 - **Google Workspace:** `smtp.gmail.com`, port 587, účet agenta a heslo aplikácie (kapitola 5.2),
   alebo služba SMTP relay v Admin console.
 - **Iný poskytovateľ:** podľa jeho návodu (port 587, STARTTLS).
@@ -384,9 +398,9 @@ Bez nich skončia upozornenia v spame alebo sa nedoručia. V DNS domény z `VLAK
 
 | Záznam | Príklad | Poznámka |
 |---|---|---|
-| SPF (TXT na `dopravca.sk`) | `v=spf1 include:spf.protection.outlook.com -all` (M365) / `v=spf1 include:_spf.google.com ~all` (Google) | jeden SPF záznam na doménu; pridaj `include` služby, ktorá posiela; priamo z VPS neposielaj |
+| SPF (TXT na `dopravca.example`) | `v=spf1 include:spf.protection.outlook.com -all` (M365) / `v=spf1 include:_spf.google.com ~all` (Google) | jeden SPF záznam na doménu; pridaj `include` služby, ktorá posiela; priamo z VPS neposielaj |
 | DKIM | M365: Microsoft Defender → Email & collaboration → Policies → Email authentication settings → DKIM (2× CNAME); Google: Admin console → Gmail → Authenticate email (TXT `google._domainkey`) | zapnúť podpisovanie |
-| DMARC (TXT na `_dmarc.dopravca.sk`) | `v=DMARC1; p=none; rua=mailto:dmarc@dopravca.sk` | po 2 – 4 týždňoch bez problémov `p=quarantine`, neskôr `p=reject` |
+| DMARC (TXT na `_dmarc.dopravca.example`) | `v=DMARC1; p=none; rua=mailto:dmarc@dopravca.example` | po 2 – 4 týždňoch bez problémov `p=quarantine`, neskôr `p=reject` |
 
 Kontrola: v prijatom upozornení zobraz zdrojový text – v `Authentication-Results` má byť
 `spf=pass`, `dkim=pass`, `dmarc=pass`.
@@ -397,7 +411,7 @@ Aplikácia technicky odmietne iných príjemcov ako interný zoznam (kapitola 7)
 na poštovom serveri (PROMPT.md 2.2 – „SMTP relé odmietne iné adresy“):
 
 - **Microsoft 365:** Exchange admin center → Mail flow → Rules → nové pravidlo: *ak je odosielateľ*
-  `agent.dispecing@dopravca.sk` *a príjemca je mimo organizácie* → *zablokovať správu* (s vysvetlením).
+  `agent.dispecing@dopravca.example` *a príjemca je mimo organizácie* → *zablokovať správu* (s vysvetlením).
 - **Google Workspace:** Admin console → Gmail → Compliance → **Restrict delivery** pre organizačnú
   jednotku/skupinu agenta – povoliť len vlastnú doménu.
 - **Iná služba:** obmedzenie príjemcov alebo samostatný účet len pre internú doménu, ak to služba umožňuje.
@@ -414,6 +428,28 @@ na poštovom serveri (PROMPT.md 2.2 – „SMTP relé odmietne iné adresy“):
 - V tieňovej prevádzke sú Teams aj SMS vypnuté; vyskúšaj ich pri prechode do ostrej prevádzky
   (`test-notify` po vypnutí tieňového režimu).
 
+### 6.5 Výpadok servera správ (SMTP, Teams, SMS)
+
+- **Limit spojenia:** agent sa na server správ pripája s limitom 10 s (pri SMTP potom 30 s na odpovede
+  servera); limit sa dá zmeniť nastavením `VLAKY_NOTIFY_CONNECT_TIMEOUT_S`.
+- **Nedostupný kanál:** keď sa spojenie nepodarí alebo server hlási výpadok či preťaženie (SMTP 421, HTTP 5xx,
+  408, 429), ďalšie správy na tom istom kanáli (e-mail, Teams, SMS) sa v tom istom cykle agenta už nepripájajú –
+  dostanú stav „chyba“ s textom „Neodoslané – kanál … je teraz nedostupný“. Nedostupný alebo ticho zahadzujúci
+  server tak nezdrží čítanie schránky. V zázname správy začína chyba spojenia alebo servera textom „Chyba kanála:“.
+- **Odmietnutie jednej správy alebo jedného príjemcu** (napr. SMTP 550, SMS brána 403 pre jedno číslo) ostatných
+  nezdrží – dostanú správu hneď.
+- **Opakovanie:** nedoručené správy sa opakujú s rastúcim odstupom (po 5, 10, 20, 40 a potom každých 60 min)
+  a len príjemcom, ktorým neprišli – ostatní ich druhý raz nedostanú. Pri výpadku kanála sa správa zopakuje aj
+  hneď, keď tomu istému príjemcovi prišla iná správa (kanál opäť funguje), a KRITICKÉ odporúčania (ESKALOVAŤ)
+  sa skúšajú každých 5 min – po obnovení servera prídu do 5 min.
+- **Čo sa opakuje:** odporúčania, návrhy k objednávkam, súhrn (najdlhšie do ďalšieho súhrnu), denná správa
+  a odovzdávka služby – vždy tá istá správa, nie nová. Súhrn, denná správa a odovzdávka sú vybavené, až keď
+  prišli každému dispečerovi zo zoznamu. Aktuálne odporúčanie sa skúša doručiť najviac 48 h (nie pre ukončený
+  vlak); nahradené alebo rozhodnuté odporúčanie sa už neposiela. Upozornenia na rušňovodiča a státie vlaku sa
+  skúšajú v každom cykle, kým platia (pri výpadku najviac jeden pokus o spojenie na kanál za cyklus).
+
+Sledovanie nedoručených správ: kapitola 12; postup: kapitola 13 („Upozornenia sa nedoručujú“).
+
 ## 7. Interný zoznam príjemcov a tieňová prevádzka
 
 **Interný zoznam** – jediné miesta, kam agent smie niečo poslať:
@@ -423,7 +459,7 @@ ani zákazníkov; koncepty správ pre nich posiela dispečer sám.
 
 **Tieňová prevádzka** (PROMPT.md 2.7) – prvých **4 – 6 týždňov**:
 
-1. `VLAKY_SHADOW_MODE=true`, `VLAKY_SHADOW_EMAILS=veduci.dispecingu@dopravca.sk` (prípadne testovací kanál).
+1. `VLAKY_SHADOW_MODE=true`, `VLAKY_SHADOW_EMAILS=veduci.dispecingu@dopravca.example` (prípadne testovací kanál).
    Agent beží naostro, ale odporúčania idú **len** na tieňové adresy; dispečeri pracujú ako doteraz.
 2. Vedúci dispečingu porovnáva odporúčania s tým, čo urobil dispečer, a eviduje: nezachytené zmeny
    (cieľ 0), správnosť vytiahnutých údajov, zhodu odporúčaní, falošné poplachy.
@@ -451,10 +487,11 @@ viac udalostí ide na potvrdenie).
 2. **Kľúč:** vytvor samostatný API kľúč len pre agenta, nastav **limit výdavkov** v konzole poskytovateľa.
    ```ini
    VLAKY_LLM_PROVIDER=anthropic
-   VLAKY_LLM_MODEL=claude-opus-5-5
+   VLAKY_LLM_MODEL=<názov modelu z dokumentácie poskytovateľa>
    VLAKY_ANTHROPIC_API_KEY=<kľúč>
    ```
-   (Presný názov modelu over v dokumentácii poskytovateľa.) Potom `docker compose up -d`.
+   Názov modelu je povinný – aplikácia nemá predvolený model. Bez neho (alebo bez kľúča) agent LLM nepoužije
+   a stránka Nastavenia to ukáže. Potom `docker compose up -d`.
 3. Kľúč meň aspoň raz ročne a pri odchode ľudí, ktorí ho poznali.
 4. Server potrebuje odchádzajúci HTTPS prístup k API poskytovateľa.
 
@@ -506,6 +543,12 @@ Aj bez zmien v kóde spusti `update.sh` raz mesačne – zostaví obraz s aktuá
 > a do existujúcich tabuliek doplní nové stĺpce (s predvolenou hodnotou alebo prázdne). Zmeny typov,
 > premenovanie a mazanie stĺpcov vyžadujú migrácie (napr. Alembic) – kým ich aplikácia nemá, nová verzia
 > s takou zmenou musí mať vlastný postup v poznámkach k vydaniu.
+>
+> **Nové stĺpce:** táto verzia pridáva stĺpce `trains.standing_since_utc` (začiatok státia na koľajach ŽSR)
+> a `trains.departed_utc` (skutočný čas odchodu). Oba sú prázdne (nullable) a `init-db` ich doplní do existujúcej
+> databázy SQLite aj PostgreSQL bez migrácie. Pre staršie záznamy agent používa náhradné kotvy limitu 18 h
+> (príchod na hranicu, čas pripravenosti odstaveného alebo prevzatého vlaku), kým sa začiatok státia nezapíše
+> pri najbližšej úprave alebo zmene stavu.
 
 ### 10.2 Návrat na predchádzajúcu verziu (rollback)
 
@@ -551,9 +594,11 @@ Podrobný návod: [deploy/monitoring/README.md](../deploy/monitoring/README.md).
 | Čo | Ako | Upozornenie |
 |---|---|---|
 | Agent žije | `VLAKY_HEARTBEAT_URL` – agent pinguje každých 5 min | ping chýba > 15 min |
-| Web a databáza | externá kontrola `https://agent.dopravca.sk/health` | 2 zlyhania po sebe |
+| Web a databáza | externá kontrola `https://agent.dopravca.example/health` | 2 zlyhania po sebe |
 | Server | `check.sh` každých 15 min (disk, vek zálohy, kontajnery, HTTPS, certifikát) → `CHECK_HEARTBEAT_URL` | `/fail` s dôvodom |
 | Záloha | `backup.sh` → `BACKUP_HEARTBEAT_URL` | `/fail` alebo chýba > 26 h |
+| Doručovanie upozornení | kým ostáva niečo nedoručené, agent v každom cykle hlási chybu „doručenie: N správ(a) sa nepodarilo doručiť (kanály)“ (heartbeat `/fail`, bez adries príjemcov); `python -m vlaky health` vráti chybu (kontajner agenta je „unhealthy“, `update.sh` a `check.sh` to ohlásia) s detailom `dorucenie` – rovnako stránka `/zdravie` a denná správa | `/fail` alebo kontajner agenta „unhealthy“ |
+| Chybné odporúčanie | odporúčanie, ktorého správu sa nedá pripraviť (chyba programu alebo neočakávané údaje), hlási každý cyklus ako „odporúčanie #N: …“ (heartbeat `/fail`, detail so stopou v `/zdravie`, komponent planovanie); ostatné odporúčania sa doručujú normálne | `/fail` |
 
 Externý monitoring musí bežať **mimo tohto servera** a upozorňovať aspoň dvoch ľudí.
 
@@ -576,7 +621,7 @@ Pri každom incidente: (1) informuj dispečing, či má pracovať ručne, (2) za
 
 ### Webová aplikácia nedostupná
 
-`docker compose ps`, `docker compose logs --tail 200 web caddy`, `curl -I https://agent.dopravca.sk/health`.
+`docker compose ps`, `docker compose logs --tail 200 web caddy`, `curl -I https://agent.dopravca.example/health`.
 Caddy pri nedostupnom webe zobrazí dispečerom správu „webová aplikácia je dočasne nedostupná“.
 `/health` s kódom 503 znamená nedostupnú databázu → `docker compose logs --tail 200 db`.
 
@@ -591,6 +636,26 @@ Príznaky: v stave agenta chyba schránky, `health` hlási starú kontrolu schr�
 - **IMAP / Google:** nové heslo aplikácie → `VLAKY_IMAP_PASSWORD` → `docker compose up -d`.
 - Kým to nefunguje, agent nevidí nové zmeny – **dispečing musí vedieť, že pracuje ručne**.
   Po oprave agent dočíta zmeškané e-maily.
+
+### Upozornenia sa nedoručujú (zdravie: `dorucenie`)
+
+1. **Dispečing:** odporúčania sú stále na webe (Odporúčania, nástenka) – nech ich dispečeri sledujú tam.
+2. `docker compose exec agent python -m vlaky health` – detail `dorucenie` ukáže kanál a poslednú chybu
+   („Chyba kanála: …“ = server alebo spojenie, inak odmietnutie konkrétnej správy alebo príjemcu).
+3. **E-mail:** dostupnosť SMTP servera alebo relé, heslo alebo konektor (kapitola 6.1), pri Microsoft Graph
+   platnosť tajomstva aplikácie; **Teams:** či webhook (Workflow) ešte existuje; **SMS:** stav brány a token.
+4. **Odmietnutý príjemca** (napr. 550 user unknown, SMS brána odmieta číslo): oprav adresu vo
+   `VLAKY_NOTIFY_EMAILS` alebo číslo vo `VLAKY_NOTIFY_PHONES` a reštartuj agenta (`docker compose up -d`).
+5. Po oprave servera agent nedoručené správy pošle sám (KRITICKÉ do 5 min, ostatné najneskôr do 60 min, hneď
+   po prvej úspešnej správe tomu istému príjemcovi). Odosielanie over:
+   `docker compose exec agent python -m vlaky test-notify`.
+
+### Neobvyklé záznamy auditu pošty
+
+- `email_message_id_kolizia` – e-mail s rovnakým Message-ID od iného odosielateľa sa uložil samostatne
+  (Message-ID s dodatkom „#…“, kapitola 5.5); over pravosť oboch e-mailov.
+- `vyluka_navrh_zlyhal` – záznam „navrh“ pre plánovač sa nepodarilo zapísať (napr. chyba databázy); udalosť
+  ostáva vo fronte s upozornením a plánovač s ňou do potvrdenia nepočíta.
 
 ### LLM nedostupné
 
@@ -612,7 +677,7 @@ môžeš dočasne nastaviť `VLAKY_LLM_PROVIDER=none` (`docker compose up -d`) �
 ### Problém s certifikátom
 
 `docker compose logs caddy | grep -i -E "acme|certificate|error"`. Najčastejšie príčiny:
-DNS ukazuje inam (`dig +short agent.dopravca.sk`), zlý alebo nefunkčný AAAA záznam, porty 80/443
+DNS ukazuje inam (`dig +short agent.dopravca.example`), zlý alebo nefunkčný AAAA záznam, porty 80/443
 zablokované u poskytovateľa VPS, chybný `VLAKY_DOMAIN`, CAA záznam nepovoľuje vydavateľa,
 nesprávny čas servera (`timedatectl`), limity Let's Encrypt po mnohých neúspešných pokusoch
 (počkaj hodinu; Caddy pokusy sám opakuje). Po oprave `docker compose restart caddy`.
@@ -637,9 +702,12 @@ Porušenie ochrany osobných údajov sa hlási Úradu na ochranu osobných údaj
   a ich zástupcov treba vopred informovať a rozsah kontroly s nimi prerokovať (Zákonník práce, § 13 ods. 4 –
   over s právnikom). Spracovanie zapíš do záznamov o spracovateľských činnostiach.
 - **Zmluvy (DPA):** poskytovateľ VPS, poštová služba, poskytovateľ LLM, SMS brána, úložisko záloh,
-  externý monitoring (ak by dostával osobné údaje – heartbeat ich neobsahuje).
-- **Doby uchovávania** (PROMPT.md 2.6 – potvrdiť s DPO): e-maily 1 rok, surové GPS dáta 90 dní
-  (zabezpečuje aplikácia); prístupový log Caddy 30 dní (obsahuje IP adresy); systémové logy 1 mesiac;
+  externý monitoring (ak by dostával osobné údaje – heartbeat ich neobsahuje: len typ a prvý riadok chyby,
+  bez adries príjemcov a parametrov databázových príkazov).
+- **Doby uchovávania** (PROMPT.md 2.6 – potvrdiť s DPO): e-maily 1 rok, správy agenta dispečerom (záznamy
+  aj kópie v adresári outbox, vrátane zopakovaných pokusov pri výpadku servera správ) rovnako ako obsah e-mailov
+  (`VLAKY_RETENTION_EMAIL_DAYS`, predvolene 1 rok, najmenej 3 dni), surové GPS dáta 90 dní (zabezpečuje
+  aplikácia); prístupový log Caddy 30 dní (obsahuje IP adresy); systémové logy 1 mesiac;
   logy kontajnerov najviac 5 × 10 MB na službu; lokálne zálohy 14 dní, zálohy mimo servera podľa
   `RESTIC_FORGET_ARGS` (predvolene najviac 6 mesiacov) alebo `OFFSITE_RETENTION_DAYS`.
   **Zmazané údaje zostávajú v zálohách až do ich vypršania** – uveď to v informácii pre dotknuté osoby.
@@ -695,7 +763,7 @@ V `/etc/vlaky/vlaky.env` navyše nastav:
 
 ```ini
 VLAKY_DATABASE_URL=postgresql+psycopg://vlaky:HESLO@127.0.0.1:5432/vlaky
-VLAKY_PUBLIC_URL=https://agent.dopravca.sk
+VLAKY_PUBLIC_URL=https://agent.dopravca.example
 VLAKY_SECRET_KEY=<openssl rand -hex 32>
 VLAKY_MAIL_DIR=/var/lib/vlaky/schranka
 VLAKY_OUTBOX_DIR=/var/lib/vlaky/odoslane
@@ -725,7 +793,7 @@ pamäte. Web počúva len na `127.0.0.1:8000`.
 
 ```ini
 [Service]
-Environment=VLAKY_DOMAIN=agent.dopravca.sk
+Environment=VLAKY_DOMAIN=agent.dopravca.example
 Environment=VLAKY_UPSTREAM=127.0.0.1:8000
 ```
 

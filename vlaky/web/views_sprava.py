@@ -55,7 +55,8 @@ def _settings_overview() -> list:
         ("Prepočet idúcich vlakov každých [min]", str(cfg.reevaluate_minutes)),
         ("Token pre príjem polôh nastavený", yes_no(bool(cfg.positions_token))),
         ("Zdroj schránky agenta", cfg.mail_source),
-        ("Jazykový model (extrakcia)", cfg.llm_provider + (f" / {cfg.llm_model}" if cfg.llm_model else "")),
+        ("Jazykový model (extrakcia)", cfg.llm_provider + (f" / {cfg.llm_model}" if cfg.llm_model else (
+            " – chýba VLAKY_LLM_MODEL, agent používa pravidlá" if cfg.llm_provider not in ("", "none") else ""))),
     ]
 
 

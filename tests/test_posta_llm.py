@@ -39,13 +39,13 @@ CLOSURE_01 = ev(kind="vyluka_nova", confidence=0.92, from_station="Poprad-Tatry"
 
 
 def anthropic_reply(events: list) -> dict:
-    return {"id": "msg_test", "type": "message", "role": "assistant", "model": "claude-test",
+    return {"id": "msg_test", "type": "message", "role": "assistant", "model": "testovaci-model-a",
             "content": [{"type": "tool_use", "id": "toolu_1", "name": TOOL_NAME, "input": {"events": events}}],
             "stop_reason": "tool_use", "usage": {"input_tokens": 100, "output_tokens": 50}}
 
 
 def openai_reply(events: list) -> dict:
-    return {"id": "chatcmpl-test", "model": "gpt-test", "usage": {"prompt_tokens": 100},
+    return {"id": "chatcmpl-test", "model": "testovaci-model-b", "usage": {"prompt_tokens": 100},
             "choices": [{"index": 0, "finish_reason": "stop",
                          "message": {"role": "assistant", "content": json.dumps({"events": events})}}]}
 
@@ -75,7 +75,7 @@ def use_llm(cfg, monkeypatch):
         monkeypatch.setattr(cfg, "llm_provider", provider)
         monkeypatch.setattr(cfg, "anthropic_api_key", "test-anthropic-kluc")
         monkeypatch.setattr(cfg, "openai_api_key", "test-openai-kluc")
-        monkeypatch.setattr(cfg, "llm_model", "")
+        monkeypatch.setattr(cfg, "llm_model", "testovaci-model")
         monkeypatch.setattr(llm_mod, "CLIENT_FACTORY",
                             lambda: httpx.Client(transport=httpx.MockTransport(recorder)))
         state["rec"] = recorder
@@ -108,7 +108,7 @@ def test_anthropic_request_and_agreement(use_llm):
     assert item.extractor == "pravidla+llm" and item.confidence >= 0.9
     assert item.data["start"] == "2026-11-12T07:00:00+00:00" and item.data["kind"] == "kolaj"
     assert any("zhodujú" in n for n in item.notes)
-    assert res.meta["prompt_version"] and res.meta["model"] == "claude-test"
+    assert res.meta["prompt_version"] and res.meta["model"] == "testovaci-model-a"
 
 
 def test_openai_request_uses_strict_json_schema(use_llm):

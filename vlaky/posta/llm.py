@@ -30,7 +30,6 @@ from .udalosti import KINDS, RESTRICTION_KINDS, ExtractedItem, MailDocument, nor
 
 PROMPT_VERSION = "extrakcia-2026.11-v1"
 TOOL_NAME = "zapis_udalosti"
-DEFAULT_MODELS = {"anthropic": "claude-sonnet-4-5", "openai": "gpt-4.1-mini"}
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 MAX_BODY_CHARS = 20_000
@@ -301,7 +300,11 @@ class LLMExtractor:
 
     @staticmethod
     def enabled() -> bool:
+        """LLM sa použije len pri úplnom nastavení: poskytovateľ, jeho API kľúč a názov modelu (VLAKY_LLM_MODEL –
+        aplikácia nemá vlastný predvolený model, názvy modelov sa menia; bez neho agent použije pravidlá)."""
         s = settings()
+        if not (s.llm_model or "").strip():
+            return False
         if s.llm_provider == "anthropic":
             return bool(s.anthropic_api_key)
         if s.llm_provider == "openai":
@@ -310,8 +313,7 @@ class LLMExtractor:
 
     @staticmethod
     def model() -> str:
-        s = settings()
-        return s.llm_model or DEFAULT_MODELS.get(s.llm_provider, "")
+        return (settings().llm_model or "").strip()
 
     def _http(self) -> httpx.Client:
         if self._client is None:
@@ -324,7 +326,7 @@ class LLMExtractor:
         Poznámky o skrátení vstupu sú v ``last_notes``.
         """
         if not self.enabled():
-            raise LLMError("LLM nie je nakonfigurovaný (VLAKY_LLM_PROVIDER a API kľúč)")
+            raise LLMError("LLM nie je nakonfigurovaný (VLAKY_LLM_PROVIDER, VLAKY_LLM_MODEL a API kľúč)")
         user, notes = build_user_message(doc)
         self.last_notes = notes
         provider = settings().llm_provider

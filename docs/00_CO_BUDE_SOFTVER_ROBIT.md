@@ -10,7 +10,7 @@ Je to **pravá ruka dispečera**. Sleduje e-maily, výluky, vlaky na mape Sloven
 
 ## Ako bude Agent dispečer fungovať
 
-1. **Vlastná e-mailová adresa** (napr. `agent.dispecing@vasafirma.sk`). ŽSR, partneri a zákazníci ju pridajú do rozosielania, alebo sa na ňu automaticky preposielajú kópie z dispečerskej schránky. **Ľudia dostávajú e-maily naďalej** – agent je ďalší čitateľ, nie náhrada.
+1. **Vlastná e-mailová adresa** (napr. `agent.dispecing@vasafirma.example`). ŽSR, partneri a zákazníci ju pridajú do rozosielania, alebo sa na ňu automaticky preposielajú kópie z dispečerskej schránky. **Ľudia dostávajú e-maily naďalej** – agent je ďalší čitateľ, nie náhrada.
 2. **Číta a rozumie:** z každého e-mailu a prílohy vytiahne, čo sa zmenilo (výluka, trasa, avízo, objednávka), a overí to. Čo je neisté, dá dispečerovi na potvrdenie.
 3. **Plánuje:** prepočíta všetky dotknuté vlaky – trasu, časy, preberanie na hranici, výluky, pracovný čas rušňovodiča (13 h), rezervy a termín.
 4. **Odporúča dispečerovi:** pošle mu správu (e-mail, pri naliehavých veciach aj Teams alebo SMS). V nej je, čo sa stalo, čo to ovplyvní, **odporúčanie s návrhom trasy** (kadiaľ, kedy, kde vystriedať rušňovodiča, kedy objednať trasu u ŽSR) a pripravený koncept objednávky alebo správy zákazníkovi. Príklad predmetu (vymyslený): *„[AGENT] Vlak 12345 Čadca → Košice: POČKAŤ do 12:30 – výluka Poprad-Tatry – Liptovský Mikuláš“*.

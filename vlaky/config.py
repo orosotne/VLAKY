@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     graph_tenant_id: str = ""
     graph_client_id: str = ""
     graph_client_secret: str = ""
-    graph_mailbox: str = ""                            # napr. agent.dispecing@firma.sk
+    graph_mailbox: str = ""                            # napr. agent.dispecing@dopravca.example
     mail_poll_seconds: int = 60
     # povolení odosielatelia (domény alebo adresy), čiarkou oddelené; ostatné ide do karantény
     allowed_senders: str = "zsr.sk"

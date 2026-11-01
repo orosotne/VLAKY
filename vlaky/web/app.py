@@ -32,7 +32,7 @@ def production_problems(cfg) -> list:
     if len(key) < 32 or key.strip().lower() in WEAK_SECRETS or len(set(key)) < 8:
         problems.append("VLAKY_SECRET_KEY musí byť náhodný reťazec s aspoň 32 znakmi (openssl rand -hex 32).")
     if not (cfg.public_url or "").lower().startswith("https://"):
-        problems.append("VLAKY_PUBLIC_URL musí začínať https:// (napr. https://dispecing.firma.sk).")
+        problems.append("VLAKY_PUBLIC_URL musí začínať https:// (napr. https://dispecing.dopravca.example).")
     return problems
 
 

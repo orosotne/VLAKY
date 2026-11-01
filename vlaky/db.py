@@ -55,6 +55,7 @@ def init_db(url: str | None = None) -> None:
         os.makedirs(os.path.dirname(os.path.abspath(eng.url.database)), exist_ok=True)
     Base.metadata.create_all(eng)
     _add_missing_columns(eng)
+    _add_missing_indexes(eng)
 
 
 def _add_missing_columns(eng: Engine) -> None:
@@ -81,6 +82,22 @@ def _add_missing_columns(eng: Engine) -> None:
                     arg = col.server_default.arg
                     default = f" DEFAULT {arg if isinstance(arg, str) and arg.isdigit() else repr(str(arg))}"
                 conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}{default}'))
+
+
+def _add_missing_indexes(eng: Engine) -> None:
+    """Doplní do existujúcich tabuliek indexy pridané v novej verzii (create_all ich do existujúcej tabuľky
+    nepridá). Pri veľkej tabuľke môže vytvorenie indexu chvíľu trvať – robí sa raz, pri štarte po aktualizácii."""
+    from sqlalchemy import inspect
+
+    insp = inspect(eng)
+    existing_tables = set(insp.get_table_names())
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue
+        have = {ix.get("name") for ix in insp.get_indexes(table.name)}
+        for index in table.indexes:
+            if index.name and index.name not in have:
+                index.create(eng, checkfirst=True)
 
 
 def prepare_savepoints(session: Session) -> None:
