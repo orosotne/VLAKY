@@ -200,8 +200,11 @@
       el('a', { class: 'btn btn-sm', href: '/vlaky/' + t.id }, ['Detail vlaku']),
       r.id ? el('a', { class: 'btn btn-sm', href: '/odporucania/' + r.id }, ['Odporúčanie']) : null
     ]);
+    // agent neprepočítava alebo nečíta schránku: posledná ZELENÁ sa zobrazuje ako ORANŽOVÁ – vysvetliť prečo
+    var dataNote = t.downgraded && t.data_note ? el('p', { class: 'odhad small' }, [t.data_note]) : null;
     return el('div', { class: 'pop' }, [
       el('h3', null, ['Vlak ' + t.number + ' ', semaforBadge(t.color)]),
+      dataNote,
       r.decision ? el('p', { class: 'small' }, [el('strong', null, [r.decision + ': ']), r.summary || '']) : null,
       dl, note, routeNote, actions
     ]);
@@ -554,6 +557,7 @@
       dot.classList.add('no-dir');
     }
     e.setAttribute('aria-label', 'Vlak ' + t.number + ', ' + (t.color || 'bez odporúčania') + (t.stale ? ', poloha neistá' : '') +
+      (t.downgraded ? ', bez čerstvých údajov agenta' : '') +
       (pos && pos.anchor ? ', bez polohy' : '') + (pos && pos.estimate ? ', poloha je odhad' : ''));
     e.title = 'Vlak ' + t.number + ' – ' + t.relation;
   }
@@ -969,7 +973,8 @@
           el('div', null, [
             el('button', { type: 'button', class: 'linkbtn vlak-btn', 'data-id': t.id }, [t.number]), ' ',
             el('span', { class: 'sem sem-' + (COLOR_CLASS[t.color] || 'seda') }, [t.color || '—']),
-            el('div', { class: 'small muted' }, [t.relation])
+            el('div', { class: 'small muted' }, [t.relation]),
+            t.downgraded ? el('div', { class: 'small odhad', title: t.data_note || '' }, ['bez čerstvých údajov agenta – pôvodne ZELENÁ']) : null
           ])
         ])]),
         el('td', { class: 'small' }, positionCell(t)),

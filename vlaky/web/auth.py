@@ -1,11 +1,16 @@
 """Prihlásenie, relácia (podpísaný cookie), roly a oprávnenia, CSRF a obmedzenie neúspešných prihlásení."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import ipaddress
+import itertools
 import secrets
 import threading
 import time
 from collections import deque
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Optional
 
@@ -200,20 +205,73 @@ class LoginLimiter:
             self._fails.pop(key, None)
 
     def should_log(self, key: str) -> bool:
-        """Zablokovaný pokus sa do auditu zapíše najviac raz za okno (ochrana pred zahltením auditu)."""
+        """Zablokovaný pokus sa do auditu zapíše najviac raz za okno (ochrana pred zahltením auditu).
+
+        Záznamy sú zoradené podľa času zápisu; po zaplnení sa naraz zahodí staršia polovica (najskôr vypršané),
+        nie prestavba celého slovníka pri každom volaní.
+        """
         now = time.monotonic()
         with self._lock:
             last = self._logged.get(key)
             if last is not None and now - last < self.window_s:
                 return False
-            if len(self._logged) > self.max_keys:
-                self._logged = {k: v for k, v in self._logged.items() if now - v < self.window_s}
+            self._logged.pop(key, None)  # znova na koniec – poradie zodpovedá času zápisu
             self._logged[key] = now
+            if len(self._logged) > self.max_keys:
+                drop = len(self._logged) - max(1, self.max_keys // 2)
+                for k in list(itertools.islice(self._logged, drop)):
+                    del self._logged[k]
             return True
 
 
 def client_ip(request: Request) -> str:
     return request.client.host if request.client else "nezname"
+
+
+def limiter_ip(ip: str) -> str:
+    """Adresa pre limit prihlásení: IPv4 celá, IPv6 podľa siete /64 (klient bežne dostane celú /64 a adresy
+    v nej môže ľubovoľne meniť – limit podľa celej adresy by sa tak dal obísť)."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if isinstance(addr, ipaddress.IPv6Address):
+        if addr.ipv4_mapped is not None:
+            return str(addr.ipv4_mapped)
+        return str(ipaddress.IPv6Network((int(addr) >> 64 << 64, 64)))
+    return str(addr)
+
+
+class PasswordChecks:
+    """Najviac `limit` súčasných overení hesla (bcrypt ~0,25 s CPU). Nával prihlásení (aj z mnohých adries)
+    tak nezahltí CPU ani spoločný threadpool a ostatné stránky odpovedajú; kto nedostane miesto do `wait_s`,
+    dostane 503. Čaká sa v slučke udalostí (nie vo vlákne threadpoolu)."""
+
+    def __init__(self, limit: int = 3, wait_s: float = 2.0) -> None:
+        self.limit = limit
+        self.wait_s = wait_s
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._sem: Optional[asyncio.Semaphore] = None
+
+    def _semaphore(self) -> asyncio.Semaphore:
+        loop = asyncio.get_running_loop()
+        if self._sem is None or self._loop is not loop:  # semafor patrí k jednej slučke (testy, reštart)
+            self._loop, self._sem = loop, asyncio.Semaphore(self.limit)
+        return self._sem
+
+    @asynccontextmanager
+    async def slot(self) -> AsyncIterator[bool]:
+        """`async with checks.slot() as ok:` – ok=False, ak sa miesto neuvoľnilo do `wait_s`."""
+        sem = self._semaphore()
+        try:
+            acquired = await asyncio.wait_for(sem.acquire(), self.wait_s)
+        except asyncio.TimeoutError:
+            acquired = False
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                sem.release()
 
 
 # ---------------------------------------------------------------- stránky prihlásenia
@@ -250,6 +308,30 @@ def _check_login(username: str, password: str, ip: str) -> Optional[User]:
         return user
 
 
+def _audit_blocked(username: str, ip: str, blocked_by: str) -> None:
+    with session_scope() as s:
+        audit(s, username or "?", "login_blocked", "user", "", ip=ip, blokovane=blocked_by)
+
+
+async def _blocked_page(request: Request, next_url: str, username: str, ip: str, ip_key: str,
+                        acct_key: str) -> Optional[HTMLResponse]:
+    """Stránka 429, ak je zablokovaná IP adresa (IPv6 sieť /64) alebo účet; inak None."""
+    limiter: LoginLimiter = request.app.state.login_limiter
+    accounts: LoginLimiter = request.app.state.account_limiter
+    ip_wait = limiter.retry_after(ip_key)
+    acct_wait = accounts.retry_after(acct_key) if username else 0
+    if not (ip_wait or acct_wait):
+        return None
+    # do auditu najviac raz za okno pre kľúč, ktorý blokuje – pri zablokovanom účte nie raz za každú novú
+    # adresu útočníka; zápis do DB mimo slučky udalostí
+    lim, key, blocked_by = (limiter, ip_key, "ip") if ip_wait else (accounts, acct_key, "ucet")
+    if lim.should_log(key):
+        await run_in_threadpool(_audit_blocked, username, ip, blocked_by)
+    wait = max(ip_wait, acct_wait)
+    return _login_page(request, next_url, f"Príliš veľa neúspešných pokusov. Skúste to znova o "
+                       f"{max(1, wait // 60)} min.", username, status_code=429)
+
+
 @router.post("/login", response_class=HTMLResponse)
 async def login_submit(request: Request):
     form = await request.form()
@@ -259,7 +341,7 @@ async def login_submit(request: Request):
     limiter: LoginLimiter = request.app.state.login_limiter
     accounts: LoginLimiter = request.app.state.account_limiter
     ip = client_ip(request)
-    ip_key, acct_key = f"ip:{ip}", f"u:{username.lower()}"
+    ip_key, acct_key = f"ip:{limiter_ip(ip)}", f"u:{username.lower()}"
 
     # najprv platnosť formulára (bez zápisu do auditu – ochrana pred zahltením)
     cookie_token = request.cookies.get(LOGIN_CSRF_COOKIE, "")
@@ -268,19 +350,35 @@ async def login_submit(request: Request):
         return _login_page(request, next_url, "Platnosť formulára vypršala. Prihláste sa znova.", username,
                            status_code=403)
 
-    wait = max(limiter.retry_after(ip_key), accounts.retry_after(acct_key) if username else 0)
-    if wait:
-        if limiter.should_log(ip_key):
-            with session_scope() as s:
-                audit(s, username or "?", "login_blocked", "user", "", ip=ip)
-        return _login_page(request, next_url, f"Príliš veľa neúspešných pokusov. Skúste to znova o "
-                           f"{max(1, wait // 60)} min.", username, status_code=429)
+    blocked = await _blocked_page(request, next_url, username, ip, ip_key, acct_key)
+    if blocked is not None:
+        return blocked
 
-    user = await run_in_threadpool(_check_login, username, password, ip)
-    if user is None:
+    if not username or not password:
+        # prázdne meno alebo heslo sa nikdy neprihlási (formulár ich nepustí, posiela ich len skript): bez overenia
+        # hesla a bez zápisu do auditu – nával takých pokusov z mnohých adries by inak zahltil audit (stovky
+        # záznamov za sekundu, bez obmedzenia bcryptom); počítajú sa do limitu adresy, nie účtu (nie je to pokus
+        # o heslo a účet by sa nimi dal lacno zablokovať)
         limiter.fail(ip_key)
-        if username:
-            accounts.fail(acct_key)
+        return _login_page(request, next_url, "Zadajte meno aj heslo.", username, status_code=401)
+
+    checks: PasswordChecks = request.app.state.password_checks
+    async with checks.slot() as ok:
+        if not ok:
+            resp = _login_page(request, next_url, "Server je zaneprázdnený, skúste to o chvíľu.", username,
+                               status_code=503)
+            resp.headers["Retry-After"] = "5"
+            return resp
+        # počas čakania na voľné miesto mohli súbežné pokusy adresu alebo účet zablokovať
+        blocked = await _blocked_page(request, next_url, username, ip, ip_key, acct_key)
+        if blocked is not None:
+            return blocked
+        user = await run_in_threadpool(_check_login, username, password, ip)
+        if user is None:  # neúspech sa zapíše ešte pred uvoľnením miesta (ďalší čakajúci ho už vidí)
+            limiter.fail(ip_key)
+            if username:
+                accounts.fail(acct_key)
+    if user is None:
         return _login_page(request, next_url, "Nesprávne meno alebo heslo.", username, status_code=401)
     accounts.reset(acct_key)  # počítadlo IP adresy sa úspechom nenuluje
     resp = RedirectResponse(next_url, status_code=303)

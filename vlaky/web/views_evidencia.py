@@ -200,8 +200,27 @@ def _train_detail(request: Request, train_id: int, user, link: str = "") -> HTML
         handovers = list(s.scalars(select(Handover).options(selectinload(Handover.border))
                                    .where(Handover.train_id == t.id).order_by(Handover.id.desc())))
         paths = list(s.scalars(select(Path).where(Path.train_id == t.id).order_by(Path.id.desc()).limit(10)))
-        history = list(s.scalars(select(AuditLog).where(AuditLog.entity == "train", AuditLog.entity_id == str(t.id))
-                                 .order_by(AuditLog.ts.desc(), AuditLog.id.desc()).limit(30)))
+        # história: 30 posledných záznamov bez odmietnutých požiadaviek z odkazu rušňovodiča (tých môže byť veľa);
+        # posledné hlásenia o probléme a posledné odmietnutie každého druhu sa doplnia vždy – nával požiadaviek
+        # z odkazu ani pravidelné prepočty tak problém rušňovodiča z histórie nevytlačia. Doplnenie je jeden dotaz
+        # obmedzený časom (index na audit_log.ts, posledných 7 dní – odkaz platí 24 h): audit sa nečistí a dotaz
+        # bez obmedzenia by pri každom otvorení detailu prechádzal celý audit.
+        from ..db import utcnow  # rovnaké hodiny ako pri zápise auditu
+
+        base = select(AuditLog).where(AuditLog.entity == "train", AuditLog.entity_id == str(t.id))
+        newest = (AuditLog.ts.desc(), AuditLog.id.desc())
+        rejected = ("hlasenie_obmedzene", "poloha_odmietnuta")
+        history = list(s.scalars(base.where(AuditLog.action.notin_(rejected)).order_by(*newest).limit(30)))
+        extra: list = []
+        kinds: dict = {}
+        for a in s.scalars(base.where(AuditLog.action.in_(("hlasenie_problem",) + rejected),
+                                      AuditLog.ts >= utcnow() - timedelta(days=7)).order_by(*newest).limit(200)):
+            kinds[a.action] = kinds.get(a.action, 0) + 1
+            if kinds[a.action] <= (10 if a.action == "hlasenie_problem" else 1):
+                extra.append(a)
+        seen = {a.id for a in history}
+        history.extend(a for a in extra if a.id not in seen)
+        history.sort(key=lambda a: (ensure_utc(a.ts), a.id), reverse=True)
         params = current_params(s)
         return render(request, "vlak.html", {"t": t, "rec": rec, "positions": positions, "shifts": shifts,
                                              "handovers": handovers, "paths": paths, "history": history,

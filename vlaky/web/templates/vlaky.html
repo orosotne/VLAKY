@@ -36,7 +36,7 @@
       <td class="nowrap">{{ t.ready_utc|t }}</td>
       <td class="nowrap">{{ t.deadline_utc|t }}</td>
       <td>{{ TRAIN_STATUS.get(t.status, t.status) }}</td>
-      <td>{% if r %}<a href="/odporucania/{{ r.id }}">{{ r.decision }}</a> {{ m.semafor(r.color) }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>{% if r %}<a href="/odporucania/{{ r.id }}">{{ r.decision }}</a> {% if fresh and fresh.stale and r.color == "ZELENÁ" %}<span title="{{ fresh.text }} Posledné odporúčanie bolo ZELENÁ.">{{ m.semafor("ORANŽOVÁ") }} <span class="small muted">bez čerstvých údajov agenta</span></span>{% else %}{{ m.semafor(r.color) }}{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
     </tr>
   {% else %}
     <tr><td colspan="10" class="muted">Žiadne vlaky.</td></tr>

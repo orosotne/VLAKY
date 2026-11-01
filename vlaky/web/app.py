@@ -18,7 +18,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..config import settings
-from .auth import CsrfError, LoginLimiter, NotAuthenticated, PermissionDenied, optional_user
+from .auth import CsrfError, LoginLimiter, NotAuthenticated, PasswordChecks, PermissionDenied, optional_user
 from .common import MAPLIBRE_VERSION, STATIC_DIR, log, render, tile_csp_source
 
 DEFAULT_SECRET = "zmen-ma-v-produkcii"
@@ -131,8 +131,9 @@ def create_app(auto_evaluate: bool = True) -> FastAPI:
         yield
 
     app = FastAPI(title="Agent dispečer", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
-    app.state.login_limiter = LoginLimiter()                          # podľa IP adresy
+    app.state.login_limiter = LoginLimiter()                          # podľa IP adresy (IPv6 podľa /64)
     app.state.account_limiter = LoginLimiter(max_failures=10)          # podľa účtu (pokusy z viacerých IP)
+    app.state.password_checks = PasswordChecks(limit=3, wait_s=2.0)    # súčasné overenia hesla (bcrypt)
     app.state.auto_evaluate = auto_evaluate
 
     app.add_middleware(GZipMiddleware, minimum_size=1024)
