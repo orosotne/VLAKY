@@ -602,6 +602,11 @@ def closure_verify(closure_id: int, request: Request, background: BackgroundTask
                 result = (ev.validation or {}).get("apply_result") or {}
                 kept = bool((ev.validation or {}).get("register_kept"))
                 c = s.get(Closure, closure_id)
+                if result.get("action") == "nahradene":
+                    # staršia udalosť – záznam medzitým zmenila (napr. zrušila) novšia udalosť, ktorá má prednosť
+                    return redirect(f"/fronta#udalost-{event_id}", "Udalosť potvrdená, ale nič sa nezapísalo: "
+                                    f"{str(result.get('note') or 'záznam medzitým zmenila novšia udalosť.')[:300]}",
+                                    "varovanie")
                 if result.get("ok") is False or (c is not None and c.status != "overene"):
                     error = result.get("error") or "výluka zostala v stave návrh"
                     return redirect(f"/fronta#udalost-{event_id}", f"Výluku sa nepodarilo potvrdiť: {error}", "chyba")

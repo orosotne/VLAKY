@@ -15,6 +15,7 @@ Bezpečnosť (sekcie 0.7, 2.2 a M5 PROMPT.md):
 from __future__ import annotations
 
 import json
+import time
 from datetime import date
 from typing import Any, Callable, Literal, Optional
 
@@ -38,6 +39,26 @@ MAX_TOTAL_CHARS = 45_000
 SKIP_ATTACHMENT_OVER_CHARS = 120_000    # takúto prílohu modelu neposielame vôbec
 MAX_OUTPUT_TOKENS = 4096
 LLM_MAX_CONFIDENCE = 0.9
+
+
+# Istič: po chybe spojenia s API (časový limit, nedostupný server, HTTP 429/5xx) sa LLM na BREAKER_S nepoužije –
+# dávka nahromadenej pošty by inak čakala na časový limit pri každom e-maile (zvyšok sa spracuje pravidlami).
+BREAKER_S = 600
+_breaker_until = 0.0
+
+
+def breaker_open() -> bool:
+    return time.monotonic() < _breaker_until
+
+
+def _trip_breaker() -> None:
+    global _breaker_until
+    _breaker_until = time.monotonic() + BREAKER_S
+
+
+def reset_breaker() -> None:
+    global _breaker_until
+    _breaker_until = 0.0
 
 
 class LLMError(Exception):
@@ -327,6 +348,9 @@ class LLMExtractor:
         """
         if not self.enabled():
             raise LLMError("LLM nie je nakonfigurovaný (VLAKY_LLM_PROVIDER, VLAKY_LLM_MODEL a API kľúč)")
+        if breaker_open():
+            raise LLMError("LLM je dočasne nedostupné (po chybe spojenia s API sa ďalší pokus urobí najskôr o "
+                           f"{max(1, round((_breaker_until - time.monotonic()) / 60))} min)")
         user, notes = build_user_message(doc)
         self.last_notes = notes
         provider = settings().llm_provider
@@ -338,6 +362,7 @@ class LLMExtractor:
         except ValidationError as exc:
             raise LLMError(f"odpoveď modelu nezodpovedá schéme ({exc.error_count()} chýb)") from exc
         except httpx.HTTPError as exc:
+            _trip_breaker()
             raise LLMError(f"chyba spojenia s API ({type(exc).__name__})") from exc
         except (ValueError, KeyError, TypeError) as exc:
             raise LLMError(f"neplatná odpoveď modelu ({type(exc).__name__})") from exc
@@ -353,6 +378,8 @@ class LLMExtractor:
     def _post(self, url: str, headers: dict, payload: dict) -> dict:
         r = self._http().post(url, headers=headers, json=payload, timeout=settings().llm_timeout_s)
         if r.status_code >= 400:
+            if r.status_code == 429 or r.status_code >= 500:  # preťažené alebo nedostupné API – istič
+                _trip_breaker()
             raise LLMError(f"API vrátilo chybu HTTP {r.status_code}")
         return r.json()
 

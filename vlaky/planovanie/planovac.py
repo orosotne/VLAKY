@@ -32,7 +32,7 @@ from ..config import settings
 from ..db import prepare_savepoints
 from ..models import (Closure, DriverShift, KeyValue, LocationInfo, Order, ParameterSet, PositionReport,
                       Recommendation, Train)
-from ..notifikacie.texty import crew_relief_text
+from ..notifikacie.texty import crew_relief_text, eur
 from ..rozhodovanie import (CERVENA, ESKALOVAT, ODSTAVIT, ORANZOVA, POCKAT, PRESMEROVAT, VYPRAVIT, ZELENA,
                             Closure as DClosure, Evaluation, Params, Recommendation as DRecommendation,
                             Route as DRoute, Segment, _normals, evaluate, recommend, select_best)
@@ -567,15 +567,34 @@ def mailbox_age_minutes(session: Session, now: datetime) -> Optional[float]:
     return _min(last, now)
 
 
-def _mailbox_reason(session: Session, now: datetime) -> Optional[str]:
-    """Dôvod, prečo nesmie byť ZELENÁ: schránka agenta nebola úspešne skontrolovaná v posledných 30 min
-    (rovnaké texty ako pri vlaku v evaluate_train). Inak None."""
+def _mailbox_state(session: Session, now: datetime) -> tuple:
+    """(vek úspešnej kontroly schránky v min alebo None, dôvod prečo nesmie byť ZELENÁ alebo None).
+
+    Dôvod: schránka nebola úplne skontrolovaná v posledných 30 min. Kým agent dočítava nahromadenú poštu
+    (``mail_last_ok`` s ``partial`` – zdroje.mailbox_check), kontrola nie je úspešná, ale text to povie pravdivo."""
+    kv = session.scalar(select(KeyValue).where(KeyValue.key == "mail_last_ok"))
+    val = kv.value if kv is not None and isinstance(kv.value, dict) else {}
+    if val.get("partial"):
+        try:
+            last_full = datetime.fromisoformat(val.get("last_full")) if val.get("last_full") else None
+        except (TypeError, ValueError):
+            last_full = None
+        age = _min(last_full, now) if last_full else None
+        when = f"posledná úplná kontrola schránky pred {age:.0f} min" if age is not None else \
+            "úplná kontrola schránky zatiaľ neprebehla"
+        # vek sa nevráti – texty „schránka skontrolovaná pred X min“ by počas dočítavania klamali
+        return None, f"Agent ešte dočítava nahromadenú poštu ({when}) – výluky nemusia byť aktuálne."
     age = mailbox_age_minutes(session, now)
     if age is None:
-        return "Agent ešte úspešne neskontroloval svoju e-mailovú schránku – výluky nemusia byť aktuálne."
+        return None, "Agent ešte úspešne neskontroloval svoju e-mailovú schránku – výluky nemusia byť aktuálne."
     if age > 30:
-        return f"E-mailová schránka agenta sa nekontrolovala {age:.0f} min – výluky nemusia byť aktuálne."
-    return None
+        return age, f"E-mailová schránka agenta sa nekontrolovala {age:.0f} min – výluky nemusia byť aktuálne."
+    return age, None
+
+
+def _mailbox_reason(session: Session, now: datetime) -> Optional[str]:
+    """Dôvod, prečo nesmie byť ZELENÁ (schránka agenta nebola úplne skontrolovaná v posledných 30 min), inak None."""
+    return _mailbox_state(session, now)[1]
 
 
 def _unmapped_windows(net: Network, windows: list, groute: GRoute, ready: datetime, horizon_min: float) -> list:
@@ -899,23 +918,24 @@ def evaluate_train(session: Session, train_id: int, now: Optional[datetime] = No
     if pending_notes:
         stale = True
         reasons.extend(pending_notes)
-    mb_age = mailbox_age_minutes(session, now)
+    mb_age, mb_reason = _mailbox_state(session, now)
     if mb_age is not None:
         data_age["mailbox_min"] = round(mb_age, 1)
-    if mb_age is None:
+    if mb_reason:
         stale = True
-        reasons.append("Agent ešte úspešne neskontroloval svoju e-mailovú schránku – výluky nemusia byť "
-                       "aktuálne.")
-    elif mb_age > 30:
-        stale = True
-        reasons.append(f"E-mailová schránka agenta sa nekontrolovala {mb_age:.0f} min – výluky nemusia byť "
-                       f"aktuálne.")
+        reasons.append(mb_reason)
     if stale and color == ZELENA:
         color = ORANZOVA
     unconfirmed = {w.closure_id for w, _, _ in affecting if w.status == "navrh"}
     if unconfirmed:
-        reasons.append(f"{len(unconfirmed)} výluk(a) na trase ešte nie je potvrdená dispečerom – počíta sa "
-                       f"s ňou (bezpečnejší variant); po potvrdení alebo zamietnutí sa vlak prepočíta.")
+        n_unc = len(unconfirmed)
+        if n_unc == 1:
+            what = "1 výluka na trase ešte nie je potvrdená dispečerom – počíta sa s ňou"
+        elif n_unc < 5:
+            what = f"{n_unc} výluky na trase ešte nie sú potvrdené dispečerom – počíta sa s nimi"
+        else:
+            what = f"{n_unc} výluk na trase ešte nie je potvrdených dispečerom – počíta sa s nimi"
+        reasons.append(f"{what} (bezpečnejší variant); po potvrdení alebo zamietnutí sa vlak prepočíta.")
     seen_w: set = set()
     for w, _a, _b in affecting:
         key = (w.closure_id, w.start)
@@ -1246,7 +1266,7 @@ def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) 
     if ch is not None and rec.decision != ESKALOVAT:
         explanation.append(f"{rec.decision} po trase „{ch.route}“ s odchodom {fmt(_dt(now, ch.depart))}: "
                            f"P(včas) {ch.p_on_time:.0%}, príchod {fmt(_dt(now, ch.arrival_p50))} "
-                           f"(90 % do {fmt(_dt(now, ch.arrival_p90))}), očakávaný náklad {ch.expected_cost:,.0f} €.")
+                           f"(90 % do {fmt(_dt(now, ch.arrival_p90))}), očakávaný náklad {eur(ch.expected_cost)}.")
         explanation.append("Trasu treba objednať v IS KIS (ad hoc trasa P5 najneskôr 6 h pred odchodom).")
         amber = (list(ch.reasons) if ch.status != ZELENA else []) + guards(ch.route)
         if amber:
@@ -1746,17 +1766,12 @@ def _arrived(session: Session, train: Train, now: datetime, trigger: str, p: Par
         reasons.append(f"Vlak je v cieľovej dopravni {train.destination} od {fmt(arr)}{old} – trasa sa už "
                        f"neprepočítava; ukončite jazdu vlaku (stav „ukončený“).")
         head = f"vlak je v cieli ({train.destination}, príchod {fmt(arr)}) – ukončite jazdu"
-    mb_age = mailbox_age_minutes(session, now)
-    if mb_age is None:
-        stale = True
-        reasons.append("Agent ešte úspešne neskontroloval svoju e-mailovú schránku – výluky nemusia byť "
-                       "aktuálne.")
-    else:
+    mb_age, mb_reason = _mailbox_state(session, now)
+    if mb_age is not None:
         data_age["mailbox_min"] = round(mb_age, 1)
-        if mb_age > 30:
-            stale = True
-            reasons.append(f"E-mailová schránka agenta sa nekontrolovala {mb_age:.0f} min – výluky nemusia byť "
-                           f"aktuálne.")
+    if mb_reason:
+        stale = True
+        reasons.append(mb_reason)
     if crew.get("status") == CERVENA:
         if crew.get("unknown_start"):
             reasons.append(f"Odhad: rušňovodič by prekročil {p.crew_max_duty_min / 60:.0f} h – "
@@ -1941,7 +1956,7 @@ def _store(session: Session, train: Train, now: datetime, trigger: str, decision
                 last.summary, last.chosen, last.variants = summary, chosen, variants or []
                 last.windows = windows or {}
                 last.path_proposal, last.crew, last.reasons = path_proposal or {}, crew or {}, reasons or []
-                last.data_age = data_age or {}
+                last.data_age = {**(data_age or {}), "computed_at": now.isoformat()}
             # prijaté/upravené/zamietnuté odporúčanie sa nemení – je to záznam toho, čo dispečer rozhodol
             return last
     for old in session.scalars(select(Recommendation).where(Recommendation.train_id == train.id,
@@ -1950,7 +1965,8 @@ def _store(session: Session, train: Train, now: datetime, trigger: str, decision
     rec = Recommendation(train_id=train.id, created_at=now, decision=decision, color=color, priority=priority,
                          summary=summary, chosen=chosen, variants=variants or [], windows=windows or {},
                          path_proposal=path_proposal or {}, crew=crew or {}, reasons=reasons or [],
-                         trigger=trigger, data_age=data_age or {}, fingerprint=fingerprint, state="nove")
+                         trigger=trigger, data_age={**(data_age or {}), "computed_at": now.isoformat()},
+                         fingerprint=fingerprint, state="nove")
     session.add(rec)
     session.flush()
     audit(session, "agent", "recommendation", "train", train.id, decision=decision, color=color,

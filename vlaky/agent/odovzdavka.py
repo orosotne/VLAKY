@@ -16,6 +16,11 @@ def _latest_rec(session: Session, train_id: int):
                           .order_by(Recommendation.id.desc()))
 
 
+# stavy preberania po slovensky (ako vo webe – vlaky/web/common.py HANDOVER_STATUS)
+HANDOVER_TEXT = {"ocakavany": "očakávaný", "prisiel": "prišiel na hranicu", "prevzaty": "prevzatý",
+                 "odovzdany": "odovzdaný"}
+
+
 def _crew_line(train: Train, crew: dict) -> str:
     """Riadok o rušňovodičovi blízko limitu. Pri chýbajúcom zázname o nástupe sú časy len odhad (nástup
     = odchod vlaku mínus príprava) – nikdy sa neuvádzajú ako fakt; bez odhadu sa limit nedá overiť."""
@@ -58,7 +63,7 @@ def build_report(session: Session, now: datetime | None = None, hours: int = 12)
         Train.id.in_({h.train_id for h in handovers}))).all()) if handovers else {}
     lines += ["", "Očakávané preberania na hraniciach:"]
     lines += [f"  - vlak {numbers.get(h.train_id, '?')}: {h.border.handover_station if h.border else '?'} avízo "
-              f"{fmt(h.avizo_eta_utc)} ({h.status})" for h in handovers] or ["  (žiadne)"]
+              f"{fmt(h.avizo_eta_utc)} ({HANDOVER_TEXT.get(h.status, h.status)})" for h in handovers] or ["  (žiadne)"]
     new_closures = list(session.scalars(select(Closure).where((Closure.created_at >= since) |
                                                               (Closure.updated_at >= since))
                                         .order_by(Closure.start_utc)))

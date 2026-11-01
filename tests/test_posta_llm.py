@@ -241,3 +241,25 @@ def test_agreement_allows_auto_apply_with_default_threshold(use_llm, session, cf
     assert summary["auto_applied"] == 1 and summary["waiting_confirmation"] == 0, summary
     (c,) = session.query(Closure).all()
     assert c.status == "navrh" and c.from_station == "Poprad-Tatry" and c.kind == "kolaj"
+
+
+def test_istic_po_chybe_spojenia_zvysok_davky_len_pravidlami(use_llm, monkeypatch):
+    """Po chybe spojenia s API (časový limit) sa LLM ďalších BREAKER_S nepoužije – nahromadená pošta sa nečaká
+    na časový limit pri každom e-maile; zvyšok sa spracuje pravidlami. Po uplynutí sa LLM skúsi znova."""
+    calls: list = []
+
+    class Timeout(Recorder):
+        def __call__(self, request: httpx.Request) -> httpx.Response:
+            calls.append(request)
+            raise httpx.ConnectTimeout("časový limit (FIKTÍVNE)", request=request)
+
+    use_llm("anthropic", Timeout())
+    first = extract(doc_from("01_rov_vyluka_kolaje_poprad_lm.eml"))
+    assert not first.llm_used and "chyba spojenia" in first.llm_error and len(calls) == 1
+    second = extract(doc_from("01_rov_vyluka_kolaje_poprad_lm.eml"))
+    assert not second.llm_used and "dočasne nedostupné" in second.llm_error
+    assert len(calls) == 1  # druhý e-mail už API nevolal
+    assert second.items and second.extractor == "pravidla"
+    monkeypatch.setattr(llm_mod, "_breaker_until", 0.0)  # istič vypršal
+    extract(doc_from("01_rov_vyluka_kolaje_poprad_lm.eml"))
+    assert len(calls) == 2

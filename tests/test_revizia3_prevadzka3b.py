@@ -137,12 +137,13 @@ def _train(s, number: str, origin: str, dest: str, ready: datetime, path_dep: da
 def _three_trains(base: datetime) -> tuple:
     """A 95121 (výluka Kysak – Košice je na jeho trase), B 95122 a C 95123 (mimo výluky)."""
     with session_scope() as s:
+        # nástup rušňovodiča s prípravou 60 min pred odchodom (neskorší nástup by bol ORANŽOVÁ – 3. revízia PR3)
         a = _train(s, "95121", "Žilina", "Košice", base + timedelta(minutes=30), base + timedelta(minutes=40),
-                   base + timedelta(minutes=10))
+                   base - timedelta(minutes=25))
         b = _train(s, "95122", "Čadca", "Žilina", base + timedelta(minutes=30), base + timedelta(minutes=40),
-                   base + timedelta(minutes=10))
+                   base - timedelta(minutes=25))
         c = _train(s, "95123", "Žilina", "Čadca", base + timedelta(minutes=50), base + timedelta(minutes=60),
-                   base + timedelta(minutes=30))
+                   base - timedelta(minutes=5))
     return a, b, c
 
 

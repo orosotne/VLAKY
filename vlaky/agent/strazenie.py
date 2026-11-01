@@ -42,8 +42,14 @@ def crew_alerts(session: Session, now: datetime, errors: list | None = None) -> 
     """Upozornenia pri 90/60/30 min do limitu pracovného času (13 h) a pri jeho prekročení."""
     p = current_params(session)
     thresholds = sorted({int(x) for x in settings().csv(settings().crew_alert_minutes)}, reverse=True)
-    shifts = list(session.scalars(select(DriverShift).where(DriverShift.status.in_(("planovana", "prebieha")),
-                                                            DriverShift.start_utc <= now)))
+    # naplánovaná zmena vlaku, ktorý už má zmenu v službe (vystriedanie ešte nenastúpilo), nestráži limit – inak by
+    # upozornenie menovalo rušňovodiča, ktorý nie je v službe
+    on_duty = select(DriverShift.train_id).where(DriverShift.status == "prebieha", DriverShift.train_id.is_not(None))
+    shifts = list(session.scalars(select(DriverShift).where(
+        DriverShift.start_utc <= now,
+        (DriverShift.status == "prebieha") |
+        ((DriverShift.status == "planovana") &
+         (DriverShift.train_id.is_(None) | DriverShift.train_id.not_in(on_duty))))))
     if shifts:
         prepare_savepoints(session)
     return sum(_isolated(session, errors, f"zmena rušňovodiča #{sh.id}",

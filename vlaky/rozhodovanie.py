@@ -173,6 +173,12 @@ class Recommendation:
 # ---------------------------------------------------------------------------
 # Pomocné funkcie
 # ---------------------------------------------------------------------------
+
+def _eur(value: float) -> str:
+    """Suma v eurách po slovensky („1 593 €“) – formát „1,593“ by sa čítal ako 1,593 €."""
+    return f"{float(value):,.0f}".replace(",", " ") + " €"
+
+
 def hhmm(minutes: float) -> str:
     """Minúty od t0 -> 'HH:MM' (prípadne '+1d HH:MM')."""
     m = int(round(minutes))
@@ -535,7 +541,7 @@ def select_best(candidates: Sequence[Evaluation], p: Params) -> tuple:
     explanation.append(
         f"{best.kind} po trase '{best.route}' s odchodom {hhmm(best.depart)}: "
         f"P(včas) {best.p_on_time:.0%}, príchod medián {hhmm(best.arrival_p50)}, "
-        f"90 % do {hhmm(best.arrival_p90)}, očakávaný náklad {best.expected_cost:,.0f} EUR.")
+        f"90 % do {hhmm(best.arrival_p90)}, očakávaný náklad {_eur(best.expected_cost)}.")
     if best.needs_new_path:
         explanation.append("Treba objednať novú (ad hoc) trasu u ŽSR.")
     if best.status != ZELENA:
@@ -566,12 +572,12 @@ def _print(title: str, rec: Recommendation, shown: set) -> None:
     print("=" * 100)
     print(title)
     print(f"{'trasa':38} {'odchod':>6} {'variant':>11} {'stav':>9} {'P(včas)':>7} "
-          f"{'P(zadrž.)':>9} {'príchod50':>9} {'príchod90':>9} {'náklad €':>9}")
+          f"{'P(zadrž.)':>9} {'príchod50':>9} {'príchod90':>9} {'náklad':>11}")
     for ev in rec.candidates:
         if ev.depart in shown:
             print(f"{ev.route[:38]:38} {hhmm(ev.depart):>6} {ev.kind:>11} {ev.status:>9} "
                   f"{ev.p_on_time:>7.0%} {ev.p_hold:>9.0%} {hhmm(ev.arrival_p50):>9} "
-                  f"{hhmm(ev.arrival_p90):>9} {ev.expected_cost:>9,.0f}")
+                  f"{hhmm(ev.arrival_p90):>9} {_eur(ev.expected_cost):>11}")
     print("Zelené okná odchodu:")
     for name, wins in rec.green_windows.items():
         txt = ", ".join(f"{hhmm(a)}-{hhmm(b)}" for a, b in wins) or "žiadne"

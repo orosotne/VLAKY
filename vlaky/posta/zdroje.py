@@ -33,7 +33,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..cas import now_utc
+from ..cas import ensure_utc, now_utc
 from ..config import settings
 from ..models import KeyValue
 
@@ -88,6 +88,38 @@ def mailbox_check(previous: Any, now: datetime, fetched: int, drained: bool) -> 
     prev = previous if isinstance(previous, dict) else {}
     return {"partial": True, "since": (prev.get("since") if prev.get("partial") else None) or now.isoformat(),
             "checked": now.isoformat(), "last_full": prev.get("ts") or prev.get("last_full"), "fetched": fetched}
+
+
+_CODE = re.compile(r"^[A-Za-z0-9_.-]{1,60}$")
+
+
+def _graph_error(r: httpx.Response) -> str:
+    """Kód chyby z odpovede Microsoft Graph / Entra ID na diagnostiku (napr. „invalid_client, AADSTS7000222“ pri
+    vypršanom tajomstve, „ErrorAccessDenied“) – len kódy, nikdy celý popis (môže obsahovať identifikátory)."""
+    try:
+        j = r.json()
+    except ValueError:
+        return ""
+    if not isinstance(j, dict):
+        return ""
+    parts: list[str] = []
+    err = j.get("error")
+    if isinstance(err, dict):           # Graph: {"error": {"code": "ErrorAccessDenied", "message": …}}
+        err = err.get("code")
+    if isinstance(err, str) and _CODE.match(err):
+        parts.append(err)
+    aadsts = re.search(r"\bAADSTS\d{4,8}\b", str(j.get("error_description") or ""))
+    if aadsts:
+        parts.append(aadsts.group(0))
+    return ", ".join(parts)
+
+
+def _imap_error(exc: BaseException) -> str:
+    """Kód odpovede IMAP servera (napr. AUTHENTICATIONFAILED) – len kód v hranatých zátvorkách, nie celý text."""
+    text = " ".join(x.decode("utf-8", "replace") if isinstance(x, bytes) else str(x) for x in exc.args)
+    m = re.search(r"\[([A-Z][A-Z0-9-]{2,40})\]", text) or re.search(r"\b(AUTHENTICATIONFAILED|AUTHORIZATIONFAILED)\b",
+                                                                   text)
+    return m.group(1) if m else ""
 
 
 # ---------------------------------------------------------------------- stav v KeyValue
@@ -224,7 +256,9 @@ class ImapSource:
             try:
                 conn.login(s.imap_user, s.imap_password)
             except imaplib.IMAP4.error as exc:
-                raise MailSourceError("Prihlásenie do IMAP zlyhalo (skontrolujte používateľa a heslo).") from exc
+                code = _imap_error(exc)
+                raise MailSourceError(f"Prihlásenie do IMAP zlyhalo ({code + ' – ' if code else ''}skontrolujte "
+                                      f"používateľa a heslo).") from exc
             folder = s.imap_folder or "INBOX"
             if " " in folder and not folder.startswith('"'):
                 folder = f'"{folder}"'
@@ -289,7 +323,7 @@ class GraphSource:
 
     def __init__(self, session: Optional[Session] = None, client: Optional[httpx.Client] = None,
                  known: Optional[Callable[[str], bool]] = None,
-                 known_sender: Optional[Callable[[str, str], bool]] = None) -> None:
+                 known_sender: Optional[Callable[..., bool]] = None) -> None:
         self.session = session
         self.client = client or httpx.Client(timeout=60)
         self.known = known                      # vráti True, ak e-mail s daným Message-ID už máme
@@ -314,7 +348,9 @@ class GraphSource:
                                    "scope": "https://graph.microsoft.com/.default",
                                    "grant_type": "client_credentials"})
         if r.status_code != 200:
-            raise MailSourceError(f"Získanie tokenu Microsoft Graph zlyhalo (HTTP {r.status_code}).")
+            code = _graph_error(r)
+            raise MailSourceError(f"Získanie tokenu Microsoft Graph zlyhalo (HTTP {r.status_code}"
+                                  f"{', ' + code if code else ''}).")
         j = r.json()
         self._token = j.get("access_token")
         if not self._token:
@@ -359,7 +395,9 @@ class GraphSource:
                 kv_set(self.session, self.STATE_KEY, None)
                 raise MailSourceError("Delta odkaz Microsoft Graph vypršal – pri ďalšom behu sa schránka načíta znova.")
             if r.status_code != 200:
-                raise MailSourceError(f"Čítanie schránky cez Microsoft Graph zlyhalo (HTTP {r.status_code}).")
+                code = _graph_error(r)
+                raise MailSourceError(f"Čítanie schránky cez Microsoft Graph zlyhalo (HTTP {r.status_code}"
+                                      f"{', ' + code if code else ''}).")
             j = r.json()
             for m in j.get("value") or []:
                 if "@removed" in m or not m.get("id"):
@@ -383,8 +421,15 @@ class GraphSource:
             mid = m.get("internetMessageId") or ""
             frm = m.get("from") if isinstance(m.get("from"), dict) else {}
             sender = str((frm.get("emailAddress") or {}).get("address") or "").strip().lower()
+            rec = None
+            try:
+                rec = datetime.fromisoformat(str(m.get("receivedDateTime")).replace("Z", "+00:00"))
+            except ValueError:
+                rec = None
+            # preskočí sa len opätovné doručenie tej istej správy (rovnaký odosielateľ a čas prijatia); iná správa
+            # s rovnakým Message-ID sa stiahne – o kópii či kolízii rozhodne obsah (spracovanie._store_one)
             if mid and sender and self.known_sender is not None:
-                if self.known_sender(mid, sender):
+                if self.known_sender(mid, sender, rec):
                     continue
             elif mid and self.known and self.known(mid):
                 continue
@@ -392,11 +437,6 @@ class GraphSource:
             if r.status_code != 200:
                 raise MailSourceError(f"E-mail {m['id'][:12]}… sa nepodarilo stiahnuť (HTTP {r.status_code}).")
             data = r.content
-            rec = None
-            try:
-                rec = datetime.fromisoformat(str(m.get("receivedDateTime")).replace("Z", "+00:00"))
-            except ValueError:
-                rec = None
             out.append(RawMail(data=data[:limit], source=self.name, uid=m["id"], received_at=rec,
                                truncated=len(data) > limit))
         self._pending_link = next_state
@@ -429,11 +469,22 @@ def get_source(session: Optional[Session] = None) -> MailSource:
             return session.scalar(select(Email.id).where(Email.message_id == mid,
                                                          Email.verdict != "karantena")) is not None
 
-        def known_sender(mid: str, sender: str) -> bool:
-            if session is None:
+        def known_sender(mid: str, sender: str, received: Optional[datetime] = None) -> bool:
+            """Už stiahnutá tá istá správa: uložený (nie v karanténe) e-mail s týmto Message-ID od toho istého
+            odosielateľa s rovnakým časom prijatia (± 2 s). Bez času prijatia sa nepreskočí nič."""
+            if session is None or received is None:
                 return False
-            rows = session.scalars(select(Email.sender).where(Email.message_id == mid, Email.verdict != "karantena"))
-            return any((s or "").strip().lower() == sender for s in rows)
+            want = ensure_utc(received)
+            # aj kópia uložená pri kolízii Message-ID („<mid>#…“)
+            rows = session.execute(select(Email.sender, Email.received_at).where(
+                (Email.message_id == mid) | Email.message_id.startswith(mid + "#", autoescape=True),
+                Email.verdict != "karantena"))
+            for snd, rec_at in rows:
+                if (snd or "").strip().lower() != sender or rec_at is None:
+                    continue
+                if abs((ensure_utc(rec_at) - want).total_seconds()) <= 2:
+                    return True
+            return False
 
         return GraphSource(session, known=known, known_sender=known_sender)
     if kind == "directory":

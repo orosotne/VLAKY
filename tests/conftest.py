@@ -59,6 +59,9 @@ def cfg(tmp_path, monkeypatch):
         set_kv(sess, "mail_last_ok", {"ts": "2100-01-01T00:00:00+00:00", "fetched": 0, "test": True})
         set_kv(sess, "agent_last_cycle", {"ts": "2100-01-01T00:00:00+00:00", "errors": 0, "test": True})
     yield s
+    from vlaky.posta import llm as llm_mod
+
+    llm_mod.reset_breaker()  # istič LLM je stav procesu – nesmie prejsť do ďalšieho testu
     dispose_all()
     config_mod._OVERRIDE.clear()
     from vlaky.cas import set_fake_now

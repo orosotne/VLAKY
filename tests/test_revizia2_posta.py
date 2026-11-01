@@ -795,16 +795,22 @@ def test_r19_iny_odosielatel_s_rovnakym_message_id_nezhltne_rov_zsr(env, session
 
 
 def test_r19_graph_stiahne_rovnake_message_id_od_ineho_odosielatela(env, session, monkeypatch):
-    """[19] Microsoft Graph preskakuje známe Message-ID len od toho istého odosielateľa."""
+    """[19] Microsoft Graph preskakuje známe Message-ID len pri opätovnom doručení tej istej správy (rovnaký
+    odosielateľ a čas prijatia); iný odosielateľ alebo iná správa s rovnakým Message-ID sa stiahne (3. revízia,
+    MR8 – o kópii rozhodne obsah)."""
     from vlaky.posta.zdroje import get_source
 
+    received = utc(2026, 11, 2, 6, 12)
     session.add(Email(message_id="<rov-1@zsr.example>", sender="logistika@zakaznik.example", verdict="ok",
-                      status="spracovany"))
+                      status="spracovany", received_at=received))
     session.commit()
     monkeypatch.setattr(env, "mail_source", "graph")
     src = get_source(session)
-    assert src.known_sender("<rov-1@zsr.example>", "logistika@zakaznik.example") is True
-    assert src.known_sender("<rov-1@zsr.example>", "vyluky.orke@zsr.example") is False
+    assert src.known_sender("<rov-1@zsr.example>", "logistika@zakaznik.example", received) is True
+    assert src.known_sender("<rov-1@zsr.example>", "logistika@zakaznik.example",
+                            received + timedelta(hours=3)) is False      # iná správa s rovnakým Message-ID
+    assert src.known_sender("<rov-1@zsr.example>", "logistika@zakaznik.example") is False
+    assert src.known_sender("<rov-1@zsr.example>", "vyluky.orke@zsr.example", received) is False
     assert src.known("<rov-1@zsr.example>") is True
 
 

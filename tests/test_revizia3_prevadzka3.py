@@ -193,7 +193,7 @@ def test_ms0_nahromadena_posta_bez_zelenej_kym_sa_schranka_nedocita(cfg, fixed_n
     with session_scope() as s:
         tid = _train(s, "95121", "Žilina", "Košice", ready=t0 + timedelta(minutes=30),
                      deadline=t0 + timedelta(hours=10), path_dep=t0 + timedelta(minutes=40),
-                     shift_start=t0 + timedelta(minutes=10))
+                     shift_start=t0 - timedelta(minutes=25))  # nástup s prípravou 60 min pred odchodom
         set_kv(s, "mail_last_ok", {"ts": (t0 - timedelta(minutes=1)).isoformat(), "fetched": 0})  # schránka čerstvá
     for i in range(59):
         _info(cfg, i)
@@ -211,7 +211,7 @@ def test_ms0_nahromadena_posta_bez_zelenej_kym_sa_schranka_nedocita(cfg, fixed_n
             Notification.recommendation_id == rec.id))]
         state = get_kv(s, "mail_last_ok")
     assert color != "ZELENÁ", (rec.decision, color)
-    assert any("neskontroloval" in r for r in reasons), reasons
+    assert any("dočítava nahromadenú poštu" in r for r in reasons), reasons  # pravdivý dôvod počas dočítavania
     assert not any("schránka skontrolovaná" in b for b in bodies)
     assert first["mail"]["fetched"] == 50 and first["mail"]["drained"] is False
     assert state.get("partial") is True and not state.get("ts")      # čiastočné čítanie nie je úspešná kontrola
@@ -460,7 +460,7 @@ def _ms4_train(fixed_now) -> int:
     with session_scope() as s:
         return _train(s, "95101", "Žilina", "Košice", ready=fixed_now + timedelta(minutes=30),
                       deadline=fixed_now + timedelta(hours=10), path_dep=fixed_now + timedelta(minutes=40),
-                      shift_start=fixed_now + timedelta(minutes=10))
+                      shift_start=fixed_now - timedelta(minutes=25))  # nástup s prípravou 60 min pred odchodom
 
 
 def test_ms4_v_cykle_s_emailom_sa_vlaky_prepocitaju_len_raz(cfg, fixed_now, monkeypatch):

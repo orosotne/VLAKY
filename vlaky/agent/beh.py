@@ -245,7 +245,9 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
             und = undelivered(s, now_utc())
             if und:
                 channels = ", ".join(sorted({u.channel for u in und}))
-                summary["errors"].append(f"doručenie: {len(und)} správ(a) sa nepodarilo doručiť ({channels}) – "
+                n_und = len(und)
+                what = "1 správu" if n_und == 1 else f"{n_und} správy" if n_und < 5 else f"{n_und} správ"
+                summary["errors"].append(f"doručenie: {what} sa nepodarilo doručiť ({channels}) – "
                                          f"opakuje sa s odstupom")
     except Exception as exc:  # noqa: BLE001
         summary["errors"].append(f"kontrola doručenia: {exc!r}")

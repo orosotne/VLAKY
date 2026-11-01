@@ -374,8 +374,12 @@ def _graph_token() -> str:
 def _send_email_graph(recipient: str, subject: str, body: str) -> str:
     """Odoslanie cez Microsoft Graph (sendMail) z účtu agenta – vždy jeden príjemca, bez kópií."""
     s = settings()
+    # značka agenta (jeho vlastné správy sa nespracujú ako pošta) a potlačenie automatických odpovedí – Graph
+    # povoľuje v internetMessageHeaders len hlavičky X-
     payload = {"message": {"subject": subject, "body": {"contentType": "Text", "content": body},
-                           "toRecipients": [{"emailAddress": {"address": recipient}}]},
+                           "toRecipients": [{"emailAddress": {"address": recipient}}],
+                           "internetMessageHeaders": [{"name": "X-Agent-Dispecer", "value": "odporucanie"},
+                                                      {"name": "X-Auto-Response-Suppress", "value": "All"}]},
                "saveToSentItems": True}
     r = httpx.post(f"https://graph.microsoft.com/v1.0/users/{s.graph_mailbox}/sendMail", json=payload,
                    headers={"Authorization": f"Bearer {_graph_token()}"}, timeout=_timeout(30))
@@ -396,6 +400,9 @@ def _send_email(recipient: str, subject: str, body: str) -> str:
     msg["Date"] = formatdate(localtime=False)
     msg["Message-ID"] = make_msgid(domain=s.smtp_from.split("@")[-1] or "localhost")
     msg["X-Agent-Dispecer"] = "odporucanie"
+    # automatická správa (RFC 3834) – automatické odpovede (neprítomnosť v kancelárii) na ňu nemajú odpovedať
+    msg["Auto-Submitted"] = "auto-generated"
+    msg["X-Auto-Response-Suppress"] = "All"
     msg.set_content(body)
     # krátky limit na spojenie (nedostupný server nezdrží agenta), potom bežný limit na odpovede servera
     with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=_connect_timeout()) as smtp:

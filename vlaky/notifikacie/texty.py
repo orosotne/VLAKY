@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from ..cas import fmt
 from ..config import settings
@@ -56,6 +57,42 @@ def recommendation_subject(rec: Recommendation) -> str:
     return f"{prefix}[AGENT][{rec.priority}] Vlak {train.number if train else '?'} {rel}: {head} ({rec.color})"
 
 
+_RANK = {"ZELENÁ": 0, "ORANŽOVÁ": 1, "ČERVENÁ": 2}
+
+
+def _km(value) -> str:
+    """Kilometre s desatinnou čiarkou („110,1 km“)."""
+    try:
+        return f"{float(value):.1f}".replace(".", ",")
+    except (TypeError, ValueError):
+        return str(value or "")
+
+
+def _semafor_cap(rec: Recommendation) -> Optional[str]:
+    """Obmedzenie semaforu odporúčania (rovnaké pravidlo ako web): ak ZELENÁ nie je dovolená (zastarané dáta,
+    neznámy nástup rušňovodiča, obmedzenie v dôvodoch, idúci vlak bez čerstvej polohy, farba nižšia ako zvolená
+    varianta), vráti farbu, nad ktorú sa v správe nesmie ísť; inak None."""
+    age = rec.data_age or {}
+    crew = rec.crew or {}
+    ch = rec.chosen or {}
+    pos = age.get("position_min")
+    mb = age.get("mailbox_min")
+    capped = ((rec.color != "ZELENÁ" and ch.get("status") == "ZELENÁ") or bool(crew.get("unknown_start"))
+              or (isinstance(mb, (int, float)) and mb > 30) or bool(age.get("obmedzenie"))
+              or any("nemôže byť ZELEN" in str(r) for r in rec.reasons or [])
+              or (rec.train is not None and rec.train.status == "v_jazde"
+                  and not (isinstance(pos, (int, float)) and pos <= settings().position_stale_minutes)))
+    if not capped:
+        return None
+    return rec.color if rec.color in ("ORANŽOVÁ", "ČERVENÁ") else "ORANŽOVÁ"
+
+
+def _capped_status(status: str, cap: Optional[str]) -> str:
+    if not cap or not status:
+        return status
+    return status if _RANK.get(status, 0) >= _RANK.get(cap, 0) else cap
+
+
 def recommendation_body(rec: Recommendation) -> str:
     s = settings()
     lines = [rec.summary, ""]
@@ -72,7 +109,7 @@ def recommendation_body(rec: Recommendation) -> str:
         ]
     pp = rec.path_proposal or {}
     if pp.get("stations"):
-        lines += ["", f"NÁVRH TRASY ({pp.get('route', '')}, {pp.get('km', '')} km):"]
+        lines += ["", f"NÁVRH TRASY ({pp.get('route', '')}, {_km(pp.get('km'))} km):"]
         if pp.get("needs_new_path"):
             win = pp.get("request_window")
             lines.append("  → Treba objednať (ad hoc) trasu u ŽSR"
@@ -81,10 +118,13 @@ def recommendation_body(rec: Recommendation) -> str:
             if st.get("type") == "junction":
                 continue
             lines.append(f"  {st['name']:<34} prích. {_t(st.get('arr')):>13}  odch. {_t(st.get('dep')):>13}"
-                         f"  ({st.get('km', '')} km)")
+                         f"  ({_km(st.get('km'))} km)")
+    cap = _semafor_cap(rec)
     win = rec.windows or {}
     if win:
-        lines += ["", "Okná bezpečného odchodu (ZELENÁ):"]
+        # pri obmedzenom semafore sú okná len informáciou o výlukách, nie odporúčaním na odchod
+        lines += ["", f"Okná odchodu podľa výluk – len informatívne (semafor {cap}, nie je to odporúčanie na odchod):"
+                  if cap else "Okná bezpečného odchodu (ZELENÁ):"]
         for route, wins in win.items():
             txt = ", ".join(f"{_t(a)} – {_t(b)}" for a, b in wins) or "žiadne"
             lines.append(f"  {route}: {txt}")
@@ -106,7 +146,8 @@ def recommendation_body(rec: Recommendation) -> str:
         lines += ["", "Porovnanie variantov:"]
         for v in rec.variants:
             lines.append(f"  {v.get('route', '')[:30]:<30} {_t(v.get('depart')):>13} {v.get('kind', ''):<12} "
-                         f"{v.get('status', ''):<9} P(včas) {v.get('p_on_time', 0):.0%}  {eur(v.get('expected_cost', 0))}")
+                         f"{_capped_status(v.get('status', ''), cap):<9} P(včas) {v.get('p_on_time', 0):.0%}  "
+                         f"{eur(v.get('expected_cost', 0))}")
     if rec.reasons:
         lines += ["", "Dôvody a upozornenia:"] + [f"  - {r}" for r in rec.reasons]
     age = rec.data_age or {}

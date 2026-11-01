@@ -123,7 +123,8 @@
           'potvrďte len pri skutočnom odchode.')) { return; }
       btn.disabled = true;
       post('/api/hlasenie', { t: token, typ: typ, text: text }).then(function (data) {
-        show(data.message || 'Odoslané.', false);
+        // warning = hlásenie je uložené, ale upozornenie dispečerom (zatiaľ) neodišlo – zobraziť ako upozornenie
+        show(data.message || 'Odoslané.', !!data.warning);
         if (typ === 'problem') { document.getElementById('problem-text').value = ''; } else { refreshInfo(); }
         if (navigator.vibrate) { navigator.vibrate(80); }
       }).catch(function (err) {
@@ -173,7 +174,7 @@
         return;
       }
       gpsStatus.textContent = 'Poloha odoslaná o ' + when + ' (presnosť ' + (body.accuracy_m || '?') + ' m' +
-        (data.nearest_station ? ', pri ' + data.nearest_station : '') + ').' + clockNote;
+        (data.nearest_station ? ', najbližšia dopravňa: ' + data.nearest_station : '') + ').' + clockNote;
     }).catch(function (err) {
       if (err.status === 403) { stopGps(); invalid(); return; }
       if (err.status === 422) { answeredFix = fixTs; }  // túto polohu server neprijme ani pri ďalšom pokuse

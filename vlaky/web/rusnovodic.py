@@ -359,12 +359,18 @@ def driver_report(body: ReportIn, request: Request, background: BackgroundTasks)
         audit(s, actor, f"hlasenie_{body.typ}", "train", train.id, **detail)
         train_id, number = train.id, train.number
         relation = f"{train.origin} → {train.destination}"
+    warning = False
     if body.typ == "problem":
-        _notify_problem(number, relation, text, now)
+        note = _notify_problem(number, relation, text, now)
+        if note is not None:  # hlásenie je uložené, ale upozornenie dispečerom (zatiaľ) neodišlo – nie „odoslané“
+            message, warning = note, True
     # zmena stavu (nástup, pripravenosť, odchod) sa prepočíta vždy – počet je obmedzený limitom hlásení a 409
     if request.app.state.auto_evaluate and throttle.allow_evaluate(train_id, force=body.typ in STATE_TYPES):
         background.add_task(_evaluate_after_report, throttle, train_id, f"hlásenie rušňovodiča: {TYP_TEXT[body.typ]}")
-    return {"ok": True, "message": message, "typ": body.typ, "ts": now.isoformat()}
+    out = {"ok": True, "message": message, "typ": body.typ, "ts": now.isoformat()}
+    if warning:
+        out["warning"] = True
+    return out
 
 
 def _evaluate_after_report(throttle: _TrainThrottle, train_id: int, trigger: str) -> None:

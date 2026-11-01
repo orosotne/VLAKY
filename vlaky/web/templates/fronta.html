@@ -63,6 +63,10 @@
         {% if val.get("confirmation_reasons") %}
         <p class="small muted">Na potvrdenie, pretože: {{ val.get("confirmation_reasons")|join("; ") }}</p>
         {% endif %}
+        {% if val.get("notes") %}
+        <p class="small muted">Poznámky k rozpoznaniu e-mailu:</p>
+        <ul class="issues small muted">{% for n in val.get("notes") %}<li>{{ n }}</li>{% endfor %}</ul>
+        {% endif %}
         {% if val.get("stations") is mapping and val.get("stations") %}
         <p class="small muted">Dopravne z e-mailu → register siete:
           {% for field, st in val.get("stations").items() %}{% if st is mapping %}<span class="nowrap">„{{ st.get("text") }}“ → <strong>{{ st.get("name") or "nenájdené" }}</strong></span>{% if not loop.last %}; {% endif %}{% endif %}{% endfor %}
