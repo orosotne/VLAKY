@@ -265,7 +265,7 @@ def test_nedostupny_server_nezdrzi_cyklus(cfg, fixed_now, monkeypatch):
             _rec(s, t.id, fixed_now + timedelta(hours=8), created_at=fixed_now)
     set_fake_now(fixed_now)
     beh.run_cycle(fixed_now)
-    assert relay.connects == [10]  # krátky limit spojenia (VLAKY_NOTIFY_CONNECT_TIMEOUT_S)
+    assert relay.connects == [10]  # krátky limit spojenia (predvolených 10 s – CONNECT_TIMEOUT_S)
     assert (now_utc() - fixed_now).total_seconds() <= 15  # cyklus trval ~10 s, nie 8 × 30 s
     with session_scope() as s:
         rows = _rows(s, kind="odporucanie")

@@ -124,7 +124,8 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
             # každé aktuálne odporúčanie, ktoré ešte nebolo doručené (bez ohľadu na to, kto ho vytvoril:
             # cyklus agenta, prepočet z webu, import) – aj po dlhom výpadku servera, najviac však 48 h
             # (RETRY_HOURS) a nie pre ukončený vlak; zlyhané doručenie sa zopakuje s odstupom
-            # (5, 10, 20, 40, 60 min) a len tým príjemcom, ktorým správa neprišla
+            # (5, 10, 20, 40, 60 min; KRITICKÉ pri výpadku kanála každých 5 min) a len tým príjemcom, ktorým správa
+            # neprišla; chyba jedného odporúčania nezastaví ostatné ani nevráti späť záznamy o odoslaných správach
             since = now - timedelta(hours=RETRY_HOURS)
             q = (select(Recommendation).join(Train, Train.id == Recommendation.train_id)
                  .where(Recommendation.state == "nove", Recommendation.priority != "INFO",
@@ -134,9 +135,18 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
             recs = list(s.scalars(q))
             attempts = recommendation_attempts(s, [r.id for r in recs])
             for rec in recs:
-                pairs = _pending_pairs(s, rec.id, attempts.get(rec.id, []))
-                if pairs is None or pairs:
-                    summary["notified"] += len(notify_recommendation(s, rec, only=pairs))
+                rec_id = rec.id
+                try:
+                    pairs = _pending_pairs(s, rec_id, attempts.get(rec_id, []))
+                    if pairs is None or pairs:
+                        summary["notified"] += len(notify_recommendation(s, rec, only=pairs))
+                        s.commit()  # záznamy o odoslaných správach sa pri chybe ďalšieho odporúčania nevrátia späť
+                except Exception as exc:  # noqa: BLE001 – chybné odporúčanie nezastaví doručenie ostatných
+                    s.rollback()
+                    summary["errors"].append(f"odporúčanie #{rec_id}: {_short_error(exc)}")
+                    record(s, "planovanie", "error", rec=rec_id, error=repr(exc)[:500],
+                           trace=traceback.format_exc()[-2000:])
+                    s.commit()
     except Exception as exc:  # noqa: BLE001
         summary["errors"].append(f"plánovanie: {exc!r}")
         with session_scope() as s:
@@ -282,47 +292,70 @@ def _order_failed(oid: int, exc: Exception) -> bool:
 
 def _periodic(now: datetime, summary: dict) -> None:
     """Súhrn, odovzdávka, denná správa a uchovávanie – každá úloha vo vlastnej transakcii: chyba jednej nezastaví
-    ostatné a denná správa už vidí, čo sa v tomto cykle doručilo. Nedoručené sa opakujú s odstupom."""
+    ostatné a denná správa už vidí, čo sa v tomto cykle doručilo. Správa je vybavená, až keď prišla každému
+    príjemcovi; tým, ktorým neprišla, sa tá istá správa (rovnaký kľúč) opakuje s odstupom 5, 10, 20, 40, 60 min."""
     cfg = settings()
     from ..models import ShiftHandoverReport
-    from ..notifikacie.odosielanie import retry_due, send_digest, send_internal
+    from ..notifikacie.odosielanie import delivered_to_all, retry_targets, send_digest, send_internal
     from .odovzdavka import create_report, send_report
 
     loc = local(now)
     dkey = loc.date().isoformat()
 
     def digest(s) -> None:
-        # súhrn INFO (pri zlyhaní sa zopakuje s odstupom 5, 10, 20, 40, 60 min – nie v každom cykle)
+        # súhrn INFO; kto ho nedostal, dostane ten istý súhrn (od toho istého času) s odstupom – najdlhšie do
+        # ďalšieho súhrnu, aby trvalá chyba jedného príjemcu nezastavila súhrny ostatným
         dg = get_kv(s, "digest")
         if not dg:
             set_kv(s, "digest", {"ts": now.isoformat()})
-        elif (now - datetime.fromisoformat(dg["ts"])).total_seconds() >= cfg.digest_minutes * 60 and \
-                retry_due(s, f"digest:{datetime.fromisoformat(dg['ts']).isoformat()}"):
-            out = send_digest(s, datetime.fromisoformat(dg["ts"]))
-            if not out or _delivered(out):
-                set_kv(s, "digest", {"ts": now.isoformat()})
+            return
+        since = datetime.fromisoformat(dg["ts"])
+        key = f"digest:{since.isoformat()}"
+        sent_at = dg.get("sent_at")  # súhrn už niekomu prišiel (odvtedy beží ďalší súhrn ostatným)
+        if sent_at and (now - datetime.fromisoformat(sent_at)).total_seconds() >= cfg.digest_minutes * 60:
+            set_kv(s, "digest", {"ts": sent_at})
+            return
+        if not sent_at and (now - since).total_seconds() < cfg.digest_minutes * 60:
+            return
+        targets = retry_targets(s, key)  # None = zatiaľ nikomu; inak len tým, ktorým neprišiel (po odstupe)
+        if targets is not None and not targets:
+            if delivered_to_all(s, key):  # už prišiel všetkým (napr. stav súhrnu sa nestihol uložiť)
+                set_kv(s, "digest", {"ts": sent_at or now.isoformat()})
+            return
+        out = send_digest(s, since, only=targets)
+        if not out or delivered_to_all(s, key):
+            set_kv(s, "digest", {"ts": sent_at or now.isoformat()})
+        elif not sent_at and _delivered(out):
+            set_kv(s, "digest", {"ts": dg["ts"], "sent_at": now.isoformat()})
 
     def handover(s) -> None:
-        # odovzdávka služby v hodinách výmeny; nedoručená sa posiela znova (tá istá správa, rovnaký kľúč)
+        # odovzdávka služby v hodinách výmeny; kto ju nedostal, dostane tú istú správu (rovnaký kľúč) s odstupom
         hours = [int(h) for h in cfg.csv(cfg.shift_change_hours)]
         key = f"{loc.date().isoformat()}-{loc.hour:02d}"
         done = get_kv(s, "handover_done")
         if loc.hour in hours and done.get("key") != key and loc.minute < 30:
             rep = create_report(s, now, notify=False)
-            out = send_report(s, rep)
-            set_kv(s, "handover_done", {"key": key, "report_id": rep.id, "sent": not out or _delivered(out)})
+            send_report(s, rep)
+            set_kv(s, "handover_done", {"key": key, "report_id": rep.id,
+                                        "sent": delivered_to_all(s, f"odovzdavka:{rep.id}")})
             summary["handover_report"] = True
-        elif done.get("report_id") and done.get("sent") is False and \
-                retry_due(s, f"odovzdavka:{done['report_id']}"):
+        elif done.get("report_id") and done.get("sent") is False:
+            hkey = f"odovzdavka:{done['report_id']}"
             rep = s.get(ShiftHandoverReport, done["report_id"])
-            out = send_report(s, rep) if rep is not None else []
-            if not out or _delivered(out):
+            targets = retry_targets(s, hkey)
+            if rep is not None and (targets is None or targets):
+                send_report(s, rep, only=targets)
+            if rep is None or delivered_to_all(s, hkey):
                 set_kv(s, "handover_done", {**done, "sent": True})
 
     def daily(s) -> None:
-        # denná správa o stave agenta
-        if loc.hour >= cfg.daily_report_hour and get_kv(s, "daily_report").get("date") != dkey and \
-                retry_due(s, f"daily:{dkey}"):
+        # denná správa o stave agenta; kto ju nedostal, dostane ju (s aktuálnym stavom) s odstupom
+        if loc.hour >= cfg.daily_report_hour and get_kv(s, "daily_report").get("date") != dkey:
+            targets = retry_targets(s, f"daily:{dkey}")
+            if targets is not None and not targets:
+                if delivered_to_all(s, f"daily:{dkey}"):
+                    set_kv(s, "daily_report", {"date": dkey})
+                return
             from .zdravie import health_status
 
             ok, detail = health_status(ignore_keys=(f"daily:{dkey}",))  # vlastný zlyhaný pokus sa nepočíta
@@ -347,9 +380,9 @@ def _periodic(now: datetime, summary: dict) -> None:
                               f"nedoručené správy za 24 h: {failed}",
                               f"hraničné priechody v databáze: {'áno' if borders else 'NIE'}",
                               f"tieňová prevádzka: {'áno' if cfg.shadow_mode else 'nie'}"])
-            out = send_internal(s, "zdravie", f"[AGENT] Denná správa – {'OK' if ok else 'PROBLÉM'}", body,
-                                "INFO", dedup_key=f"daily:{dkey}", channels=["email"])
-            if not out or _delivered(out):
+            send_internal(s, "zdravie", f"[AGENT] Denná správa – {'OK' if ok else 'PROBLÉM'}", body, "INFO",
+                          dedup_key=f"daily:{dkey}", channels=["email"], only=targets)
+            if delivered_to_all(s, f"daily:{dkey}"):
                 set_kv(s, "daily_report", {"date": dkey})
 
     def retention(s) -> None:
@@ -446,6 +479,13 @@ def _delivered(out: list) -> bool:
     from ..notifikacie.odosielanie import SENT_STATES
 
     return any(n.status in SENT_STATES or n.status == "potlacena" for n in out)
+
+
+def _short_error(exc: Exception) -> str:
+    """Chyba pre súhrn cyklu a heartbeat (ide mimo firmy): len typ a prvý riadok – bez parametrov SQL príkazu
+    (napr. adries príjemcov); úplný popis s výpisom je v zdraví agenta."""
+    text = str(exc).strip()
+    return f"{type(exc).__name__}: {text.splitlines()[0] if text else ''}"[:200]
 
 
 def _pending_pairs(session, rec_id: int, rows: list | None = None) -> set | None:

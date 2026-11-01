@@ -111,9 +111,10 @@ def create_report(session: Session, now: datetime | None = None, notify: bool = 
     return rep
 
 
-def send_report(session: Session, rep: ShiftHandoverReport) -> list:
-    """Pošle odovzdávku dispečerom; pri zlyhaní ju agent pošle znova – tú istú správu s rovnakým kľúčom."""
+def send_report(session: Session, rep: ShiftHandoverReport, only: set | None = None) -> list:
+    """Pošle odovzdávku dispečerom; pri zlyhaní ju agent pošle znova – tú istú správu s rovnakým kľúčom, len tým
+    (only – dvojice (kanál, príjemca)), ktorým ju nepodarilo doručiť."""
     from ..notifikacie.odosielanie import send_internal
 
     return send_internal(session, "odovzdavka", "[AGENT] Odovzdávka služby", rep.content, "INFO",
-                         dedup_key=f"odovzdavka:{rep.id}", channels=["email"])
+                         dedup_key=f"odovzdavka:{rep.id}", channels=["email"], only=only)

@@ -8,14 +8,16 @@ do adresára outbox (kópia na audit).
 
 Doručovanie: nedostupný server (SMTP, Teams, SMS brána) sa v jednom cykle agenta skúsi len raz (istič, delivery_scope)
 s limitom spojenia 10 s, zlyhané správy sa opakujú s rastúcim odstupom (5, 10, 20, 40, potom 60 min – retry_due,
-retry_pairs) a pri odporúčaní len tým príjemcom, ktorým sa ho nepodarilo doručiť.
+retry_pairs, retry_targets; KRITICKÉ pri výpadku kanála každých 5 min) a len tým príjemcom, ktorým sa ich
+nepodarilo doručiť.
 
 Verejné funkcie:
     notify_recommendation(session, rec, only=None) -> list[Notification]
-    send_internal(session, kind, subject, body, priority="INFO", dedup_key="") -> list[Notification]
-    send_digest(session, since) -> list[Notification]
+    send_internal(session, kind, subject, body, priority="INFO", dedup_key="", only=None) -> list[Notification]
+    send_digest(session, since, only=None) -> list[Notification]
     allowed_recipients() -> dict[str, set[str]]
     delivery_scope(), retry_due(session, dedup_key), retry_pairs(session, rec_id, rows=None),
+    retry_targets(session, dedup_key), delivered_to_all(session, dedup_key),
     recommendation_attempts(session, rec_ids), retry_delay_minutes(n)
 """
 from __future__ import annotations
@@ -42,11 +44,13 @@ from .texty import recommendation_body, recommendation_subject, sms_text
 SENT_STATES = ("odoslana", "outbox")
 CONNECT_TIMEOUT_S = 10  # spojenie so serverom správ (SMTP, Graph, Teams, SMS brána) – nedostupný nezdrží agenta
 RETRY_FIRST_MIN = 5     # zlyhaná správa sa zopakuje po 5 min, potom vždy po dvojnásobku (10, 20, 40 …)
-RETRY_MAX_MIN = 60      # … najviac však po 60 min
+RETRY_MAX_MIN = 60      # … najviac však po 60 min (KRITICKÉ pri výpadku kanála stále každých 5 min)
 RETRY_HOURS = 48        # aktuálne odporúčanie sa skúša doručiť najviac 48 h (aj po dlhom výpadku servera)
 # správy odložené v tom istom cykle majú o pár sekúnd neskorší čas (čakanie na nedostupný server) – aby sa
 # nerozpadli do samostatných kôl (každé s ďalším pokusom o spojenie), zopakujú sa spolu s prvou
 RETRY_GRACE_S = 90
+DEFERRED = "Neodoslané – kanál"  # začiatok chyby správy odloženej ističom (bez pokusu o spojenie)
+CHANNEL_ERROR = "Chyba kanála: "  # začiatok chyby spojenia alebo servera (nie odmietnutia tejto správy)
 
 # istič odosielania: {kanál: prvá chyba spojenia} – platí len v rámci delivery_scope (cyklus agenta, jedno volanie)
 _ISTIC: ContextVar = ContextVar("vlaky_istic_odosielania", default=None)
@@ -77,12 +81,25 @@ def _connection_error(exc: Exception) -> bool:
     if isinstance(exc, (smtplib.SMTPRecipientsRefused, smtplib.SMTPDataError)):
         return False  # odmietnutý príjemca alebo obsah tejto správy
     if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code not in (400, 413, 422)
+        # odpoveď servera cyklus nezdrží a môže sa týkať len jedného príjemcu (napr. 403 alebo 404 pre jedno číslo
+        # v SMS bráne) – istič len pri výpadku alebo preťažení servera (5xx, 408, 429)
+        code = exc.response.status_code
+        return code >= 500 or code in (408, 429)
     return isinstance(exc, (OSError, httpx.TransportError))  # aj ostatné smtplib.SMTPException, TLS, časový limit
 
 
+def _connect_timeout() -> float:
+    """Limit spojenia so serverom správ v sekundách: nastavenie notify_connect_timeout_s
+    (VLAKY_NOTIFY_CONNECT_TIMEOUT_S), ak ho konfigurácia má, inak 10 s (CONNECT_TIMEOUT_S)."""
+    try:
+        value = float(getattr(settings(), "notify_connect_timeout_s", 0) or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+    return value if value > 0 else float(CONNECT_TIMEOUT_S)
+
+
 def _timeout(total: float) -> httpx.Timeout:
-    return httpx.Timeout(total, connect=float(CONNECT_TIMEOUT_S))
+    return httpx.Timeout(total, connect=_connect_timeout())
 
 
 def allowed_recipients() -> dict:
@@ -164,19 +181,13 @@ def _allowed_pair(allowed: dict, channel: str, recipient: str) -> bool:
     return recipient.lower().replace(" ", "") in {r.lower() for r in allowed.get(channel, set())}
 
 
-def _pending(session: Session, rows: list) -> dict:
-    """rows (vzostupne podľa id) → {(kanál, príjemca): smie sa zopakovať} pre príjemcov, ktorým posledný pokus
-    zlyhal a sú stále na internom zozname.
-
-    Zopakovanie: po odstupe podľa počtu neúspešných pokusov za sebou, alebo hneď, keď tomu istému príjemcovi
-    medzitým prišla iná správa (kanál opäť funguje). Príjemcovia tej istej správy na tom istom kanáli sa
-    opakujú spolu (pri jednom pokuse o spojenie), aj keď ich pokus bol o pár sekúnd neskôr.
-    """
+def _failed_pairs(rows: list) -> dict:
+    """rows (vzostupne podľa id) → {(kanál, príjemca): (posledný pokus, počet neúspešných pokusov za sebou)} pre
+    príjemcov, ktorým posledný pokus zlyhal a sú stále na internom zozname."""
     per_pair: dict = {}
     for row in rows:
         per_pair.setdefault((row.channel, row.recipient), []).append(row)
     allowed = allowed_recipients()
-    now = now_utc()
     out = {}
     for (channel, recipient), items in per_pair.items():
         last = items[-1]
@@ -187,9 +198,32 @@ def _pending(session: Session, rows: list) -> dict:
             if row.status != "chyba":
                 break
             fails += 1
-        due = (now - ensure_utc(last.created_at)) >= \
-            timedelta(minutes=retry_delay_minutes(fails)) - timedelta(seconds=RETRY_GRACE_S)
-        if not due:
+        out[(channel, recipient)] = (last, fails)
+    return out
+
+
+def _pending(session: Session, rows: list) -> dict:
+    """rows (vzostupne podľa id) → {(kanál, príjemca): smie sa zopakovať} pre príjemcov, ktorým posledný pokus
+    zlyhal a sú stále na internom zozname.
+
+    Zopakovanie: po odstupe podľa počtu neúspešných pokusov za sebou. Pri výpadku kanála (chyba spojenia alebo
+    servera, správa odložená ističom) aj hneď, keď tomu istému príjemcovi medzitým prišla iná správa (kanál opäť
+    funguje), a KRITICKÉ v každom 5-min okne (spoločnom pre všetky KRITICKÉ správy – pri výpadku jeden pokus
+    o spojenie na kanál) – po obnovení servera prídu do 5 min, nie až o hodinu. Odmietnutie samotnej správy (napr.
+    neznámy príjemca, číslo zamietnuté bránou) sa opakuje len s bežným odstupom. Príjemcovia tej istej správy na
+    tom istom kanáli sa opakujú spolu (pri jednom pokuse o spojenie), aj keď ich pokus bol o pár sekúnd neskôr.
+    """
+    now = now_utc()
+    window = RETRY_FIRST_MIN * 60
+    out = {}
+    for (channel, recipient), (last, fails) in _failed_pairs(rows).items():
+        outage = (getattr(last, "error", "") or "").startswith((CHANNEL_ERROR, DEFERRED))
+        if outage and getattr(last, "priority", "") == "KRITICKÉ":
+            due = now.timestamp() // window > ensure_utc(last.created_at).timestamp() // window
+        else:
+            due = (now - ensure_utc(last.created_at)) >= \
+                timedelta(minutes=retry_delay_minutes(fails)) - timedelta(seconds=RETRY_GRACE_S)
+        if not due and outage:
             due = session.scalar(select(Notification.id).where(
                 Notification.channel == channel, Notification.recipient == recipient,
                 Notification.status.in_(SENT_STATES), Notification.id > last.id).limit(1)) is not None
@@ -200,7 +234,8 @@ def _pending(session: Session, rows: list) -> dict:
 
 def _attempts(session: Session, *where) -> list:
     return list(session.execute(select(Notification.id, Notification.channel, Notification.recipient,
-                                       Notification.status, Notification.created_at)
+                                       Notification.status, Notification.priority, Notification.error,
+                                       Notification.created_at)
                                 .where(*where).order_by(Notification.id)).all())
 
 
@@ -209,7 +244,8 @@ def recommendation_attempts(session: Session, rec_ids: list) -> dict:
     out: dict = {}
     if rec_ids:
         for row in session.execute(select(Notification.recommendation_id, Notification.id, Notification.channel,
-                                          Notification.recipient, Notification.status, Notification.created_at)
+                                          Notification.recipient, Notification.status, Notification.priority,
+                                          Notification.error, Notification.created_at)
                                    .where(Notification.recommendation_id.in_(rec_ids)).order_by(Notification.id)):
             out.setdefault(row.recommendation_id, []).append(row)
     return out
@@ -226,12 +262,28 @@ def retry_pairs(session: Session, rec_id: int, rows: list | None = None) -> set 
 
 
 def retry_due(session: Session, dedup_key: str) -> bool:
-    """Smie sa správa s týmto kľúčom (návrh k objednávke, súhrn, denná správa, odovzdávka) skúsiť poslať teraz?
+    """Smie sa správa s týmto kľúčom (návrh k objednávke) skúsiť poslať teraz?
 
     Bez neúspešného pokusu áno; po zlyhaní až po odstupe 5, 10, 20, 40, 60 min (alebo keď kanál opäť funguje).
     """
     pending = _pending(session, _attempts(session, Notification.dedup_key == dedup_key[:120]))
     return not pending or any(pending.values())
+
+
+def retry_targets(session: Session, dedup_key: str) -> set | None:
+    """Komu treba správu s týmto kľúčom (súhrn, denná správa, odovzdávka) poslať: None = zatiaľ nikomu (všetkým),
+    inak len dvojice (kanál, príjemca), ktorým sa ju nepodarilo doručiť a uplynul odstup (prázdna množina = teraz
+    nikomu) – kto ju už dostal, nedostane ju druhý raz."""
+    rows = _attempts(session, Notification.dedup_key == dedup_key[:120])
+    if not rows:
+        return None
+    return {pair for pair, due in _pending(session, rows).items() if due}
+
+
+def delivered_to_all(session: Session, dedup_key: str) -> bool:
+    """Správa s týmto kľúčom prišla každému príjemcovi zo zoznamu, ktorému sa posielala (žiadny posledný pokus
+    nezlyhal) – až potom je súhrn, denná správa alebo odovzdávka vybavená."""
+    return not _failed_pairs(_attempts(session, Notification.dedup_key == dedup_key[:120]))
 
 
 def _write_outbox(n: Notification) -> str:
@@ -282,7 +334,7 @@ def _send_email(recipient: str, subject: str, body: str) -> str:
     msg["X-Agent-Dispecer"] = "odporucanie"
     msg.set_content(body)
     # krátky limit na spojenie (nedostupný server nezdrží agenta), potom bežný limit na odpovede servera
-    with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=CONNECT_TIMEOUT_S) as smtp:
+    with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=_connect_timeout()) as smtp:
         if getattr(smtp, "sock", None) is not None:
             smtp.sock.settimeout(30)
         if s.smtp_starttls:
@@ -354,7 +406,7 @@ def _deliver(session: Session, channel: str, recipient: str, subject: str, body:
     if istic is not None and channel in istic:
         # kanál v tomto cykle nefunguje – bez ďalšieho pripájania; zopakuje sa podľa odstupu
         n.status = "chyba"
-        n.error = f"Neodoslané – kanál {channel} je teraz nedostupný ({istic[channel]}); zopakuje sa."[:500]
+        n.error = f"{DEFERRED} {channel} je teraz nedostupný ({istic[channel]}); zopakuje sa."[:500]
         return n
     try:
         if channel == "email":
@@ -367,8 +419,9 @@ def _deliver(session: Session, channel: str, recipient: str, subject: str, body:
             n.status, n.error = "chyba", f"Neznámy kanál {channel}"
         n.sent_at = now_utc()
     except Exception as exc:  # výpadok SMTP/brány nesmie zastaviť agenta
-        n.status, n.error = "chyba", repr(exc)[:500]
-        if istic is not None and _connection_error(exc):
+        outage = _connection_error(exc)
+        n.status, n.error = "chyba", f"{CHANNEL_ERROR if outage else ''}{exc!r}"[:500]
+        if istic is not None and outage:
             istic[channel] = f"{type(exc).__name__}: {exc}"[:200]
     try:
         _write_outbox(n)
@@ -385,19 +438,44 @@ def _channels(priority: str) -> list:
     return []  # INFO ide do súhrnu
 
 
+def _recipients(session: Session, allowed: dict, channel: str, dedup_key: str, only: set | None) -> list:
+    """Príjemcovia správy na kanáli (only – len tieto dvojice (kanál, príjemca), napr. pri opakovaní).
+
+    Stále poradie, ale príjemcovia, ktorým posledný skutočný pokus o túto správu zlyhal, idú na koniec: keby ich
+    chyba vypla istič kanála, správa aj tak najprv príde ostatným (napr. jedno nefunkčné číslo v SMS bráne
+    nezablokuje KRITICKÉ SMS ostatným dispečerom).
+    """
+    if channel == "teams":
+        pool = ["webhook"] if allowed.get("teams") else []
+    else:
+        pool = sorted(allowed.get(channel, set()))
+    pool = [r for r in pool if only is None or (channel, r) in only]
+    if len(pool) < 2 or not dedup_key:
+        return pool
+    failed: set = set()
+    for recipient, status, error in session.execute(
+            select(Notification.recipient, Notification.status, Notification.error)
+            .where(Notification.dedup_key == dedup_key[:120], Notification.channel == channel,
+                   Notification.status.in_(SENT_STATES + ("chyba",)))
+            .order_by(Notification.id)):
+        if status in SENT_STATES:
+            failed.discard(recipient)
+        elif not (error or "").startswith(DEFERRED):
+            failed.add(recipient)
+    return sorted(pool, key=lambda r: r in failed)
+
+
 def send_internal(session: Session, kind: str, subject: str, body: str, priority: str = "INFO",
-                  dedup_key: str = "", rec_id: int | None = None, channels: list | None = None) -> list:
+                  dedup_key: str = "", rec_id: int | None = None, channels: list | None = None,
+                  only: set | None = None) -> list:
+    """Interná správa podľa priority (alebo na zadané kanály); only – len týmto dvojiciam (kanál, príjemca),
+    napr. pri opakovaní súhrnu, dennej správy alebo odovzdávky tým, ktorým neprišla."""
     out = []
     allowed = allowed_recipients()
     with delivery_scope():
         for ch in channels or (_channels(priority) or ["email"]):
-            if ch == "teams":
-                if allowed["teams"]:
-                    out.append(_deliver(session, "teams", "webhook", subject, body, priority, kind, dedup_key,
-                                        rec_id))
-                continue
             text = body if ch != "sms" else f"{subject}"[:300]
-            for r in sorted(allowed.get(ch, set())):
+            for r in _recipients(session, allowed, ch, dedup_key, only):
                 out.append(_deliver(session, ch, r, subject, text, priority, kind, dedup_key, rec_id))
     return out
 
@@ -425,27 +503,26 @@ def notify_recommendation(session: Session, rec: Recommendation, only: set | Non
     channels = _channels(rec.priority)
     if not channels:
         return []
+    # všetky texty vopred – chyba pri ich príprave nesmie prísť až po odoslaní časti správ (záznamy o nich by sa
+    # s chybou vrátili späť a správy by odišli znova)
     subject = recommendation_subject(rec)
     body = recommendation_body(rec)
+    sms = sms_text(rec) if "sms" in channels else ""
     dedup = recommendation_dedup_key(rec)
     out = []
     allowed = allowed_recipients()
     with delivery_scope():
         for ch in channels:
-            if ch == "teams":
-                recipients = ["webhook"] if allowed["teams"] else []
-            else:
-                recipients = sorted(allowed.get(ch, set()))
-            for r in recipients:
-                if only is not None and (ch, r) not in only:
-                    continue
-                out.append(_deliver(session, ch, r, subject, sms_text(rec) if ch == "sms" else body, rec.priority,
+            for r in _recipients(session, allowed, ch, dedup, only):
+                out.append(_deliver(session, ch, r, subject, sms if ch == "sms" else body, rec.priority,
                                     "odporucanie", dedup, rec.id, train_id=rec.train_id))
     return out
 
 
-def send_digest(session: Session, since: datetime) -> list:
-    """Súhrn: INFO odporúčania, čakajúce potvrdenia, karanténa (sekcia 2.3 – priorita INFO)."""
+def send_digest(session: Session, since: datetime, only: set | None = None) -> list:
+    """Súhrn: INFO odporúčania, čakajúce potvrdenia, karanténa (sekcia 2.3 – priorita INFO).
+
+    only – len týmto dvojiciam (kanál, príjemca): opakovanie súhrnu tým, ktorým ho nepodarilo doručiť."""
     recs = list(session.scalars(select(Recommendation).where(Recommendation.created_at >= since,
                                                              Recommendation.priority == "INFO",
                                                              Recommendation.state == "nove")))
@@ -468,4 +545,4 @@ def send_digest(session: Session, since: datetime) -> list:
         lines += [f"  - {e.sender}: {e.subject}" for e in quarantined[:10]]
     body = "\n".join(lines)
     return send_internal(session, "suhrn", "[AGENT][INFO] Súhrn", body, "INFO",
-                         dedup_key=f"digest:{since.isoformat()}", channels=["email"])
+                         dedup_key=f"digest:{since.isoformat()}", channels=["email"], only=only)
