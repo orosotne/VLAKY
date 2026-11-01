@@ -50,9 +50,11 @@
   <section class="card">
     <h2>Aktuálne odporúčanie</h2>
     {% if rec %}
-    {% set rec_stale = fresh and fresh.stale and rec.color == "ZELENÁ" %}
+    {# bez čerstvých dát agenta: poznámka pri každej farbe, ZELENÁ sa ukáže ako ORANŽOVÁ (ako na nástenke) #}
+    {% set agent_stale = fresh and fresh.stale and t.status not in DONE_TRAIN_STATES %}
+    {% set rec_stale = agent_stale and rec.color == "ZELENÁ" %}
     <p><a href="/odporucania/{{ rec.id }}" class="decision-link"><strong>{{ rec.decision }}</strong></a> {% if rec_stale %}{{ m.semafor("ORANŽOVÁ") }} <span class="small muted" title="{{ fresh.text }}">bez čerstvých údajov agenta – pôvodne ZELENÁ</span>{% else %}{{ m.semafor(rec.color) }}{% endif %} {{ m.priority(rec.priority) }}</p>
-    {% if rec_stale %}<p class="small muted">{{ fresh.text }} Semafor platí len k času prepočtu – overte stav pred rozhodnutím.</p>{% endif %}
+    {% if agent_stale %}<p class="small muted stale-note">{{ fresh.text }} Semafor platí len k času prepočtu – overte stav pred rozhodnutím.</p>{% endif %}
     <p>{{ rec.summary }}</p>
     <p class="muted small">{{ rec.created_at|tfull }} · {{ REC_STATE.get(rec.state, rec.state) }}</p>
     {% else %}
@@ -102,7 +104,7 @@
   <section class="card">
     <h2>Trasy</h2>
     {% for p in paths %}
-      <p>{{ p.kind }} – {{ p.status }}, odchod {{ p.departure_utc|t }}{% if p.note %} – {{ p.note }}{% endif %}</p>
+      <p>{{ PATH_KIND.get(p.kind, p.kind) }} – {{ PATH_STATUS.get(p.status, p.status) }}, odchod {{ p.departure_utc|t }}{% if p.note %} – {{ p.note }}{% endif %}</p>
     {% else %}
       <p class="muted">Žiadne pridelené ani žiadané trasy.</p>
     {% endfor %}
@@ -113,7 +115,7 @@
   <h2>História zmien (audit)</h2>
   <ul class="history">
   {% for a in history %}
-    <li><span class="nowrap">{{ a.ts|tfull }}</span> – <strong>{{ a.actor }}</strong>: {{ a.action }}{% if a.detail %} <details class="inline-details"><summary>detail</summary><pre class="mono small">{{ a.detail|jsonpretty }}</pre></details>{% endif %}</li>
+    <li><span class="nowrap">{{ a.ts|tfull }}</span> – <strong>{{ a.actor|actor }}</strong>: <span title="{{ a.action }}">{{ a.action|audit_action }}</span>{% if a.detail %} <details class="inline-details"><summary>detail</summary><pre class="mono small">{{ a.detail|jsonpretty }}</pre></details>{% endif %}</li>
   {% else %}
     <li class="muted">Bez záznamov.</li>
   {% endfor %}

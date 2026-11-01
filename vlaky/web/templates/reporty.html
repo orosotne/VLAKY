@@ -64,8 +64,8 @@
     {% if r.notif %}
     <div class="table-scroll">
     <table class="table table-compact">
-      <thead><tr><th scope="col">Kanál</th>{% for st in r.notif_statuses %}<th scope="col">{{ st }}</th>{% endfor %}</tr></thead>
-      <tbody>{% for ch, row in r.notif.items() %}<tr><td>{{ ch }}</td>{% for st in r.notif_statuses %}<td>{{ row.get(st, 0) }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      <thead><tr><th scope="col">Kanál</th>{% for st in r.notif_statuses %}<th scope="col" title="{{ st }}">{{ NOTIFY_STATUS.get(st, st) }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for ch, row in r.notif.items() %}<tr><td>{{ NOTIFY_CHANNEL.get(ch, ch) }}</td>{% for st in r.notif_statuses %}<td>{{ row.get(st, 0) }}</td>{% endfor %}</tr>{% endfor %}</tbody>
     </table>
     </div>
     {% if r.notif_blocked %}<p class="flash flash-varovanie">Zablokované správy (príjemca mimo interného zoznamu): {{ r.notif_blocked }}</p>{% endif %}
@@ -76,7 +76,7 @@
     <dl class="meta">
       <dt>Prijaté e-maily</dt><dd>{{ r.emails_total }}</dd>
       <dt>Overenie</dt><dd>{% for k, n in r.emails_verdict %}{{ {"ok": "povolení odosielatelia", "karantena": "karanténa", "podozrivy": "podozrivé"}.get(k, k) }}: {{ n }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</dd>
-      <dt>Spracovanie</dt><dd>{% for k, n in r.emails_status %}{{ k }}: {{ n }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</dd>
+      <dt>Spracovanie</dt><dd>{% for k, n in r.emails_status %}{{ EMAIL_STATUS.get(k, k) }}: {{ n }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</dd>
       <dt>Udalosti</dt><dd>{{ r.events_total }}{% if r.events_by_kind %} ({% for k, n in r.events_by_kind %}{{ EVENT_KIND.get(k, k) }}: {{ n }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}</dd>
       <dt>Zapísané automaticky</dt><dd>{{ r.events_auto }}</dd>
       <dt>Potvrdené dispečerom</dt><dd>{{ r.events_confirmed }} (z toho s opravou {{ r.events_with_edits }}{% if r.edits_share is not none %}, {{ r.edits_share|pct }}{% endif %})</dd>

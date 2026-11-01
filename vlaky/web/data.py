@@ -317,10 +317,12 @@ def _driver_dict(sh: Optional[DriverShift], rec: Optional[Recommendation], param
         # nástup rušňovodiča nie je zadaný: časy z odporúčania sú len odhad – nezobrazujú sa ako fakt
         from ..notifikacie.texty import crew_relief_text
 
+        estimate = parse_iso(crew.get("relieve_by"))
+        overdue = estimate is not None and estimate <= now  # aj odhadovaný čas vystriedania už uplynul
         out.update(name=crew.get("driver") or out["name"], start=None, limit=None, left_min=None, relieve_by=None,
                    end_p90=None, status=crew.get("status"), unknown_start=True, estimated=True,
                    relieve_by_estimate=crew.get("relieve_by"), relieve_note=crew_relief_text(crew),
-                   color={"ČERVENÁ": "cervena"}.get(crew.get("status"), "oranzova"))
+                   color="cervena" if overdue or crew.get("status") == "ČERVENÁ" else "oranzova")
         return out
     if crew:
         out["name"] = out["name"] or crew.get("driver") or ""
@@ -390,7 +392,7 @@ def _anchor(train: Train, ho: Optional[Handover]) -> Optional[dict]:
     st = net.find_station(train.origin) if train.origin else None
     if st is None:
         return None
-    return {"lat": st.lat, "lon": st.lon, "kind": "vychodzia", "label": f"východisková stanica {st.name}"}
+    return {"lat": st.lat, "lon": st.lon, "kind": "vychodzia", "label": f"pri východiskovej stanici {st.name}"}
 
 
 MAILBOX_MAX_AGE_MIN = 30   # bez úspešnej kontroly schránky za 30 min nikdy ZELENÁ (rovnako ako plánovač)
@@ -432,6 +434,118 @@ def data_freshness(s: Session, now: Optional[datetime] = None) -> dict:
             "agent_cycle_min": round(cycle, 1) if cycle is not None else None,
             "stale": bool(reasons),
             "text": f"Údaje agenta nie sú čerstvé ({', '.join(reasons)})." if reasons else ""}
+
+
+# ---------------------------------------------------------------- semafor odporúčania na webe
+ZELENA, ORANZOVA, CERVENA = "ZELENÁ", "ORANŽOVÁ", "ČERVENÁ"
+_SEVERITY = {ZELENA: 0, ORANZOVA: 1, CERVENA: 2}
+
+
+def worse_color(a: Optional[str], b: Optional[str]) -> Optional[str]:
+    """Horšia z dvoch farieb semaforu (neznáma farba sa nepočíta)."""
+    if a not in _SEVERITY:
+        return b if b in _SEVERITY else a
+    if b not in _SEVERITY:
+        return a
+    return a if _SEVERITY[a] >= _SEVERITY[b] else b
+
+
+def is_current(rec: Optional[Recommendation], latest_id: Optional[int]) -> bool:
+    """Posledné odporúčanie vlaku, ktorý ešte jazdí alebo čaká (staršie sú len záznamom toho, čo sa odporučilo)."""
+    return bool(rec is not None and latest_id is not None and rec.id == latest_id and rec.train is not None
+                and rec.train.status not in DONE_TRAIN_STATES)
+
+
+def display_color(rec: Optional[Recommendation], fresh: Optional[dict], current: bool) -> Optional[str]:
+    """Farba odporúčania na webe – rovnaké pravidlo ako train_rows: aktuálne odporúčanie bez čerstvých dát agenta
+    nikdy nie je ZELENÁ (PROMPT 12)."""
+    if rec is None:
+        return None
+    if current and fresh and fresh.get("stale") and rec.color == ZELENA:
+        return ORANZOVA
+    return rec.color
+
+
+def semafor_cap(rec: Optional[Recommendation], fresh: Optional[dict] = None, current: bool = False,
+                stale_minutes: Optional[float] = None) -> Optional[dict]:
+    """Obmedzenie semaforu odporúčania: {"color": farba, "reason": dôvod} alebo None (bez obmedzenia).
+
+    Varianty a okná bezpečného odchodu sú výsledok výpočtu ešte pred obmedzením semaforu. Keď semafor obmedzil
+    plánovač (bez čerstvej kontroly schránky alebo polohy idúceho vlaku, poloha mimo plánovanej trasy, bez
+    záznamu o nástupe rušňovodiča, výluka mimo siete, rušňovodič bez rezervy, eskalácia) alebo web (agent nemá
+    čerstvé dáta), nesmie sa nič z odporúčania ukázať ako ZELENÉ (PROMPT 10.3, 12): farba variantov sa obmedzí
+    na farbu odporúčania a okná bezpečného odchodu sú len informatívne. Odporúčanie ORANŽOVÁ, ktoré plánovač
+    neobmedzil (lacnejšia ORANŽOVÁ varianta pred drahšou ZELENOU), ukáže drahšiu ZELENÚ variantu aj jej okná –
+    tie sú skutočne zelené.
+    """
+    if rec is None:
+        return None
+    color = display_color(rec, fresh, current)
+    cap_color = color if color in (ORANZOVA, CERVENA) else ORANZOVA
+    if current and fresh and fresh.get("stale"):
+        text = (fresh.get("text") or "Údaje agenta nie sú čerstvé.").rstrip(".")
+        return {"color": cap_color, "reason": text[:1].lower() + text[1:]}
+    chosen = rec.chosen or {}
+    if color != ZELENA and chosen.get("status") == ZELENA:
+        return {"color": cap_color, "reason": "dôvody sú v časti „Prečo“"}
+    age = rec.data_age or {}
+    crew = rec.crew or {}
+    reasons: list = [str(x) for x in (age.get("obmedzenie") or []) if x]
+    if crew.get("unknown_start"):
+        reasons.append("pri idúcom vlaku chýba záznam o nástupe rušňovodiča")
+    mailbox = age.get("mailbox_min")
+    if isinstance(mailbox, (int, float)) and mailbox > MAILBOX_MAX_AGE_MIN:
+        reasons.append(f"pri prepočte sa schránka agenta nekontrolovala {mailbox:.0f} min")
+    if current and stale_minutes is not None and rec.train is not None and rec.train.status == "v_jazde":
+        pos = age.get("position_min")
+        if not isinstance(pos, (int, float)) or pos > stale_minutes:
+            reasons.append("pri prepočte chýbala čerstvá poloha idúceho vlaku")
+    planner_reasons = [str(r) for r in rec.reasons or []]
+    if any("nemôže byť ZELEN" in r for r in planner_reasons):
+        reasons.append("výluku sa nepodarilo umiestniť na sieť")
+    # idúci vlak s čerstvou polohou mimo plánovanej trasy: plánovač počítal z plánu a ZELENÚ nedal – ani drahšia
+    # nezvolená varianta (napr. ODSTAVIŤ) a jej okná nie sú ZELENÉ
+    if any("nie je na plánovanej trase" in r for r in planner_reasons):
+        reasons.append("pri prepočte bola poloha vlaku mimo plánovanej trasy")
+    if any("Chýbajú čerstvé dáta o polohe vlaku" in r for r in planner_reasons):
+        reasons.append("pri prepočte chýbala čerstvá poloha idúceho vlaku")
+    if not reasons:
+        return None
+    return {"color": cap_color, "reason": "; ".join(dict.fromkeys(reasons))}
+
+
+def capped_variants(rec: Optional[Recommendation], cap: Optional[dict]) -> list:
+    """Varianty odporúčania so zobrazenou farbou („shown_status“) – pri obmedzení najviac farba odporúčania
+    („capped“ = farba sa kvôli obmedzeniu zmenila)."""
+    out = []
+    for v in (rec.variants if rec is not None else None) or []:
+        if not isinstance(v, dict):
+            continue
+        status = v.get("status")
+        shown = worse_color(status, cap["color"]) if cap else status
+        out.append(dict(v, shown_status=shown, capped=shown != status))
+    return out
+
+
+def crew_live(crew: Optional[dict], params: dict, now: datetime) -> dict:
+    """Pracovný čas rušňovodiča z odporúčania k teraz: zostáva do limitu a farba z limitu a aktuálneho času, nie
+    zmrazené čísla z prepočtu (agent mohol prestať prepočítavať). Farba je horšia z farby pri prepočte a farby
+    podľa zostávajúceho času."""
+    crew = crew or {}
+    out = {"left_min": crew.get("left_min"), "status": crew.get("status")}
+    if crew.get("unknown_start"):
+        relieve = parse_iso(crew.get("relieve_by"))
+        if relieve is not None and relieve <= now:
+            out["status"] = CERVENA  # aj odhadovaný čas vystriedania už uplynul
+        out["left_min"] = None  # nástup nie je zadaný – zostávajúci čas je len odhad, nezobrazuje sa ako fakt
+        return out
+    limit = parse_iso(crew.get("limit"))
+    if limit is not None:
+        left = (limit - now).total_seconds() / 60.0
+        live = {"zelena": ZELENA, "oranzova": ORANZOVA, "cervena": CERVENA}.get(
+            crew_color(left, params["crew_buffer_min"]))
+        out.update(left_min=round(left), status=worse_color(crew.get("status"), live))
+    return out
 
 
 def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = False,
@@ -577,6 +691,20 @@ def pending_queue_count(s: Session) -> int:
 
 
 # ---------------------------------------------------------------- upozornenia (pre dashboard)
+def _downgraded_recommendations(s: Session, rec_ids: set, now: datetime) -> set:
+    """Z odporúčaní rec_ids tie, ktoré web bez čerstvých dát agenta ukazuje ako ORANŽOVÉ namiesto ZELENEJ:
+    aktuálne (posledné) zelené odporúčanie vlaku, ktorý ešte jazdí alebo čaká."""
+    if not rec_ids or not data_freshness(s, now)["stale"]:
+        return set()
+    recs = list(s.scalars(select(Recommendation).options(selectinload(Recommendation.train))
+                          .where(Recommendation.id.in_(rec_ids), Recommendation.color == ZELENA)))
+    if not recs:
+        return set()
+    latest = set(s.scalars(select(func.max(Recommendation.id)).where(
+        Recommendation.train_id.in_({r.train_id for r in recs})).group_by(Recommendation.train_id)))
+    return {r.id for r in recs if r.id in latest and r.train is not None and r.train.status not in DONE_TRAIN_STATES}
+
+
 def alerts(s: Session, now: Optional[datetime] = None, limit: int = 30) -> list:
     """Upozornenia: notifikácie agenta (24 h) + odvodené (fronta, stará poloha, pracovný čas, heartbeat)."""
     now = now or now_utc()
@@ -628,15 +756,20 @@ def alerts(s: Session, now: Optional[datetime] = None, limit: int = 30) -> list:
                         "text": f"Agent neposlal stav {int(age)} min – skontrolujte, či beží."})
 
     seen: set = set()
-    for n in s.scalars(select(Notification).where(Notification.created_at >= now - timedelta(hours=24),
-                                                  Notification.status != "potlacena")
-                       .order_by(Notification.id.desc()).limit(200)):
+    notes = list(s.scalars(select(Notification).where(Notification.created_at >= now - timedelta(hours=24),
+                                                      Notification.status != "potlacena")
+                           .order_by(Notification.id.desc()).limit(200)))
+    downgraded = _downgraded_recommendations(s, {n.recommendation_id for n in notes if n.recommendation_id}, now)
+    for n in notes:
         key = n.dedup_key or n.subject
         if key in seen:
             continue
         seen.add(key)
-        out.append({"priority": n.priority or "INFO", "ts": iso(n.created_at), "kind": n.kind,
-                    "text": n.subject or (n.body or "")[:160],
+        text = n.subject or (n.body or "")[:160]
+        if n.recommendation_id in downgraded:
+            # agent nemá čerstvé dáta: aktuálne odporúčanie sa všade ukazuje ako ORANŽOVÁ (ako train_rows)
+            text = text.replace(f"({ZELENA})", f"({ORANZOVA} – bez čerstvých údajov agenta, pôvodne {ZELENA})")
+        out.append({"priority": n.priority or "INFO", "ts": iso(n.created_at), "kind": n.kind, "text": text,
                     "href": f"/odporucania/{n.recommendation_id}" if n.recommendation_id else None})
         if len(seen) >= limit:
             break

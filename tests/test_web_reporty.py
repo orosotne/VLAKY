@@ -115,7 +115,7 @@ def test_kalibracia_navrh_a_pouzitie(client, monkeypatch):
     monkeypatch.setitem(sys.modules, "vlaky.planovanie.kalibracia", mod)
     login_as(client, "veduci", "veduci")
     page = client.get("/reporty").text
-    assert "Kalibrácia z histórie" in page and "55.0 / 80.0" in page and "Použiť návrh" in page
+    assert "Kalibrácia z histórie" in page and "55,0 / 80,0" in page and "Použiť návrh" in page  # desatinná čiarka
     token = csrf(client)
     before = calls["propose"]
     r = client.post("/reporty/kalibracia", data={"csrf_token": token}, follow_redirects=False)

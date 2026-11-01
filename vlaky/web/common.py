@@ -87,6 +87,52 @@ HANDOVER_STATUS = {"ocakavany": "očakávaný", "prisiel": "prišiel na hranicu"
                    "odovzdany": "odovzdaný"}
 POSITION_SOURCE = {"gps": "GPS", "zsr": "ŽSR", "tis": "RNE TIS", "manual": "ručne", "driver": "rušňovodič",
                    "sim": "simulácia"}
+PATH_KIND = {"gvd": "trasa podľa GVD", "ad_hoc": "ad hoc trasa", "navrh": "návrh trasy"}
+PATH_STATUS = {"navrh": "návrh", "ziadana": "žiadaná", "pridelena": "pridelená", "zmenena": "zmenená",
+               "zrusena": "zrušená"}
+EMAIL_STATUS = {"prijaty": "prijatý", "spracovany": "spracovaný", "chyba": "chyba"}
+NOTIFY_STATUS = {"nova": "nová", "odoslana": "odoslaná", "outbox": "uložená (bez odosielania)", "chyba": "chyba",
+                 "zablokovana": "zablokovaná", "potlacena": "potlačená"}
+NOTIFY_CHANNEL = {"email": "e-mail", "teams": "MS Teams", "sms": "SMS", "app": "aplikácia"}
+HEALTH_STATUS = {"ok": "v poriadku", "warn": "upozornenie", "error": "chyba"}
+HEALTH_DETAIL = {"db": "Databáza", "cyklus": "Posledný cyklus agenta", "schranka": "Posledná kontrola schránky",
+                 "dorucenie": "Doručovanie správ", "stav": "Stav"}
+AUDIT_ACTION = {
+    "recommendation": "nové odporúčanie agenta", "recommendation_prijat": "odporúčanie prijaté",
+    "recommendation_upravit": "odporúčanie upravené", "recommendation_zamietnut": "odporúčanie zamietnuté",
+    "recommendation_reply": "odpoveď na odporúčanie e-mailom", "evaluate_error": "chyba prepočtu vlaku",
+    "train_create": "vlak zadaný", "train_update": "údaje vlaku upravené", "udalost_jazdy": "udalosť jazdy z rozhrania",
+    "hlasenie_nastup": "hlásenie: nástup na zmenu", "hlasenie_pripraveny": "hlásenie: vlak pripravený",
+    "hlasenie_odchod": "hlásenie: odchod", "hlasenie_problem": "hlásenie: problém",
+    "hlasenie_obmedzene": "hlásenia odmietnuté (príliš veľa za 10 min)",
+    "hlasenie_nastup_odmietnute": "opakovaný nástup odmietnutý", "poloha_odmietnuta": "poloha z mobilu odmietnutá",
+    "driver_link": "odkaz pre rušňovodiča vydaný", "driver_link_revoke": "odkazy pre rušňovodiča zrušené",
+    "crew_alert": "upozornenie na pracovný čas rušňovodiča", "shift_create": "zmena rušňovodiča naplánovaná",
+    "shift_create_from_proposal": "zmena rušňovodiča podľa návrhu nasadenia",
+    "shift_start": "nástup rušňovodiča zaznamenaný", "shift_end": "zmena rušňovodiča ukončená",
+    "shift_update": "zmena rušňovodiča upravená", "handover_create": "preberanie zaevidované",
+    "handover_update": "preberanie upravené", "handover_arrived": "príchod na hranicu",
+    "handover_taken_over": "vlak prevzatý", "order_proposal": "návrh prepravy k objednávke",
+    "order_reject": "objednávka zamietnutá", "closure_create": "výluka zadaná", "closure_update": "výluka upravená",
+    "closure_cancel": "výluka zrušená", "closure_verify": "výluka potvrdená",
+    "udalost_potvrdena": "udalosť z e-mailu potvrdená", "udalost_zamietnuta": "udalosť z e-mailu zamietnutá",
+    "udalost_aplikovana": "udalosť z e-mailu zapísaná",
+    "vyluka_navrh_na_potvrdenie": "výluka z e-mailu čaká na potvrdenie",
+    "vyluka_navrh_zlyhal": "zápis výluky z e-mailu zlyhal", "vyluka_do_odvolania_predlzena": "výluka do odvolania predĺžená",
+    "email_prijaty": "e-mail prijatý", "email_extrakcia": "udalosti z e-mailu", "email_neulozeny": "e-mail neuložený",
+    "email_nahradeny_overenou_kopiou": "e-mail nahradený overenou kópiou",
+    "email_message_id_kolizia": "iný e-mail s rovnakým Message-ID", "posta_cyklus": "spracovanie schránky",
+    "reply_unparsed": "odpoveď e-mailom nerozpoznaná", "reply_rejected": "odpoveď e-mailom odmietnutá",
+    "notification_blocked": "správa zablokovaná (príjemca mimo interného zoznamu)",
+    "login": "prihlásenie", "logout": "odhlásenie", "login_failed": "neúspešné prihlásenie",
+    "login_blocked": "prihlásenie zablokované (príliš veľa pokusov)", "parameters_update": "parametre rozhodovania zmenené",
+    "calibration_applied": "kalibrácia z histórie použitá", "create_user": "používateľ vytvorený",
+    "user_create": "používateľ vytvorený", "user_update": "používateľ upravený", "locomotive_create": "rušeň zadaný",
+    "locomotive_update": "rušeň upravený", "driver_create": "rušňovodič zadaný", "driver_update": "rušňovodič upravený",
+    "border_update": "hraničný priechod upravený", "location_info_update": "údaje dopravne upravené",
+    "handover_report_create": "odovzdávka služby vytvorená", "handover_report_confirm": "odovzdávka služby potvrdená",
+    "retention_purge": "mazanie starých záznamov", "start": "agent spustený", "stop": "agent zastavený",
+}
 ROLE_LABEL = {"dispecer": "dispečer", "veduci": "vedúci dispečingu", "planovac": "plánovač rušňovodičov a rušňov",
               "obchod": "obchod / zákaznícky servis", "admin": "administrátor"}
 ORDER_STATUS = {"nova": "nová", "navrhnuta": "navrhnutá (agent pripravil návrh)", "chyba_planu": "chyba plánu",
@@ -107,6 +153,8 @@ PARAM_META: dict[str, tuple[str, str, str]] = {
     "crew_buffer_min": ("Rezerva do limitu pracovného času pri zlom priebehu (P90)", "min", "Časové rezervy"),
     "path_tolerance_min": ("Tolerancia odchýlky od pridelenej trasy", "min", "Trasy"),
     "new_path_lead_min": ("Najkratšia lehota na novú (ad hoc) trasu", "min", "Trasy"),
+    "max_hold_h": ("Najdlhšie státie na koľajach ŽSR (PPŽS: neodídený vlak PIS zruší, odstavenie najviac)", "h",
+                   "Trasy"),
     "p_on_time_green": ("P(včas) pre ZELENÚ – najmenej", "0–1", "Prahy rozhodovania"),
     "p_on_time_amber": ("P(včas) – pod touto hodnotou je ČERVENÁ", "0–1", "Prahy rozhodovania"),
     "p_hold_green": ("P(zadržania pred výlukou) pre ZELENÚ – najviac", "0–1", "Prahy rozhodovania"),
@@ -210,12 +258,22 @@ def fmt_eur(value: Any) -> str:
 
 
 def fmt_num(value: Any, digits: int = 0) -> str:
+    """Číslo po slovensky: medzera medzi tisícmi, desatinná čiarka („1 234,5“)."""
     if value is None or value == "":
         return "—"
     try:
-        return f"{float(value):,.{digits}f}".replace(",", " ")
+        return f"{float(value):,.{digits}f}".replace(",", " ").replace(".", ",")
     except (TypeError, ValueError):
         return str(value)
+
+
+def fmt_duty_h(value: Any) -> str:
+    """Limit pracovného času v hodinách bez zbytočného „,0“ („13“, „12,5“)."""
+    try:
+        h = float(value)
+    except (TypeError, ValueError):
+        h = 13.0
+    return fmt_num(h, 0 if h.is_integer() else 1)
 
 
 def ago(value: Any) -> str:
@@ -289,22 +347,43 @@ def _label(mapping: Mapping, key: Any) -> str:
     return mapping.get(key, key or "—")
 
 
+def audit_action_label(action: Any) -> str:
+    """Akcia z auditu po slovensky (neznámy kód aspoň bez podčiarkovníkov)."""
+    code = str(action or "")
+    return AUDIT_ACTION.get(code) or code.replace("_", " ") or "—"
+
+
+def actor_label(actor: Any) -> str:
+    """Kto zmenu urobil: „rusnovodic:95003“ → „rušňovodič vlaku 95003“, „api:gps“ → „rozhranie (GPS)“."""
+    text = str(actor or "")
+    kind, _sep, rest = text.partition(":")
+    if kind == "rusnovodic" and rest:
+        return f"rušňovodič vlaku {rest}"
+    if kind == "api" and rest:
+        return f"rozhranie ({POSITION_SOURCE.get(rest, rest)})"
+    return text or "—"
+
+
 def build_templates() -> Jinja2Templates:
     env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)),
                       autoescape=select_autoescape(["html", "xml"], default_for_string=True, default=True),
                       trim_blocks=True, lstrip_blocks=True)
     env.filters.update({
         "t": fmt_any, "tt": lambda v: fmt_any(v, False), "tfull": fmt_full, "dtinput": input_dt,
-        "minutes": fmt_minutes, "pct": fmt_pct, "eur": fmt_eur, "num": fmt_num, "ago": ago,
+        "minutes": fmt_minutes, "pct": fmt_pct, "eur": fmt_eur, "num": fmt_num, "ago": ago, "duty_h": fmt_duty_h,
         "color_class": _color_class, "jsonpretty": _json_pretty, "iso": lambda v: iso(parse_iso(v)) or "",
         "priority_class": lambda v: PRIORITY_CLASS.get(str(v or ""), "info"),
         "future": lambda v: bool(parse_iso(v) and parse_iso(v) > now_utc()),
+        "audit_action": audit_action_label, "actor": actor_label,
     })
     env.globals.update({
         "TRAIN_STATUS": TRAIN_STATUS, "CLOSURE_KIND": CLOSURE_KIND, "CLOSURE_STATUS": CLOSURE_STATUS,
         "EVENT_KIND": EVENT_KIND, "REC_STATE": REC_STATE, "SHIFT_STATUS": SHIFT_STATUS,
         "HANDOVER_STATUS": HANDOVER_STATUS, "POSITION_SOURCE": POSITION_SOURCE, "ROLE_LABEL": ROLE_LABEL,
-        "ORDER_STATUS": ORDER_STATUS, "DEADLINE_TYPE": DEADLINE_TYPE,
+        "ORDER_STATUS": ORDER_STATUS, "DEADLINE_TYPE": DEADLINE_TYPE, "PATH_KIND": PATH_KIND,
+        "PATH_STATUS": PATH_STATUS, "EMAIL_STATUS": EMAIL_STATUS, "NOTIFY_STATUS": NOTIFY_STATUS,
+        "NOTIFY_CHANNEL": NOTIFY_CHANNEL, "HEALTH_STATUS": HEALTH_STATUS, "HEALTH_DETAIL": HEALTH_DETAIL,
+        "DONE_TRAIN_STATES": DONE_TRAIN_STATES,
         "label": _label, "MAPLIBRE_JS": MAPLIBRE_JS, "MAPLIBRE_CSS": MAPLIBRE_CSS,
         "MAPLIBRE_JS_SRI": MAPLIBRE_JS_SRI, "MAPLIBRE_CSS_SRI": MAPLIBRE_CSS_SRI,
     })

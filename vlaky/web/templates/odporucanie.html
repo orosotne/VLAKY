@@ -15,15 +15,16 @@
 <p class="flash flash-varovanie" role="status">Toto odporúčanie nie je posledné. <a href="/odporucania/{{ latest_id }}">Zobraziť aktuálne odporúčanie</a>.</p>
 {% endif %}
 
-<section class="decision decision-{{ ("ORANŽOVÁ" if downgraded else rec.color)|color_class }}" aria-labelledby="rozhodnutie">
+<section class="decision decision-{{ color|color_class }}" aria-labelledby="rozhodnutie">
   <div class="decision-main">
     <span class="decision-word" id="rozhodnutie">{{ rec.decision }}</span>
-    {% if downgraded %}{{ m.semafor("ORANŽOVÁ") }} <span class="small muted" title="{{ fresh.text }}">bez čerstvých údajov agenta – pôvodne ZELENÁ</span>{% else %}{{ m.semafor(rec.color) }}{% endif %} {{ m.priority(rec.priority) }}
+    {{ m.semafor(color) }}{% if downgraded %} <span class="small muted" title="{{ fresh.text }}">bez čerstvých údajov agenta – pôvodne ZELENÁ</span>{% endif %} {{ m.priority(rec.priority) }}
     <span class="badge">stav: {{ REC_STATE.get(rec.state, rec.state) }}</span>
   </div>
-  {% if downgraded %}<p class="small">{{ fresh.text }} Semafor platí len k času prepočtu – pred vypravením overte aktuálny stav (výluky, polohu, rušňovodiča).</p>{% endif %}
+  {% if agent_stale %}<p class="small stale-note" role="status">{{ fresh.text }} Semafor, časy a pracovný čas platia len k času prepočtu – pred rozhodnutím overte aktuálny stav (výluky, polohu, rušňovodiča).</p>{% endif %}
   <p class="decision-summary">{{ rec.summary }}</p>
-  <p class="muted small">Vytvorené {{ rec.created_at|tfull }}{% if rec.trigger %} · podnet: {{ rec.trigger }}{% endif %}</p>
+  {% set computed = (rec.data_age or {}).get("computed_at") %}
+  <p class="muted small">Vytvorené {{ rec.created_at|tfull }}{% if computed and computed|tfull != rec.created_at|tfull %} · prepočítané {{ computed|tfull }}{% endif %}{% if rec.trigger %} · podnet: {{ rec.trigger }}{% endif %}</p>
 </section>
 
 <div class="grid-2 gap">
@@ -38,13 +39,21 @@
   <section class="card">
     <h2>Istota a čerstvosť dát</h2>
     {% set age = rec.data_age or {} %}
+    {% set pos_calc = age.get("position_min") if age.get("position_min") is number else none %}
+    {% set mail_calc = age.get("mailbox_min") if age.get("mailbox_min") is number else none %}
+    {# aktuálne odporúčanie: vek dát k teraz, hodnota z prepočtu len doplnkovo – agent mohol prestať prepočítavať #}
     <dl class="meta">
       <dt>Poloha vlaku</dt>
-      <dd>{% if age.get("position_min") is not none %}stará {{ age.get("position_min")|minutes }}{% if age.get("position_min") > stale_minutes %} <span class="badge badge-warn">neistá – staršia ako {{ stale_minutes }} min</span>{% endif %}{% else %}<span class="badge badge-warn">bez polohy</span>{% endif %}</dd>
-      {% for k, v in age.items() if k != "position_min" %}
-      <dt>{{ {"mailbox_min": "Posledná kontrola schránky", "closures_min": "Register výluk"}.get(k, k) }}</dt>
-      <dd>{% if v is number %}pred {{ v|minutes }}{% else %}{{ v }}{% endif %}</dd>
-      {% endfor %}
+      {% set pos_age = position_age if current else pos_calc %}
+      <dd>{% if pos_age is not none %}stará {{ [pos_age, 0]|max|minutes }}{% if pos_age > stale_minutes %} <span class="badge badge-warn">neistá – staršia ako {{ stale_minutes }} min</span>{% endif %}{% else %}<span class="badge badge-warn">bez polohy</span>{% endif %}{% if pos_calc is not none and (not current or pos_age is none or (pos_age - pos_calc)|abs >= 1) %} <span class="muted small">(pri prepočte {{ [pos_calc, 0]|max|minutes }})</span>{% endif %}</dd>
+      <dt>Posledná kontrola schránky</dt>
+      {% if current %}
+      <dd>{% if fresh.mailbox_min is not none %}pred {{ [fresh.mailbox_min, 0]|max|minutes }}{% if fresh.mailbox_min > 30 %} <span class="badge badge-warn">staršia ako 30 min</span>{% endif %}{% else %}<span class="badge badge-warn">zatiaľ žiadna úspešná</span>{% endif %}{% if mail_calc is not none %} <span class="muted small">(pri prepočte pred {{ [mail_calc, 0]|max|minutes }})</span>{% endif %}</dd>
+      <dt>Posledný cyklus agenta</dt>
+      <dd>{% if fresh.agent_cycle_min is not none %}pred {{ [fresh.agent_cycle_min, 0]|max|minutes }}{% else %}<span class="badge badge-warn">agent zatiaľ neprebehol</span>{% endif %}</dd>
+      {% else %}
+      <dd>{% if mail_calc is not none %}pri prepočte pred {{ [mail_calc, 0]|max|minutes }}{% else %}—{% endif %}</dd>
+      {% endif %}
       {% if chosen %}
       <dt>P(včas)</dt><dd>{{ chosen.get("p_on_time")|pct }}</dd>
       <dt>P(zadržania pred výlukou)</dt><dd>{{ chosen.get("p_hold")|pct }}</dd>
@@ -57,15 +66,17 @@
 </div>
 
 {% if crew %}
-<section class="card crew-block crew-block-{{ crew.get('status')|color_class }}" aria-labelledby="h-crew">
-  <h2 id="h-crew">Rušňovodič – pracovný čas (limit {{ crew.get("max_duty_h", 13) }} h)</h2>
+{# aktuálne odporúčanie: zostávajúci čas a farba k teraz (crew_now), staršie odporúčanie: hodnoty pri prepočte #}
+{% set crew_status = crew_now.status if crew_now else crew.get("status") %}
+{% set duty_h = crew.get("max_duty_h")|duty_h %}
+<section class="card crew-block crew-block-{{ crew_status|color_class }}" aria-labelledby="h-crew">
+  <h2 id="h-crew">Rušňovodič – pracovný čas (limit {{ duty_h }} h)</h2>
   {% if crew.get("unknown_start") %}
   {# nástup nie je zadaný: časy sú len konzervatívny odhad, nikdy nie fakt #}
-  {% set duty_h = "%g"|format((crew.get("max_duty_h") or 13)|float) %}
   <dl class="meta meta-wide">
     <dt>Rušňovodič</dt><dd>{{ crew.get("driver") or "neznámy" }}</dd>
     <dt>Nástup</dt><dd><span class="badge badge-warn">nie je zadaný</span>{% if crew.get("start") %} <span class="muted small">odhad {{ crew.get("start")|t }} (odchod vlaku mínus príprava)</span>{% endif %}</dd>
-    <dt>Stav</dt><dd>{{ m.semafor(crew.get("status")) }}</dd>
+    <dt>Stav</dt><dd>{{ m.semafor(crew_status) }}{% if not crew_now %} <span class="muted small">(pri prepočte)</span>{% endif %}</dd>
   </dl>
   {% if crew.get("relieve_by") %}<p class="relieve"><strong>odhad: vystriedať najneskôr o {{ crew.get("relieve_by")|t }} (nástup rušňovodiča nie je zadaný)</strong></p>
   {% else %}<p class="relieve"><strong>limit {{ duty_h }} h sa nedá overiť – zadajte nástup rušňovodiča</strong></p>{% endif %}
@@ -75,8 +86,8 @@
     <dt>Nástup</dt><dd>{{ crew.get("start")|t }}</dd>
     <dt>Limit</dt><dd>{{ crew.get("limit")|t }}</dd>
     <dt>Predpokladaný koniec P50 / P90</dt><dd>{{ crew.get("end_p50")|t }} / {{ crew.get("end_p90")|t }}</dd>
-    <dt>Zostáva do limitu</dt><dd>{{ crew.get("left_min")|minutes }}</dd>
-    <dt>Stav</dt><dd>{{ m.semafor(crew.get("status")) }}</dd>
+    <dt>Zostáva do limitu</dt><dd>{% if crew_now %}{{ crew_now.left_min|minutes }}{% if crew_now.left_min is number and crew_now.left_min < 0 %} <span class="badge badge-warn">limit prekročený</span>{% endif %}{% else %}{{ crew.get("left_min")|minutes }} <span class="muted small">(pri prepočte)</span>{% endif %}</dd>
+    <dt>Stav</dt><dd>{{ m.semafor(crew_status) }}{% if not crew_now %} <span class="muted small">(pri prepočte)</span>{% endif %}</dd>
   </dl>
   {% if crew.get("relieve_by") %}<p class="relieve">Vystriedať najneskôr o <strong>{{ crew.get("relieve_by")|t }}</strong></p>{% endif %}
   {% endif %}
@@ -85,17 +96,18 @@
 
 <section class="card">
   <h2>Porovnanie variantov</h2>
+  {% if cap and variants|selectattr("capped")|list %}<p class="small cap-note">Semafor variantov je obmedzený najviac na {{ cap.color }}: {{ cap.reason }}.</p>{% endif %}
   <div class="table-scroll">
   <table class="table">
     <thead><tr><th scope="col">Trasa</th><th scope="col">Odchod</th><th scope="col">Varianta</th><th scope="col">Semafor</th><th scope="col">P(včas)</th><th scope="col">P(zadržania)</th><th scope="col">Príchod P50</th><th scope="col">Príchod P90</th><th scope="col">Náklad</th><th scope="col">Nová trasa</th><th scope="col">Dôvody</th></tr></thead>
     <tbody>
-    {% for v in rec.variants or [] %}
+    {% for v in variants %}
       {% set is_chosen = chosen and v.get("route") == chosen.get("route") and v.get("depart") == chosen.get("depart") and v.get("kind") == chosen.get("kind") %}
       <tr{% if is_chosen %} class="chosen" aria-current="true"{% endif %}>
-        <td>{{ v.get("route") }}{% if is_chosen %} <span class="badge badge-ok">odporúčaná</span>{% endif %}</td>
+        <td>{{ v.get("route") }}{% if is_chosen %} <span class="badge {{ 'badge-ok' if v.shown_status == 'ZELENÁ' else 'badge-warn' }}">odporúčaná</span>{% endif %}</td>
         <td class="nowrap">{{ v.get("depart")|t }}</td>
         <td>{{ v.get("kind") }}</td>
-        <td>{{ m.semafor(v.get("status")) }}</td>
+        <td>{{ m.semafor(v.shown_status) }}</td>
         <td>{{ v.get("p_on_time")|pct }}</td>
         <td>{{ v.get("p_hold")|pct }}</td>
         <td class="nowrap">{{ v.get("arrival_p50")|t }}</td>
@@ -114,12 +126,19 @@
 
 <div class="grid-2 gap">
   <section class="card">
+    {% set any_window = (rec.windows or {}).values()|select|list %}
+    {# obmedzený semafor: okná nie sú „bezpečné“ – výpočet bol bez čerstvých dát alebo s nesplnenou podmienkou #}
+    {% if cap and any_window %}
+    <h2>Okná odchodu podľa výluk – len informatívne</h2>
+    <p class="small cap-note">Semafor je obmedzený na {{ cap.color }}: {{ cap.reason }}. Okná vychádzajú z výluk a rezerv pri prepočte, nie sú odporúčaním na odchod.</p>
+    {% else %}
     <h2>Okná bezpečného odchodu</h2>
+    {% endif %}
     {% if rec.windows %}
       {% for route, wins in rec.windows.items() %}
       <h3 class="h4">{{ route }}</h3>
       {% if wins %}
-      <ul class="windows">{% for w in wins %}<li>od <strong>{{ w[0]|t }}</strong> do <strong>{{ w[1]|t }}</strong></li>{% endfor %}</ul>
+      <ul class="windows{% if cap %} windows-capped{% endif %}">{% for w in wins %}<li>od {% if cap %}{{ w[0]|t }}{% else %}<strong>{{ w[0]|t }}</strong>{% endif %} do {% if cap %}{{ w[1]|t }}{% else %}<strong>{{ w[1]|t }}</strong>{% endif %}</li>{% endfor %}</ul>
       {% else %}<p class="muted">Žiadne zelené okno v horizonte.</p>{% endif %}
       {% endfor %}
     {% else %}<p class="muted">Bez okien (žiadna ZELENÁ varianta).</p>{% endif %}
@@ -204,7 +223,8 @@
   <h2>História odporúčaní pre vlak</h2>
   <ul class="history">
   {% for h in history %}
-    <li>{% if h.id == rec.id %}<strong>{% endif %}<a href="/odporucania/{{ h.id }}">{{ h.created_at|t }} – {{ h.decision }}</a> {{ m.semafor(h.color) }} <span class="muted small">{{ REC_STATE.get(h.state, h.state) }}</span>{% if h.id == rec.id %}</strong>{% endif %}</li>
+    {% set h_color = history_colors.get(h.id, h.color) %}
+    <li>{% if h.id == rec.id %}<strong>{% endif %}<a href="/odporucania/{{ h.id }}">{{ h.created_at|t }} – {{ h.decision }}</a> {{ m.semafor(h_color) }}{% if h_color != h.color %} <span class="muted small" title="{{ fresh.text }}">pôvodne {{ h.color }}</span>{% endif %} <span class="muted small">{{ REC_STATE.get(h.state, h.state) }}</span>{% if h.id == rec.id %}</strong>{% endif %}</li>
   {% endfor %}
   </ul>
 </section>
