@@ -25,6 +25,9 @@ SERVICE_COST = {"siding": 2.0, "yard": 2.0, "spur": 1.5, "crossover": 1.2}
 MAX_TURN_DEG = 100.0      # ostrejšia zmena smeru = úvrať (obeh rušňa)
 REVERSAL_MIN = 20.0       # úvrať je možná len v stanici a stojí ~20 min (obeh rušňa, skúška bŕzd)
 ROUTE_GAUGES = frozenset({"1435", "1520"})  # rozchody vlakov (TrainSpec.gauge)
+STATION_AREA_M = 600.0    # obvod dopravne pre výluku v jednej dopravni (od = do)
+JUNCTION_AREA_M = 200.0   # odbočka, výhybka č., vlečka – len skupina výhybiek, nie obvod stanice
+JUNCTION_TYPES = frozenset({"junction", "spur_junction"})
 
 
 def norm(text: str) -> str:
@@ -188,6 +191,7 @@ class Network:
                     self.by_ref[ref.lower()] = st
         self._grid: Optional[dict] = None
         self._closure_cache: dict = {}
+        self._area_cache: dict = {}
         self._gauge_cache: dict = {}
         # smer odchodu z uzla po hrane (prvý segment geometrie) – na kontrolu úvratí
         self._dir: dict = {}
@@ -533,27 +537,85 @@ class Network:
         cez ten istý úsek; súbežná trať iného rozchodu (ŠRT popri trati 190) do úseku nepatrí. Výluka v jednej
         dopravni (od = do) zahŕňa všetky koľaje v jej obvode (station_area_edges).
         line_ref – číslo trate z výluky (ak je): ak by úsek viedol po oboch rozchodoch, ponechá sa ten, ktorého
-        trať má toto číslo. Prázdna množina = úsek sa v sieti nenašiel (volajúci to musí ohlásiť).
+        trať má toto číslo; v jednej dopravni pridá koľaje trate s týmto číslom aj iného rozchodu (area_gauges).
+        Prázdna množina = úsek sa v sieti nenašiel (volajúci to musí ohlásiť).
         """
         ref = norm_line_ref(line_ref)
         key = (norm(from_station), norm(to_station), ref)
         if key in self._closure_cache:
             return self._closure_cache[key]
-        pair = self._closure_stations(from_station, to_station)
         result: set = set()
-        if pair is not None:
-            group_a, group_b = pair
-            if any(a.node == b.node or haversine(a.lat, a.lon, b.lat, b.lon) < 300.0
-                   for a in group_a for b in group_b):
-                for st in {id(s): s for s in group_a + group_b}.values():
-                    result |= self.station_area_edges(st)
-            else:
-                for a in group_a:
-                    for b in group_b:
+        area = self.closure_area_stations(from_station, to_station)
+        if area is not None:
+            for st in area:
+                result |= self.station_area_edges(st, line_ref=ref)
+        else:
+            pair = self._closure_stations(from_station, to_station)
+            if pair is not None:
+                for a in pair[0]:
+                    for b in pair[1]:
                         result |= self._section_edges(a, b, ref)
         self._closure_cache[key] = result
         self._closure_cache[(key[1], key[0], ref)] = result
         return result
+
+    def closure_area_stations(self, from_station: str, to_station: str) -> Optional[list]:
+        """Dopravne výluky v obvode dopravne (od = do, alebo dve dopravne do 300 m) – inak None (úsek medzi
+        dvoma dopravňami alebo neznáma dopravňa)."""
+        key = (norm(from_station), norm(to_station))
+        if key in self._area_cache:
+            return self._area_cache[key]
+        out = None
+        pair = self._closure_stations(from_station, to_station)
+        if pair is not None:
+            group_a, group_b = pair
+            if any(a.node == b.node or haversine(a.lat, a.lon, b.lat, b.lon) < 300.0
+                   for a in group_a for b in group_b):
+                out = list({id(s): s for s in group_a + group_b}.values())
+        self._area_cache[key] = out
+        return out
+
+    def closure_route_spans(self, r: Route, from_station: str, to_station: str, line_ref: str = "") -> list:
+        """Časti trasy r (km od začiatku trasy, ako Route.stations) v obvode dopravne pri výluke v jednej dopravni.
+
+        Bod trasy patrí do výluky, ak leží na koľaji jej obvodu (closure_edges) do polomeru obvodu od bodu
+        dopravne alebo jej uzla (station_radius). Dlhá hlavná koľaj, ktorá stanicou len prechádza (Beluša 8,4 km),
+        tak do výluky patrí len pri stanici – vlak, ktorý stanicu už prešiel, sa výluky netýka a pomalá jazda sa
+        počíta len v obvode stanice. Prázdny zoznam = výluka nie je v jednej dopravni alebo trasa jej obvodom
+        neprechádza.
+        """
+        stations = self.closure_area_stations(from_station, to_station)
+        if not stations:
+            return []
+        area = self.closure_edges(from_station, to_station, line_ref)
+        centers = []  # (lat, lon, polomer v m): bod a uzol každej dopravne výluky
+        for st in stations:
+            radius = self.station_radius(st) + 15.0  # + polovica kroku zhustenia geometrie
+            centers.append((st.lat, st.lon, radius))
+            if st.node in self.nodes:
+                centers.append((self.nodes[st.node][0], self.nodes[st.node][1], radius))
+        kms: list = []
+        cum = 0.0
+        for i, ei in enumerate(r.edges):
+            e = self.edges[ei]
+            if ei in area:
+                g = e.geom if e.u == r.nodes[i] else list(reversed(e.geom))
+                along, prev = 0.0, None
+                for p in _densify(g, 30.0):
+                    if prev is not None:
+                        along += haversine(prev[0], prev[1], p[0], p[1])
+                    prev = p
+                    if any(abs(p[0] - c_la) < 0.01 and haversine(p[0], p[1], c_la, c_lo) <= c_r
+                           for c_la, c_lo, c_r in centers):
+                        kms.append((cum + min(along, e.len_m)) / 1000.0)
+            cum += e.len_m
+        spans: list = []
+        for km in sorted(kms):
+            if spans and km - spans[-1][1] <= 1.0:
+                spans[-1][1] = km
+            else:
+                spans.append([km, km])
+        return [(round(lo, 3), round(hi, 3)) for lo, hi in spans]
 
     def _same_name(self, st: Station) -> list:
         return list({id(s): s for s in self.by_norm.get(norm(st.name), [])}.values()) or [st]
@@ -734,22 +796,80 @@ class Network:
         self._gauge_cache[key] = res
         return res
 
-    def station_area_edges(self, station: Station, radius_m: float = 600.0, connect_m: float = 1500.0) -> set:
-        """Koľaje v obvode dopravne – pre výluku alebo mimoriadnosť v jednej dopravni (od = do).
+    def station_radius(self, station: Station, radius_m: float = STATION_AREA_M) -> float:
+        """Polomer obvodu dopravne pre výluku v jednej dopravni. Odbočka, výhybka č. či vlečka je len skupina
+        výhybiek (JUNCTION_AREA_M) – jej výluka nesmie zasiahnuť inú trať vedenú okolím (Budatín odbočka
+        400 m od trate 120)."""
+        if station.type in JUNCTION_TYPES or "odbocka" in expand_aliases(norm(station.name)):
+            return min(radius_m, JUNCTION_AREA_M)
+        return radius_m
 
-        Hrana patrí do obvodu, ak niektorá jej časť leží do radius_m od dopravne (od jej bodu aj od jej uzla na
-        koľaji – bod dlhej stanice nemusí byť v jej strede) a má rozchod, ktorý dopravňa obsluhuje. Patria sem
-        teda aj hlavné koľaje, ktoré stanicou len prechádzajú a ich uzly sú ďaleko za stanicou (dlhé hrany na
-        trati, napr. Beluša, Ilava, Bytča), nie však súbežná trať iného rozchodu bez koľají v stanici (ŠRT popri
-        stanici Ruskov) ani iná trať, ktorá vedie len okolím a s koľajami pri dopravni nie je spojená ani do
-        connect_m (zhlavia dlhej stanice môžu byť ďaleko od jej bodu).
-        """
-        gauges = self.station_gauges(station)
+    def _area_near(self, station: Station, radius_m: float) -> dict:
+        """Hrany do radius_m od bodu dopravne alebo od jej uzla → {hrana: najmenšia vzdialenosť v m}."""
         near = self.edges_near(station.lat, station.lon, radius_m)
         if station.node in self.nodes:
             la, lo = self.nodes[station.node]
             for ei, d in self.edges_near(la, lo, radius_m).items():
-                near.setdefault(ei, d)
+                if d < near.get(ei, math.inf):
+                    near[ei] = d
+        return near
+
+    def area_gauges(self, station: Station, line_ref: str = "") -> frozenset:
+        """Rozchody koľají v obvode dopravne – pre výluku v jednej dopravni aj poistku podľa dopravní na trase.
+
+        Ako station_gauges, ale dopravňa, ktorej vlastné koľaje (pri jej uzle) majú jeden rozchod a v jej obvode
+        nie je koľaj pre oba rozchody ani bod, kde sa stretávajú koľaje rôznych rozchodov, obsluhuje len svoj
+        rozchod: staničné koľaje iného rozchodu v okolí patria susednej dopravni (Slivník ŠRT pri výhybni
+        Slivník na trati 190, Maťovce ŠRT pri stanici Maťovce). Haniska pri Košiciach či Čierna nad Tisou majú
+        v obvode stretnutie oboch rozchodov – obsluhujú oba. Číslo trate z výluky (line_ref) pridá rozchod
+        koľají s týmto číslom v obvode – výslovne uvedená trať.
+        """
+        ref = norm_line_ref(line_ref)
+        key = ("obvod", station.node, station.name, station.lat, station.lon, ref)
+        cached = self._gauge_cache.get(key)
+        if cached is not None:
+            return cached
+        loose = self.station_gauges(station)
+        radius = self.station_radius(station)
+        near = self._area_near(station, radius)
+        own: frozenset = frozenset()
+        for ei, _ in self.adj.get(station.node, ()):
+            own |= edge_gauges(self.edges[ei])
+        out = loose
+        if own and own != loose:
+            refs = [(station.lat, station.lon)] + ([self.nodes[station.node]] if station.node in self.nodes else [])
+            mixed = any(len(edge_gauges(self.edges[ei])) > 1 for ei in near)
+            if not mixed:
+                for n in {x for ei in near for x in (self.edges[ei].u, self.edges[ei].v)}:
+                    adj = self.adj.get(n, ())
+                    if len(adj) >= 2 and len(frozenset().union(*(edge_gauges(self.edges[x]) for x, _ in adj))) > 1 \
+                            and any(haversine(la, lo, *self.nodes[n]) <= radius for la, lo in refs):
+                        mixed = True
+                        break
+            if not mixed:
+                out = own & loose or own
+        if ref:
+            for ei in near:
+                if ref in self.line_refs(ei):
+                    out = out | edge_gauges(self.edges[ei])
+        self._gauge_cache[key] = out
+        return out
+
+    def station_area_edges(self, station: Station, radius_m: float = STATION_AREA_M, connect_m: float = 1500.0,
+                           line_ref: str = "") -> set:
+        """Koľaje v obvode dopravne – pre výluku alebo mimoriadnosť v jednej dopravni (od = do).
+
+        Hrana patrí do obvodu, ak niektorá jej časť leží do polomeru obvodu od dopravne (od jej bodu aj od jej
+        uzla na koľaji – bod dlhej stanice nemusí byť v jej strede; odbočka len 200 m, station_radius) a má rozchod
+        koľají obvodu (area_gauges). Patria sem teda aj hlavné koľaje, ktoré stanicou len prechádzajú a ich uzly
+        sú ďaleko za stanicou (dlhé hrany na trati, napr. Beluša, Ilava, Bytča), nie však súbežná trať iného
+        rozchodu bez koľají v stanici (ŠRT popri stanici Ruskov, trať 190 pri stanici Slivník ŠRT) ani iná trať,
+        ktorá vedie len okolím a s koľajami pri dopravni nie je spojená ani do connect_m (zhlavia dlhej stanice
+        môžu byť ďaleko od jej bodu). line_ref – číslo trate z výluky (area_gauges).
+        """
+        radius_m = self.station_radius(station, radius_m)
+        gauges = self.area_gauges(station, line_ref)
+        near = self._area_near(station, radius_m)
         area = {ei for ei in near if edge_gauges(self.edges[ei]) & gauges}
         if not area:  # dopravňa bez koľají v okolí (chyba dát) – aspoň hrany pri jej uzle
             return {ei for ei, _ in self.adj.get(station.node, ())}
