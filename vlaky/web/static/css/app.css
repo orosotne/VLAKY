@@ -390,7 +390,8 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 .map-wrap .maplibregl-popup { z-index: 6; } /* okno vlaku nad oznámením „offline“ a legendou */
 .map-wrap .maplibregl-popup-close-button { font-size: 20px; color: var(--muted); padding: 0 .4rem; }
 .map-wrap .maplibregl-ctrl-attrib { font-size: 11px; }
-.pop h3 { margin: 0 0 .3rem; font-size: 1.05rem; }
+.pop h3 { margin: 0 1.4rem .3rem 0; font-size: 1.05rem; } /* vpravo miesto pre tlačidlo „×“ (aj pre rámček fokusu) */
+.pop h3:focus-visible { outline-offset: 0; }
 .pop dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .1rem .7rem; margin: .3rem 0; }
 .pop dt { color: var(--muted); }
 .pop dd { margin: 0; }
@@ -437,12 +438,19 @@ body.wall .vm-dot { width: 30px; height: 30px; }
   .userbox { flex-basis: 100%; justify-content: flex-end; }
   body.nav-open .userbox { display: flex; }
   .grid-2, .grid-3, .split { grid-template-columns: 1fr; }
-  .page-dashboard { height: auto; overflow: visible; }
-  .dash { grid-template-columns: minmax(0, 1fr); height: auto; }
-  .dash-map { height: 62vh; border-right: 0; }
-  .dash-side { overflow: visible; }
   .panel .table-scroll { max-height: none; }
   .container { padding: .6rem; }
+}
+/* nástenka na úzkej alebo nízkej obrazovke (mobil, mobil na šírku, malé okno): stránka sa posúva, zoznam vlakov
+   je pod mapou a mapa má vždy použiteľnú výšku – najviac takú, aby bola celá viditeľná pod lištou stránky
+   (inak by ju lišty stlačili na pár desiatok px a okno vlaku by sa do nej nezmestilo) */
+@media (max-width: 900px), (max-height: 560px) {
+  .page-dashboard { height: auto; overflow: visible; }
+  .dash { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .dash-map { height: auto; min-height: 62vh; border-right: 0; }
+  .map-wrap { min-height: min(300px, calc(100vh - 8rem)); min-height: min(300px, calc(100svh - 8rem)); }
+  .dash-side { overflow: visible; }
+  .page-dashboard .panel .table-scroll { max-height: none; }
 }
 @media (max-width: 600px) {
   .grid-4 { grid-template-columns: 1fr; }

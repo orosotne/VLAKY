@@ -207,6 +207,46 @@ def test_neobmedzena_oranzova_ukaze_drahsiu_zelenu_variantu_obmedzena_nie(client
     assert _windows_informative(page)
 
 
+def test_idúci_vlak_s_polohou_mimo_trasy_ani_drahsia_varianta_nie_je_zelena(client, fixed_now):
+    """Čerstvá poloha idúceho vlaku je mimo plánovanej trasy: plánovač počíta z plánu a ZELENÚ nedá. Zvolená je
+    lacnejšia ORANŽOVÁ (POČKAŤ), drahšia nezvolená varianta ODSTAVIŤ vyšla ZELENÁ – ani tá, ani jej okná sa na webe
+    neukážu ako zelené (zvolená varianta nie je ZELENÁ, poloha je čerstvá – web to doteraz nevidel)."""
+    from vlaky.db import session_scope
+    from vlaky.models import Closure, Driver, DriverShift, PositionReport
+    from vlaky.planovanie.planovac import evaluate_train
+
+    t0 = fixed_now
+    _set_agent(t0)
+    tid = make_train(number="96106", status="v_jazde", origin="Žilina", destination="Košice",
+                     planned_departure_utc=t0 - timedelta(minutes=30), deadline_utc=t0 + timedelta(hours=10))
+    with session_scope() as s:
+        driver = Driver(name="Rušňovodič FIKTÍVNY")
+        s.add(driver)
+        s.flush()
+        s.add(DriverShift(driver_id=driver.id, train_id=tid, start_utc=t0 - timedelta(hours=6), status="prebieha"))
+        # čerstvá poloha asi 5 km od trate Žilina – Košice (smer Rajecké Teplice)
+        s.add(PositionReport(train_id=tid, train_number="96106", ts_utc=t0 - timedelta(minutes=1), lat=49.13,
+                             lon=18.69, source="gps"))
+        s.add(Closure(kind="uplna", from_station="Liptovský Mikuláš", to_station="Poprad-Tatry",
+                      start_utc=t0 + timedelta(hours=1), end_utc=t0 + timedelta(hours=3), status="overene"))
+        s.flush()
+        rec = evaluate_train(s, tid, t0, trigger="test: poloha mimo trasy")
+        rid = rec.id
+        statuses = [v.get("status") for v in rec.variants or []]
+        assert any("nie je na plánovanej trase" in r for r in rec.reasons), rec.reasons
+        assert rec.color == "ORANŽOVÁ" and rec.chosen.get("status") == "ORANŽOVÁ" and "ZELENÁ" in statuses, \
+            ("predpoklad testu: zvolená ORANŽOVÁ, drahšia varianta ZELENÁ", rec.color, rec.chosen, statuses)
+        windows = any(rec.windows.values())
+    login_as(client, "d305")
+    page = client.get(f"/odporucania/{rid}").text
+    assert "zelena" not in _semafors(_header(page))
+    variants = _section(page, "Porovnanie variantov")
+    assert _semafors(variants) and "zelena" not in _semafors(variants)
+    assert "mimo plánovanej trasy" in variants
+    if windows:
+        assert _windows_informative(page)
+
+
 # ------------------------------------------------------------------ UI1: výpadok agenta – časy k teraz
 def test_detail_pri_vypadku_agenta_pocita_pracovny_cas_k_teraz(client, fixed_now):
     from vlaky.cas import set_fake_now

@@ -1,7 +1,11 @@
 """UI4 (tretia revízia): výber vlaku v zozname „Vlaky“ na nástenke vycentruje vlak a otvorí jeho okno celé
-viditeľné v mape – aj pri vlakoch pri okraji mapy, na veľkom monitore a na šírke mobilu (390 px).
+viditeľné v mape – aj pri vlakoch pri okraji mapy, na veľkom monitore, na šírke mobilu (360 a 390 px) a na nízkej
+obrazovke (mobil na šírku, malé okno prehliadača). Vlak vybraný klávesnicou presunie fokus do svojho okna, nové
+údaje fokus v okne nezmenia a nevezmú ho inde, Escape ho vráti na vlak v zozname.
 
-Skutočný prehliadač (Playwright + Chromium cez Node.js) a MapLibre z unpkg.com. Test sa preskočí, ak nie je
+Skutočný prehliadač (Playwright + Chromium cez Node.js). Bez podkladovej mapy (VLAKY_MAP_TILE_URL je prázdne –
+žiadne dlaždice z internetu); MapLibre sa stiahne z unpkg.com raz za beh (ako v prevádzke), všetky ostatné
+požiadavky mimo lokálneho servera prehliadač zablokuje a test ich ohlási. Test sa preskočí, ak nie je
 k dispozícii `node` s balíkom `playwright` (alebo VLAKY_SKIP_BROWSER=1), alebo ak sa MapLibre nenačíta (offline).
 """
 from __future__ import annotations
@@ -25,28 +29,76 @@ pytest_plugins = ["test_web_spolocne"]
 
 ROOT = Path(__file__).resolve().parent.parent
 
-NODE_SCRIPT = r"""
+# spoločný začiatok skriptov: kontext prehliadača, ktorý mimo lokálneho servera pustí len MapLibre (presná verzia
+# z unpkg.com, stiahne sa raz a ďalej sa podáva z pamäte); každú inú požiadavku zablokuje a zapíše do out.external
+NODE_PRELUDE = r"""
 const { chromium } = require('playwright');
-const [base, user, password] = process.argv.slice(2);
-(async () => {
-  const out = { pageErrors: [], runs: [] };
+const http = require('http');
+const MAPLIBRE = /^https:\/\/unpkg\.com\/maplibre-gl@[0-9.]+\/dist\/maplibre-gl\.(js|css)$/;
+const CACHE = new Map();
+async function newContext(browser, out, viewport) {
+  const ctx = await browser.newContext({ viewport, serviceWorkers: 'block' });
+  await ctx.route('**/*', async (route) => {
+    const url = route.request().url();
+    const host = new URL(url).hostname;
+    if (host === '127.0.0.1' || host === 'localhost') { return route.continue(); }
+    if (MAPLIBRE.test(url)) {
+      try {
+        if (!CACHE.has(url)) {
+          out.cdn = (out.cdn || 0) + 1;
+          const r = await route.fetch();
+          CACHE.set(url, { status: r.status(), type: r.headers()['content-type'] || '', body: await r.body() });
+        }
+        const c = CACHE.get(url);
+        return route.fulfill({ status: c.status, contentType: c.type, body: c.body,
+                               headers: { 'access-control-allow-origin': '*' } });
+      } catch (e) { return route.abort(); }
+    }
+    out.external.push(url);
+    return route.abort();
+  });
+  return ctx;
+}
+async function login(page, base, user, password) {
+  await page.goto(base + '/login');
+  await page.fill('#pole-username', user);
+  await page.fill('#pole-password', password);
+  await Promise.all([page.waitForNavigation(), page.click('button[type=submit]')]);
+  await page.waitForSelector('#tabulka-vlakov tbody tr[data-id]', { timeout: 20000 });
+  await page.waitForSelector('#mapa .maplibregl-canvas, #mapa canvas.fallback-canvas', { timeout: 30000 });
+  await page.waitForTimeout(2000);
+}
+function launch() {
   const proxy = process.env.HTTPS_PROXY
     ? { server: process.env.HTTPS_PROXY, bypass: 'localhost,127.0.0.1' } : undefined;
-  const browser = await chromium.launch({ proxy });
+  return chromium.launch({ proxy });
+}
+async function rowIds(page) {
+  return page.$$eval('#tabulka-vlakov tbody tr[data-id]',
+    (r) => r.map((x) => [x.getAttribute('data-id'), x.querySelector('.vlak-btn').textContent.trim()]));
+}
+"""
+
+NODE_SCRIPT = NODE_PRELUDE + r"""
+const [base, user, password, few] = process.argv.slice(2);
+const FEW = few.split(',');
+// [šírka, výška, len vybrané vlaky] – nízke obrazovky: mobil na šírku, malý mobil, malé okno prehliadača
+const VIEWPORTS = [[1440, 900, false], [1920, 1080, false], [390, 844, false],
+                   [844, 390, true], [667, 375, true], [360, 640, true], [915, 412, true], [1280, 400, true]];
+(async () => {
+  const out = { pageErrors: [], runs: [], external: [] };
+  const browser = await launch();
   try {
-    for (const vp of [[1440, 900], [1920, 1080], [390, 844]]) {
-      const page = await browser.newPage({ viewport: { width: vp[0], height: vp[1] } });
+    for (const [w, h, onlyFew] of VIEWPORTS) {
+      const ctx = await newContext(browser, out, { width: w, height: h });
+      const page = await ctx.newPage();
       page.on('pageerror', (e) => out.pageErrors.push(String(e.message || e)));
-      await page.goto(base + '/login');
-      await page.fill('#pole-username', user);
-      await page.fill('#pole-password', password);
-      await Promise.all([page.waitForNavigation(), page.click('button[type=submit]')]);
-      await page.waitForSelector('#tabulka-vlakov tbody tr[data-id]', { timeout: 20000 });
-      await page.waitForSelector('#mapa .maplibregl-canvas, #mapa canvas.fallback-canvas', { timeout: 30000 });
-      await page.waitForTimeout(2500);
-      const run = { viewport: vp, gl: !!(await page.$('#mapa .maplibregl-canvas')), clicks: [] };
-      const rows = await page.$$eval('#tabulka-vlakov tbody tr[data-id]',
-        (r) => r.map((x) => [x.getAttribute('data-id'), x.querySelector('.vlak-btn').textContent.trim()]));
+      await login(page, base, user, password);
+      const run = { viewport: [w, h], gl: !!(await page.$('#mapa .maplibregl-canvas')), clicks: [] };
+      out.runs.push(run);
+      if (!run.gl) { break; }   // MapLibre sa nenačítal (offline) – test sa preskočí
+      const rows = (await rowIds(page)).filter((r) => !onlyFew || FEW.includes(r[1]));
+      run.expected = onlyFew ? FEW.length : null;
       for (const [id, number] of rows) {
         await page.click('#tabulka-vlakov tbody tr[data-id="' + id + '"] .vlak-btn');
         await page.waitForTimeout(1800);   // pohyb mapy trvá 0,8 s
@@ -61,9 +113,84 @@ const [base, user, password] = process.argv.slice(2);
                    barBottom: sticky ? bar.getBoundingClientRect().bottom : 0 };
         }, [id, number]));
       }
-      out.runs.push(run);
-      await page.close();
+      await ctx.close();
     }
+  } finally {
+    await browser.close();
+  }
+  console.log(JSON.stringify(out));
+})().catch((e) => { console.log(JSON.stringify({ fatal: String(e && e.message || e) })); process.exit(1); });
+"""
+
+NODE_KEYBOARD = NODE_PRELUDE + r"""
+const [base, user, password, number, token, lat, lon] = process.argv.slice(2);
+let shift = 0;
+function postPosition() {   // nová poloha vlaku cez rozhranie GPS brány -> SSE -> prekreslenie okna vlaku
+  shift += 0.003;
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify({ train_number: number, lat: Number(lat) + shift, lon: Number(lon) + shift,
+                                  ts: new Date().toISOString(), source: 'gps' });
+    const u = new URL(base + '/api/pozicie');
+    const req = http.request({ hostname: u.hostname, port: u.port, path: u.pathname, method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, 'content-length': Buffer.byteLength(data) } },
+      (r) => { r.resume(); r.on('end', () => resolve(r.statusCode)); });
+    req.on('error', reject);
+    req.end(data);
+  });
+}
+async function refreshed(page) {   // čaká, kým sa obsah okna vlaku prekreslí novými údajmi
+  await page.evaluate(() => { window.__pop = document.querySelector('.maplibregl-popup .pop'); });
+  for (let i = 0; i < 70; i += 1) {
+    await page.waitForTimeout(300);
+    if (await page.evaluate(() => { const p = document.querySelector('.maplibregl-popup .pop'); return !!p && p !== window.__pop; })) { return true; }
+  }
+  return false;
+}
+function focusState(page) {
+  return page.evaluate(() => {
+    const a = document.activeElement;
+    const pop = document.querySelector('.maplibregl-popup');
+    const map = document.querySelector('#mapa');
+    const rect = (e) => { if (!e) { return null; } const b = e.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; };
+    return { tag: a ? a.tagName : '', text: a ? (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) : '',
+             inPopup: !!(a && pop && pop.contains(a)), listButton: !!(a && a.classList.contains('vlak-btn')),
+             search: !!(a && a.id === 'f-hladat'), popup: !!pop, role: pop ? pop.getAttribute('role') : null,
+             label: pop ? pop.getAttribute('aria-label') : null, popupRect: rect(pop), mapRect: rect(map),
+             mapScroll: [map.scrollLeft, map.scrollTop] };
+  });
+}
+(async () => {
+  const out = { pageErrors: [], external: [], steps: {} };
+  const browser = await launch();
+  try {
+    const ctx = await newContext(browser, out, { width: 1440, height: 900 });
+    const page = await ctx.newPage();
+    page.on('pageerror', (e) => out.pageErrors.push(String(e.message || e)));
+    await login(page, base, user, password);
+    out.gl = !!(await page.$('#mapa .maplibregl-canvas'));
+    if (!out.gl) { console.log(JSON.stringify(out)); return; }   // MapLibre sa nenačítal (offline)
+    const row = (await rowIds(page)).find((r) => r[1] === number);
+    const btn = '#tabulka-vlakov tbody tr[data-id="' + row[0] + '"] .vlak-btn';
+    await page.focus(btn);                       // vlak v zozname vybraný klávesnicou
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1800);
+    out.steps.enter = await focusState(page);
+    await page.keyboard.press('Tab');            // ďalší prvok v okne
+    await page.waitForTimeout(300);
+    out.steps.tab = await focusState(page);
+    out.post1 = await postPosition();            // nové údaje počas práce v okne
+    out.steps.refreshed = await refreshed(page);
+    out.steps.afterRefresh = await focusState(page);
+    await page.keyboard.press('Escape');         // zavrieť okno
+    await page.waitForTimeout(600);
+    out.steps.escape = await focusState(page);
+    await page.click(btn);                       // okno otvorené myšou, potom písanie do vyhľadávania
+    await page.waitForTimeout(1800);
+    await page.focus('#f-hladat');
+    out.post2 = await postPosition();
+    out.steps.refreshed2 = await refreshed(page);
+    out.steps.search = await focusState(page);
+    await ctx.close();
   } finally {
     await browser.close();
   }
@@ -74,6 +201,7 @@ const [base, user, password] = process.argv.slice(2);
 # vlaky pri okrajoch Slovenska (východ, západ, juh, sever) a v strede – pri pôvodnom zobrazení celej SR
 POSITIONS = {"71001": (48.4167, 22.0833), "71002": (48.1240, 17.1090), "71003": (47.7980, 18.7200),
              "71004": (49.4380, 18.7920), "71005": (48.7206, 21.2581), "71006": (49.2265, 18.7395)}
+FEW = ("71001", "71002", "71004")   # na nízkych obrazovkách stačí východný, západný a severný okraj
 
 
 def _playwright_available() -> bool:
@@ -106,7 +234,7 @@ def _inside(inner, outer, tol: float = 1.0) -> bool:
             and inner[3] <= outer[3] + tol)
 
 
-def test_vyber_vlaku_v_zozname_vycentruje_vlak_a_okno_je_cele_viditelne(cfg, tmp_path):
+def _trains_with_positions() -> None:
     from vlaky.cas import now_utc
     from vlaky.db import session_scope
     from vlaky.models import PositionReport
@@ -119,10 +247,13 @@ def test_vyber_vlaku_v_zozname_vycentruje_vlak_a_okno_je_cele_viditelne(cfg, tmp
             s.add(PositionReport(train_id=tid, train_number=number, ts_utc=now - timedelta(minutes=1), lat=lat,
                                  lon=lon, source="gps"))
 
+
+def _run_browser(cfg, tmp_path, script: str, args: list, timeout: int) -> dict:
+    """Spustí web (uvicorn) nad testovacou databázou a skript Node.js s Playwright; vráti jeho výsledok (JSON)."""
     port = _free_port()
     env = {**os.environ, "VLAKY_DATABASE_URL": cfg.database_url, "VLAKY_SECRET_KEY": cfg.secret_key,
            "VLAKY_POSITIONS_TOKEN": "test-token", "VLAKY_ENV": "test", "VLAKY_PUBLIC_URL": f"http://127.0.0.1:{port}",
-           "PYTHONPATH": str(ROOT)}
+           "VLAKY_MAP_TILE_URL": "", "PYTHONPATH": str(ROOT)}   # bez dlaždíc podkladovej mapy z internetu
     log_path = tmp_path / "uvicorn.log"
     with open(log_path, "w") as log:
         server = subprocess.Popen([sys.executable, "-m", "uvicorn", "vlaky.web.app:create_app", "--factory",
@@ -140,16 +271,17 @@ def test_vyber_vlaku_v_zozname_vycentruje_vlak_a_okno_je_cele_viditelne(cfg, tmp
             if time.time() > deadline or server.poll() is not None:
                 pytest.fail("Server sa nespustil:\n" + log_path.read_text()[-3000:])
             time.sleep(0.3)
-        script = tmp_path / "mapa.js"
-        script.write_text(NODE_SCRIPT, encoding="utf-8")
-        proc = subprocess.run(["node", str(script), base, "mapa3", HESLO], capture_output=True, text=True,
-                              timeout=240, cwd=str(tmp_path))
+        path = tmp_path / "skript.js"
+        path.write_text(script, encoding="utf-8")
+        proc = subprocess.run(["node", str(path), base, *args], capture_output=True, text=True, timeout=timeout,
+                              cwd=str(tmp_path))
         lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("{")]
         assert lines, f"Node bez výsledku: {proc.stdout[-2000:]} {proc.stderr[-2000:]}"
         out = json.loads(lines[-1])
         if "fatal" in out and ("launch" in out["fatal"] or "Executable doesn't exist" in out["fatal"]):
             pytest.skip("Chromium sa nepodarilo spustiť: " + out["fatal"][:300])
         assert "fatal" not in out, out.get("fatal", "") + "\n" + log_path.read_text()[-3000:]
+        return out
     finally:
         server.terminate()
         try:
@@ -157,18 +289,27 @@ def test_vyber_vlaku_v_zozname_vycentruje_vlak_a_okno_je_cele_viditelne(cfg, tmp
         except subprocess.TimeoutExpired:
             server.kill()
 
+
+def test_vyber_vlaku_v_zozname_vycentruje_vlak_a_okno_je_cele_viditelne(cfg, tmp_path):
+    _trains_with_positions()
+    out = _run_browser(cfg, tmp_path, NODE_SCRIPT, ["mapa3", HESLO, ",".join(FEW)], timeout=480)
+
     assert out["pageErrors"] == [], out["pageErrors"]
+    assert out["external"] == [], f"požiadavky mimo lokálneho servera (okrem MapLibre): {out['external'][:10]}"
     if not all(run["gl"] for run in out["runs"]):
         pytest.skip("MapLibre sa nenačítal (offline) – okná vlakov MapLibre sa nedajú overiť")
+    assert out.get("cdn", 0) <= 2, out.get("cdn")   # MapLibre (js, css) len raz za beh
     bad = []
     for run in out["runs"]:
-        assert len(run["clicks"]) == len(POSITIONS), run
+        assert len(run["clicks"]) == (run["expected"] or len(POSITIONS)), run
         for c in run["clicks"]:
             box, pop, mk = c["map"], c["popup"], c["marker"]
             # viditeľná časť mapy: pod lištou stránky (na mobile je pevná hore) a v okne prehliadača
             seen = [box[0], max(box[1], c["barBottom"]), box[2], min(box[3], c["vh"])]
             center = mk and [(mk[0] + mk[2]) / 2, (mk[1] + mk[3]) / 2] * 2
             problems = []
+            if seen[3] - seen[1] < 200:
+                problems.append(f"viditeľná mapa je nízka: {seen}")
             if pop is None or f"Vlak {c['number']}" not in c["text"]:
                 problems.append("okno vlaku chýba")
             elif not _inside(pop, seen):
@@ -182,3 +323,38 @@ def test_vyber_vlaku_v_zozname_vycentruje_vlak_a_okno_je_cele_viditelne(cfg, tmp
             if problems:
                 bad.append((run["viewport"], c["number"], problems))
     assert not bad, bad
+
+
+def test_vlak_vybrany_klavesnicou_presunie_fokus_do_okna_a_naspat(cfg, tmp_path):
+    _trains_with_positions()
+    lat, lon = POSITIONS["71006"]
+    out = _run_browser(cfg, tmp_path, NODE_KEYBOARD, ["mapa3", HESLO, "71006", "test-token", str(lat), str(lon)],
+                       timeout=240)
+
+    assert out["pageErrors"] == [], out["pageErrors"]
+    assert out["external"] == [], f"požiadavky mimo lokálneho servera (okrem MapLibre): {out['external'][:10]}"
+    if not out["gl"]:
+        pytest.skip("MapLibre sa nenačítal (offline) – okno vlaku MapLibre sa nedá overiť")
+    assert out["post1"] == 200 and out["post2"] == 200, (out["post1"], out["post2"])
+    st = out["steps"]
+    problems = []
+    enter, tab, after, esc, search = st["enter"], st["tab"], st["afterRefresh"], st["escape"], st["search"]
+    if not enter["inPopup"]:
+        problems.append(f"po Enter na vlaku v zozname fokus nie je v okne vlaku: {enter['tag']} {enter['text']!r}")
+    if enter["role"] != "dialog" or "71006" not in (enter["label"] or ""):
+        problems.append(f"okno vlaku nie je označené ako dialóg s názvom: {enter['role']!r} {enter['label']!r}")
+    if not tab["inPopup"]:
+        problems.append(f"Tab z okna vlaku vyšiel von: {tab['tag']} {tab['text']!r}")
+    if tab["mapScroll"] != [0, 0] or not (tab["popupRect"] and _inside(tab["popupRect"], tab["mapRect"])):
+        problems.append(f"fokus v okne posunul obsah mapy alebo okno nie je v mape: {tab}")
+    if not st["refreshed"]:
+        problems.append("okno vlaku sa po novej polohe neprekreslilo")
+    elif not (after["inPopup"] and after["text"] == tab["text"]):
+        problems.append(f"po prekreslení okna je fokus inde: {after['tag']} {after['text']!r} (bol {tab['text']!r})")
+    if esc["popup"] or not (esc["listButton"] and esc["text"] == "71006"):
+        problems.append(f"po Escape fokus nie je na vlaku v zozname: {esc['tag']} {esc['text']!r} okno={esc['popup']}")
+    if not st["refreshed2"]:
+        problems.append("okno vlaku sa po druhej novej polohe neprekreslilo")
+    elif not search["search"]:
+        problems.append(f"prekreslenie okna vzalo fokus z vyhľadávania: {search['tag']} {search['text']!r}")
+    assert not problems, problems

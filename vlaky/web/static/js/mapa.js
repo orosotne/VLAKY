@@ -19,6 +19,8 @@
   var POPUP_OFFSET = 18;   // odstup okna vlaku od značky [px]
   var POPUP_MARGIN = 8;    // najmenší odstup okna od okraja mapy [px]
   var POPUP_MAX_W = 360;   // najväčšia šírka okna vlaku [px]
+  var POPUP_SIDE_MIN_W = 240;  // najmenšia šírka okna vedľa vlaku na nízkej mape (mobil na šírku) [px]
+  var POPUP_MIN_H = 240;   // okno pod vlakom nižšie ako toto – na nízkej mape radšej vedľa vlaku [px]
   var ARROW_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2l7.5 18-7.5-4.5L4.5 20z"/></svg>';
 
   var state = {
@@ -193,9 +195,9 @@
     else if (pos && pos.anchor) { note = el('p', { class: 'odhad small' }, ['Bez polohy – zobrazené ' + (pos.label || 'približne') + '.']); }
     else if (t.stale) { note = el('p', { class: 'odhad small' }, ['Poloha je staršia ako ' + CFG.staleMinutes + ' min – ETA je neistá.']); }
     else if (p && !p.snapped) { note = el('p', { class: 'odhad small' }, ['Poloha mimo koľaje' + (p.off_track_m ? ' (' + Math.round(p.off_track_m) + ' m)' : '') + '.']); }
-    var follow = el('button', { type: 'button', class: 'btn btn-sm btn-primary' }, [state.following === t.id ? 'Nesledovať' : 'Sledovať vlak']);
+    var follow = el('button', { type: 'button', class: 'btn btn-sm btn-primary', 'data-ctl': 'sledovat' }, [state.following === t.id ? 'Nesledovať' : 'Sledovať vlak']);
     follow.addEventListener('click', function () { if (state.following === t.id) { stopFollow(); } else { startFollow(t.id); } });
-    var trailBtn = el('button', { type: 'button', class: 'btn btn-sm', 'aria-pressed': state.trailFor === t.id ? 'true' : 'false' }, ['Stopa 24 h']);
+    var trailBtn = el('button', { type: 'button', class: 'btn btn-sm', 'data-ctl': 'stopa', 'aria-pressed': state.trailFor === t.id ? 'true' : 'false' }, ['Stopa 24 h']);
     trailBtn.addEventListener('click', function () { toggleTrail(t.id); });
     var routeNote = null;
     if (state.routeVariant && state.routeVariant.id === t.id && state.routeVariant.variant === 'obchadzka') {
@@ -203,17 +205,33 @@
     }
     var actions = el('div', { class: 'pop-actions' }, [
       follow, trailBtn,
-      el('a', { class: 'btn btn-sm', href: '/vlaky/' + t.id }, ['Detail vlaku']),
-      r.id ? el('a', { class: 'btn btn-sm', href: '/odporucania/' + r.id }, ['Odporúčanie']) : null
+      el('a', { class: 'btn btn-sm', href: '/vlaky/' + t.id, 'data-ctl': 'detail' }, ['Detail vlaku']),
+      r.id ? el('a', { class: 'btn btn-sm', href: '/odporucania/' + r.id, 'data-ctl': 'odporucanie' }, ['Odporúčanie']) : null
     ]);
     // agent neprepočítava alebo nečíta schránku: posledná ZELENÁ sa zobrazuje ako ORANŽOVÁ – vysvetliť prečo
     var dataNote = t.downgraded && t.data_note ? el('p', { class: 'odhad small' }, [t.data_note]) : null;
     return el('div', { class: 'pop' }, [
-      el('h3', null, ['Vlak ' + t.number + ' ', semaforBadge(t.color)]),
+      // nadpis dostane fokus pri otvorení okna (tlačidlá sú až na konci dlhého obsahu, ktorý sa v okne posúva)
+      el('h3', { tabindex: '-1', 'data-ctl': 'nadpis' }, ['Vlak ' + t.number + ' ', semaforBadge(t.color)]),
       dataNote,
       r.decision ? el('p', { class: 'small' }, [el('strong', null, [r.decision + ': ']), r.summary || '']) : null,
       dl, note, routeNote, actions
     ]);
+  }
+
+  // ------------------------------------------------------------ klávesnica: fokus v okne vlaku
+  /** Prvok okna vlaku (box), ktorý má fokus – aby ho po prekreslení okna dostal znova; inak null. */
+  function focusedControl(box) {
+    var a = document.activeElement;
+    if (!box || !a || a === document.body || !box.contains(a)) { return null; }
+    return a.getAttribute('data-ctl') || 'nadpis';
+  }
+  /** Presunie fokus do okna vlaku na prvok ctl (inak na nadpis okna) – bez posunu obsahu mapy alebo stránky
+      (okno môže byť ešte mimo viditeľnej časti mapy, kým sa mapa neposunie). */
+  function focusControl(box, ctl) {
+    if (!box || !ctl) { return; }
+    var e = box.querySelector('[data-ctl="' + ctl + '"]') || box.querySelector('[data-ctl="nadpis"]');
+    if (e) { e.focus({ preventScroll: true }); }
   }
 
   /** Prerušované spojnice posledná správa → odhad polohy. */
@@ -589,8 +607,11 @@
         decorateTrain(m.getElement(), t);
       }
       if (self.popup && self.popupId === t.id) {
+        // nové údaje: obsah okna sa prekreslí – fokus ostane na tom istom tlačidle (ak bol v okne), inde sa nemení
+        var ctl = focusedControl(self.popup.getElement());
         self.popup.setLngLat(pos.lngLat);
         self.popup.setDOMContent(popupContent(t));
+        focusControl(self.popup.getElement(), ctl);
       }
     });
     Object.keys(this.markers).forEach(function (id) {
@@ -599,20 +620,23 @@
     this.setEstimates(list);
   };
 
-  /** Rozloženie okna vlaku: vedľa značky (široká mapa – vlak v strede mapy, okno vpravo od neho) alebo pod ňou
-      (úzka mapa, mobil – vlak hore v strede). Okno je najviac také široké a vysoké ako mapa, obsah sa v ňom posúva,
-      takže je vždy celé viditeľné. target = kam na mape (px) posunúť značku vlaku. */
+  /** Rozloženie okna vlaku: vedľa značky (široká mapa – vlak v strede mapy, okno vpravo od neho; aj nízka mapa,
+      napr. mobil na šírku) alebo pod ňou (úzka mapa, mobil na výšku – vlak hore v strede). Okno je najviac také
+      široké a vysoké ako miesto v mape, obsah sa v ňom posúva, takže je vždy celé viditeľné.
+      target = kam na mape (px) posunúť značku vlaku. */
   MapLibreView.prototype.popupLayout = function () {
     var c = this.map.getContainer();
     var W = c.clientWidth;
     var H = c.clientHeight;
-    var width = Math.max(180, Math.min(POPUP_MAX_W, W - 2 * POPUP_MARGIN));
-    if (W / 2 - POPUP_OFFSET - POPUP_MARGIN >= width && H >= 320) {
-      return { anchor: 'left', width: width, maxHeight: H - 2 * POPUP_MARGIN, target: [W / 2, H / 2], W: W, H: H };
+    var side = Math.floor(Math.min(POPUP_MAX_W, W / 2 - POPUP_OFFSET - POPUP_MARGIN));  // šírka okna vedľa vlaku
+    var top = 44;  // okno pod vlakom: značka s číslom vlaku zostane viditeľná nad oknom
+    var below = H - top - POPUP_OFFSET - 12 - POPUP_MARGIN;                       // výška okna pod vlakom
+    if (side >= POPUP_MAX_W || (side >= POPUP_SIDE_MIN_W && below < POPUP_MIN_H)) {
+      return { anchor: 'left', width: side, maxHeight: H - 2 * POPUP_MARGIN, target: [W / 2, H / 2], W: W, H: H };
     }
-    var top = 44;  // značka s číslom vlaku zostane viditeľná nad oknom
-    return { anchor: 'top', width: width, maxHeight: Math.max(140, H - top - POPUP_OFFSET - 12 - POPUP_MARGIN),
-             target: [W / 2, top], W: W, H: H };
+    // nikdy vyššie ako miesto pod vlakom – inak by spodok okna (tlačidlá) bol mimo mapy
+    return { anchor: 'top', width: Math.max(180, Math.min(POPUP_MAX_W, W - 2 * POPUP_MARGIN)),
+             maxHeight: Math.max(60, below), target: [W / 2, top], W: W, H: H };
   };
 
   /** Zmestí sa okno vlaku (rozmery box) pri značke v bode p celé do mapy? */
@@ -626,11 +650,14 @@
       p.y + POPUP_OFFSET + box.height <= layout.H - m;
   }
 
-  /** Otvorí okno vlaku. fly – vlak vybraný v zozname alebo vyhľadaný (priblížiť a vycentrovať), zoom – úroveň.
+  /** Otvorí okno vlaku. fly – vlak vybraný v zozname alebo vyhľadaný (priblížiť a vycentrovať), zoom – úroveň,
+      focus – vlak vybral používateľ (aj klávesnicou): fokus prejde do okna.
       Mapa sa posunie jediným pohybom tak, aby bol vlak aj celé okno viditeľné (okno sa pohybuje s mapou). */
-  MapLibreView.prototype.openPopup = function (t, fly, zoom) {
+  MapLibreView.prototype.openPopup = function (t, fly, zoom, focus) {
     var pos = posOf(t);
     if (!pos) { return; }
+    // okno sa otvára znova (napr. tlačidlom v ňom): fokus ostane na tom istom tlačidle
+    var ctl = focusedControl(this.popup && this.popup.getElement()) || (focus ? 'nadpis' : null);
     this.closePopup(true);
     var self = this;
     var map = this.map;
@@ -638,7 +665,8 @@
     this.layout = layout;
     map.getContainer().style.setProperty('--pop-max-h', Math.round(layout.maxHeight) + 'px');
     this.popupId = t.id;
-    // bez automatického zamerania prvého tlačidla: prehliadač by inak posunul obsah mapy, aby bolo tlačidlo vidieť
+    // bez automatického zamerania prvého tlačidla v MapLibre: prehliadač by posunul obsah mapy, aby bolo tlačidlo
+    // vidieť, a pri každom prekreslení okna by fokus preskočil do okna – fokus sa nastavuje nižšie (focusControl)
     this.popup = new maplibregl.Popup({ offset: POPUP_OFFSET, maxWidth: Math.round(layout.width) + 'px', closeOnClick: true,
                                         anchor: layout.anchor, focusAfterOpen: false })
       .setLngLat(pos.lngLat).setDOMContent(popupContent(t)).addTo(map);
@@ -646,6 +674,11 @@
       if (self.popupId === t.id) { self.popup = null; self.popupId = null; self.h.onPopupClose(t.id); }
     });
     var popEl = this.popup.getElement();
+    if (popEl) {
+      popEl.setAttribute('role', 'dialog');
+      popEl.setAttribute('aria-label', 'Detail vlaku ' + t.number);
+      focusControl(popEl, ctl);
+    }
     var box = popEl ? popEl.getBoundingClientRect() : { width: layout.width, height: layout.maxHeight };
     var targetZoom = fly ? (zoom || Math.max(map.getZoom(), 9)) : map.getZoom();
     if (fly || state.following === t.id || !popupFits(layout, map.project(pos.lngLat), box)) {
@@ -790,7 +823,8 @@
     this.trains = list;
     if (this.popupEl && this.popupId !== null) {
       var t = state.byId[this.popupId];
-      if (t) { this.fillPopup(t); }
+      var ctl = focusedControl(this.popupEl);
+      if (t) { this.fillPopup(t); focusControl(this.popupEl, ctl); }
     }
     this.draw();
   };
@@ -831,19 +865,26 @@
     box.appendChild(close);
     box.appendChild(popupContent(t));
   };
-  CanvasView.prototype.openPopup = function (t, fly, zoom) {
+  CanvasView.prototype.openPopup = function (t, fly, zoom, focus) {
     var pos = posOf(t);
     if (fly && pos) { this.focus(pos.lngLat, zoom || 9); }
     if (!this.popupEl) {
       this.popupEl = el('div', { class: 'fallback-popup', role: 'dialog', 'aria-label': 'Detail vlaku' });
       this.container.appendChild(this.popupEl);
     }
+    var ctl = focusedControl(this.popupEl) || (focus ? 'nadpis' : null);
     this.popupId = t.id;
     this.popupEl.hidden = false;
+    this.popupEl.setAttribute('aria-label', 'Detail vlaku ' + t.number);
     this.fillPopup(t);
+    focusControl(this.popupEl, ctl);
   };
   CanvasView.prototype.closePopup = function (silent) {
-    if (this.popupEl) { this.popupEl.hidden = true; }
+    if (this.popupEl) {
+      // fokus v skrytom okne by ostal „nikde“ – uvoľniť ho (onPopupClose ho vráti na vlak v zozname)
+      if (!silent && focusedControl(this.popupEl)) { document.activeElement.blur(); }
+      this.popupEl.hidden = true;
+    }
     var id = this.popupId;
     this.popupId = null;
     if (!silent && id !== null) { this.h.onPopupClose(id); }
@@ -1012,6 +1053,9 @@
   function renderTable(list) {
     var tbody = document.querySelector('#tabulka-vlakov tbody');
     if (!tbody) { return; }
+    // klávesnica: tlačidlo vlaku s fokusom ho dostane aj po prekreslení tabuľky (nové údaje prichádzajú stále)
+    var active = document.activeElement;
+    var focusId = active && tbody.contains(active) && active.classList.contains('vlak-btn') ? active.getAttribute('data-id') : null;
     tbody.textContent = '';
     if (!list.length) {
       tbody.appendChild(el('tr', { class: 'empty' }, [el('td', { colspan: '5' }, [state.trains.length ? 'Žiadny vlak nezodpovedá filtru.' : 'Žiadne aktívne vlaky.'])]));
@@ -1040,6 +1084,8 @@
         el('td', { class: 'small risk' }, [t.risk || '—'])
       ]));
     });
+    var again = focusId ? tbody.querySelector('.vlak-btn[data-id="' + focusId + '"]') : null;
+    if (again) { again.focus({ preventScroll: true }); }
     var cnt = document.getElementById('vlaky-pocet');
     if (cnt) { cnt.textContent = '(' + list.length + (list.length !== state.trains.length ? ' z ' + state.trains.length : '') + ')'; }
   }
@@ -1134,9 +1180,10 @@
     var t = state.byId[id];
     if (!t || !state.view) { return; }
     state.selected = id;
-    // jeden pohyb mapy: vlak do stredu (pri úzkej mape hore) a okno celé viditeľné – nie dva súperiace pohyby
-    state.view.openPopup(t, fly, 9);
-    var box = fly ? document.getElementById('mapa') : null;
+    // jeden pohyb mapy: vlak do stredu (pri úzkej mape hore) a okno celé viditeľné – nie dva súperiace pohyby;
+    // vlak vybral používateľ (zoznam, vyhľadávanie, značka na mape – aj klávesnicou): fokus prejde do jeho okna
+    state.view.openPopup(t, fly, 9, true);
+    var box = document.getElementById('mapa');
     if (box) {  // mobil: zoznam vlakov je pod mapou – po výbere vlaku posunúť stránku k mape (pod lištu stránky)
       var r = box.getBoundingClientRect();
       var bar = document.querySelector('.topbar');
@@ -1405,6 +1452,13 @@
           state.view.showRoute(null);
           highlightRows();
           redrawTrains();
+        }
+        // fokus bol v zatvorenom okne (Escape, tlačidlo ×): vrátiť ho na vlak v zozname (alebo na jeho značku)
+        var a = document.activeElement;
+        if (!a || a === document.body) {
+          var back = document.querySelector('#tabulka-vlakov tbody tr[data-id="' + id + '"] .vlak-btn') ||
+            document.querySelector('.vm[data-id="' + id + '"]');
+          if (back) { back.focus({ preventScroll: true }); }
         }
       }
     };

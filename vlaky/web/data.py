@@ -471,11 +471,12 @@ def semafor_cap(rec: Optional[Recommendation], fresh: Optional[dict] = None, cur
     """Obmedzenie semaforu odporúčania: {"color": farba, "reason": dôvod} alebo None (bez obmedzenia).
 
     Varianty a okná bezpečného odchodu sú výsledok výpočtu ešte pred obmedzením semaforu. Keď semafor obmedzil
-    plánovač (bez čerstvej kontroly schránky alebo polohy idúceho vlaku, bez záznamu o nástupe rušňovodiča,
-    výluka mimo siete, rušňovodič bez rezervy, eskalácia) alebo web (agent nemá čerstvé dáta), nesmie sa nič z
-    odporúčania ukázať ako ZELENÉ (PROMPT 10.3, 12): farba variantov sa obmedzí na farbu odporúčania a okná
-    bezpečného odchodu sú len informatívne. Odporúčanie ORANŽOVÁ, ktoré plánovač neobmedzil (lacnejšia ORANŽOVÁ
-    varianta pred drahšou ZELENOU), ukáže drahšiu ZELENÚ variantu aj jej okná – tie sú skutočne zelené.
+    plánovač (bez čerstvej kontroly schránky alebo polohy idúceho vlaku, poloha mimo plánovanej trasy, bez
+    záznamu o nástupe rušňovodiča, výluka mimo siete, rušňovodič bez rezervy, eskalácia) alebo web (agent nemá
+    čerstvé dáta), nesmie sa nič z odporúčania ukázať ako ZELENÉ (PROMPT 10.3, 12): farba variantov sa obmedzí
+    na farbu odporúčania a okná bezpečného odchodu sú len informatívne. Odporúčanie ORANŽOVÁ, ktoré plánovač
+    neobmedzil (lacnejšia ORANŽOVÁ varianta pred drahšou ZELENOU), ukáže drahšiu ZELENÚ variantu aj jej okná –
+    tie sú skutočne zelené.
     """
     if rec is None:
         return None
@@ -499,8 +500,15 @@ def semafor_cap(rec: Optional[Recommendation], fresh: Optional[dict] = None, cur
         pos = age.get("position_min")
         if not isinstance(pos, (int, float)) or pos > stale_minutes:
             reasons.append("pri prepočte chýbala čerstvá poloha idúceho vlaku")
-    if any("nemôže byť ZELEN" in str(r) for r in rec.reasons or []):
+    planner_reasons = [str(r) for r in rec.reasons or []]
+    if any("nemôže byť ZELEN" in r for r in planner_reasons):
         reasons.append("výluku sa nepodarilo umiestniť na sieť")
+    # idúci vlak s čerstvou polohou mimo plánovanej trasy: plánovač počítal z plánu a ZELENÚ nedal – ani drahšia
+    # nezvolená varianta (napr. ODSTAVIŤ) a jej okná nie sú ZELENÉ
+    if any("nie je na plánovanej trase" in r for r in planner_reasons):
+        reasons.append("pri prepočte bola poloha vlaku mimo plánovanej trasy")
+    if any("Chýbajú čerstvé dáta o polohe vlaku" in r for r in planner_reasons):
+        reasons.append("pri prepočte chýbala čerstvá poloha idúceho vlaku")
     if not reasons:
         return None
     return {"color": cap_color, "reason": "; ".join(dict.fromkeys(reasons))}
