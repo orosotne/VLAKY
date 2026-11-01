@@ -73,23 +73,36 @@
     section('rusnovodic-neplatny', true);
   }
 
+  function applyInfo(info) {
+    document.getElementById('d-cislo').textContent = info.train.number;
+    document.getElementById('d-relacia').textContent = info.train.relation;
+    document.getElementById('d-rusnovodic').textContent = info.driver_name
+      ? info.driver_name + (info.shift_start_text ? ' · nástup ' + info.shift_start_text : '') : '';
+    document.getElementById('d-platnost').textContent = info.valid_until_text || '—';
+    document.title = 'Vlak ' + info.train.number + ' · Agent dispečer';
+  }
+
   function load() {
     if (!token) { invalid(); return; }
     section('driver-loading', true);
     section('rusnovodic-chyba', false);
     post('/api/rusnovodic/info', { t: token }).then(function (info) {
-      document.getElementById('d-cislo').textContent = info.train.number;
-      document.getElementById('d-relacia').textContent = info.train.relation;
-      document.getElementById('d-rusnovodic').textContent = info.driver_name
-        ? info.driver_name + (info.shift_start_text ? ' · nástup ' + info.shift_start_text : '') : '';
-      document.getElementById('d-platnost').textContent = info.valid_until_text || '—';
-      document.title = 'Vlak ' + info.train.number + ' · Agent dispečer';
+      applyInfo(info);
       section('driver-loading', false);
       section('rusnovodic', true);
     }).catch(function (err) {
       if (err.status === 403) { invalid(); return; }
       section('driver-loading', false);
       section('rusnovodic-chyba', true);
+    });
+  }
+
+  /** Po hlásení stavu (najmä „Nástup na zmenu“) obnoví hlavičku bez načítavacej obrazovky – inak by ostal
+   *  naplánovaný nástup, hoci limit pracovného času beží od zaznamenaného. Chyba nevadí: hlásenie už prijaté. */
+  function refreshInfo() {
+    if (!token) { return; }
+    post('/api/rusnovodic/info', { t: token }).then(applyInfo).catch(function (err) {
+      if (err.status === 403) { invalid(); }
     });
   }
   var retry = document.getElementById('btn-znova');
@@ -105,10 +118,13 @@
         text = (document.getElementById('problem-text').value || '').trim();
         if (!text) { show('Popíšte problém.', true); return; }
       }
+      // omylom ťuknutý „Odchod“ (vlak nevyšiel) by ukončil státie – limit 18 h by sa počítal znova; preto potvrdenie
+      if (typ === 'odchod' && !window.confirm('Vlak naozaj odchádza? Odchod ukončí státie vlaku (limit 18 h) – ' +
+          'potvrďte len pri skutočnom odchode.')) { return; }
       btn.disabled = true;
       post('/api/hlasenie', { t: token, typ: typ, text: text }).then(function (data) {
         show(data.message || 'Odoslané.', false);
-        if (typ === 'problem') { document.getElementById('problem-text').value = ''; }
+        if (typ === 'problem') { document.getElementById('problem-text').value = ''; } else { refreshInfo(); }
         if (navigator.vibrate) { navigator.vibrate(80); }
       }).catch(function (err) {
         if (err.status === 403) { invalid(); return; }

@@ -9,7 +9,14 @@ pravidlo:
     ak nie je, najskoršia platná kotva (príchod na hranicu, zmeškaná trasa), inak čas zmeny – po jazde vždy
     čas zmeny (staré časy spred jazdy neplatia),
   * odchod (stav „v jazde“, aj hlásenie rušňovodiča „odchod“) → vymaže sa a zapíše sa čas odchodu,
+  * oprava omylom zaznamenaného odchodu (späť na stojaci stav do 30 min bez dôkazu pohybu, polohy ukazujú, že vlak
+    stál, alebo tak rozhodne dispečer) → obnoví sa začiatok státia aj čas odchodu spred omylu (``set_status``),
   * ukončenie, zrušenie, odovzdanie → vymaže sa.
+
+Pri prechode do stavu „v jazde“ sa v ``KeyValue`` („jazda:<id vlaku>“) zapamätá čas zmeny, či je to skutočný čas
+odchodu, a stav, začiatok státia a čas odchodu spred zmeny. Slúži na opravu omylu (vyššie) a ako stála kotva odhadu
+polohy (vlak išiel najneskôr vtedy) a pracovného času rušňovodiča, keď vlak prešiel do jazdy ručnou zmenou stavu bez
+skutočného času odchodu (``running_since``). Pri odchode z jazdy sa záznam zmaže.
 
 Hlásenie rušňovodiča „pripravený“ začiatok státia nemení a minulý (ani chýbajúci) čas pripravenosti neposunie, ak by
 tým zmizla kotva limitu. Úprava vlaku vo webe pred zápisom zmien zapíše začiatok státia z doterajších kotiev
@@ -27,7 +34,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..cas import ensure_utc, local, now_utc
-from ..models import Handover, Path, Train
+from ..models import Handover, KeyValue, Path, PositionReport, Train
 
 RUNNING = "v_jazde"
 STANDING = ("odstaveny", "prevzaty")                       # vlak stojí na koľajach ŽSR
@@ -35,6 +42,9 @@ NOT_RUN = ("planovany", "na_ceste_k_hranici", "prevzaty")  # od príchodu na hra
 ENDED = ("ukonceny", "zruseny", "odovzdany")
 ARRIVED = ("prisiel", "prevzaty")                          # vstupné preberanie: vlak už je na koľajach ŽSR
 _CURRENT = object()  # hold_anchors: čas pripravenosti zo záznamu vlaku (nie zvažovaná zmena)
+RUN_CORRECTION_MIN = 30.0   # návrat z „v jazde“ do 30 min bez dôkazu pohybu = oprava omylom zaznamenaného odchodu
+RUN_MOVED_M = 2000.0        # poloha po odchode ďalej ako 2 km od miesta pred odchodom = vlak naozaj išiel
+_RUN_KEY = "jazda:"         # KeyValue jazda:<id vlaku> – posledný prechod do stavu „v jazde“ (set_status)
 
 
 def _utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -196,18 +206,130 @@ def _earliest_standing(session: Optional[Session], train: Train, at: datetime,
     return min(anchor, at) if anchor is not None else at
 
 
+def _iso(dt: Optional[datetime]) -> Optional[str]:
+    return ensure_utc(dt).isoformat() if dt else None
+
+
+def _parse(value) -> Optional[datetime]:
+    try:
+        return ensure_utc(datetime.fromisoformat(value)) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _run_row(session: Optional[Session], train: Train) -> Optional[KeyValue]:
+    if session is None or train.id is None:
+        return None
+    return session.scalar(select(KeyValue).where(KeyValue.key == f"{_RUN_KEY}{train.id}"))
+
+
+def _remember_departure(session: Optional[Session], train: Train, at: datetime, actual: bool, old: str) -> None:
+    """Prechod do stavu „v jazde“: čas zmeny, skutočný odchod áno/nie a stav, začiatok státia a odchod spred zmeny."""
+    if session is None or train.id is None:
+        return
+    value = {"at": at.isoformat(), "actual": bool(actual), "status": old,
+             "standing_since": _iso(train.standing_since_utc), "departed": _iso(train.departed_utc)}
+    row = _run_row(session, train)
+    if row is None:
+        session.add(KeyValue(key=f"{_RUN_KEY}{train.id}", value=value))
+    else:
+        row.value = value
+
+
+def _last_departure(session: Optional[Session], train: Train) -> Optional[dict]:
+    """Zapamätaný posledný prechod do stavu „v jazde“ (časy ako datetime) alebo None."""
+    row = _run_row(session, train)
+    if row is None or not isinstance(row.value, dict) or _parse(row.value.get("at")) is None:
+        return None
+    v = row.value
+    return {"at": _parse(v.get("at")), "actual": bool(v.get("actual")), "status": v.get("status") or "",
+            "standing_since": _parse(v.get("standing_since")), "departed": _parse(v.get("departed"))}
+
+
+def running_since(session: Optional[Session], train: Train) -> Optional[datetime]:
+    """Od kedy je idúci vlak v stave „v jazde“ (aj ručná zmena stavu vo webe bez skutočného času odchodu) – stála
+    kotva odhadu polohy a nástupu rušňovodiča (vlak išiel najneskôr vtedy), ktorá sa s časom neposúva. Inak None."""
+    if train.status != RUNNING:
+        return None
+    run = _last_departure(session, train)
+    return run["at"] if run else None
+
+
+def _moved_since(session: Session, train: Train, since: datetime, at: datetime) -> Optional[bool]:
+    """Ukazujú polohy od ``since`` pohyb vlaku? True = áno (> RUN_MOVED_M od miesta pred odchodom), False = polohy
+    ukazujú, že vlak stál, a posledná je nanajvýš RUN_CORRECTION_MIN pred ``at``, None = nedá sa povedať."""
+    from ..siet.graf import haversine
+
+    after = list(session.scalars(select(PositionReport).where(PositionReport.train_id == train.id,
+                                                              PositionReport.ts_utc >= since,
+                                                              PositionReport.ts_utc <= at)
+                                 .order_by(PositionReport.ts_utc, PositionReport.id).limit(5000)))
+    if not after:
+        return None
+    ref = session.scalar(select(PositionReport).where(PositionReport.train_id == train.id,
+                                                      PositionReport.ts_utc < since)
+                         .order_by(PositionReport.ts_utc.desc(), PositionReport.id.desc())) or after[0]
+    if any(haversine(ref.lat, ref.lon, p.lat, p.lon) > RUN_MOVED_M for p in after):
+        return True
+    if (at - ensure_utc(after[-1].ts_utc)).total_seconds() / 60.0 <= RUN_CORRECTION_MIN:
+        return False
+    return None
+
+
+def _mistaken_departure(session: Optional[Session], train: Train, run: dict, at: datetime) -> bool:
+    """Bol odchod omyl (vlak v skutočnosti nešiel)? Návrat do RUN_CORRECTION_MIN bez polohy, ktorá by ukazovala pohyb,
+    alebo polohy po odchode ukazujú, že vlak stál na mieste (aj pri neskoršej oprave)."""
+    since = run["at"]
+    if session is None or since > at:
+        return False
+    moved = _moved_since(session, train, since, at)
+    if moved is not None:
+        return not moved
+    return (at - since).total_seconds() / 60.0 <= RUN_CORRECTION_MIN
+
+
 def set_status(session: Optional[Session], train: Train, status: str, at: Optional[datetime] = None,
-               handover: Optional[Handover] = None, actual: bool = True) -> None:
+               handover: Optional[Handover] = None, actual: bool = True,
+               correction: Optional[bool] = None) -> bool:
     """Zmení stav vlaku a podľa neho začiatok státia (a čas odchodu). Rovnaký stav nič nemení.
 
     ``at`` – čas udalosti (predvolene teraz). ``actual=False`` – čas zmeny nie je skutočný čas odchodu (napr. ručná
-    úprava stavu vo webe): čas odchodu sa potom nezapíše (odhad pracovného času rušňovodiča použije plánovaný
-    odchod). ``session`` slúži na dohľadanie vstupného preberania a trás; bez nej sa použije len ``handover``.
+    úprava stavu vo webe): čas odchodu sa potom nezapíše (poloha sa odhaduje od času tejto zmeny, pracovný čas
+    rušňovodiča od plánovaného odchodu, ak nie je neskorší – ``running_since``). ``session`` slúži na dohľadanie
+    vstupného preberania, trás a polôh; bez nej sa použije len ``handover``.
+
+    Návrat z jazdy na stojaci (alebo plánovaný) stav, ktorý je opravou omylom zaznamenaného odchodu (hlásenie
+    „odchod“ či stav „v jazde“, keď vlak nevyšiel), obnoví začiatok státia a čas odchodu spred omylu: limit 18 h beží
+    ďalej od skutočného začiatku státia. Vracia True práve vtedy. Či ide o opravu, rozhodne dispečer
+    (``correction`` True = odchod bol omyl, False = vlak išiel – státie od teraz), inak polohy a čas od odchodu
+    (``_mistaken_departure``).
     """
     old = train.status
     if not status or status == old:
-        return
+        return False
     at = _utc(at) or now_utc()
+    if status == RUNNING:
+        _remember_departure(session, train, at, actual, old)
+        train.status = status
+        train.standing_since_utc = None
+        train.departed_utc = at if actual else None
+        return False
+    run = None
+    if old == RUNNING:
+        run = _last_departure(session, train)
+        row = _run_row(session, train)
+        if row is not None:
+            session.delete(row)  # vlak už nejde – zapamätaný odchod pre ďalšiu jazdu neplatí
+    mistaken = correction if correction is not None else (
+        run is not None and _mistaken_departure(session, train, run, at))
+    if run is not None and status not in ENDED and mistaken:
+        # vlak v skutočnosti nevyšiel: stojí ďalej od pôvodného začiatku státia (nie od opravy)
+        train.departed_utc = run["departed"]
+        train.standing_since_utc = run["standing_since"]
+        train.status = status
+        if status in STANDING:
+            train.standing_since_utc = _earliest_standing(session, train, at, handover)
+        return True
     since = None
     if status in STANDING:
         if old == RUNNING or old in ENDED:
@@ -215,13 +337,11 @@ def set_status(session: Optional[Session], train: Train, status: str, at: Option
         else:
             since = _earliest_standing(session, train, at, handover)
     train.status = status
-    if status == RUNNING:
-        train.standing_since_utc = None
-        train.departed_utc = at if actual else None
-    elif status in ENDED:
+    if status in ENDED:
         train.standing_since_utc = None
     elif since is not None:
         train.standing_since_utc = since
+    return False
 
 
 def pin_standing(session: Optional[Session], train: Train, at: Optional[datetime] = None) -> None:

@@ -246,27 +246,88 @@ def driver_report(body: ReportIn, request: Request, background: BackgroundTasks)
                                                         "naliehavé, zavolajte dispečerovi."}, status_code=429)
         detail: dict = {"typ": body.typ, "text": text}
         if body.typ == "nastup":
-            shift = s.scalar(select(DriverShift).where(DriverShift.train_id == train.id,
-                                                       DriverShift.status != "ukoncena")
-                             .order_by(DriverShift.start_utc.desc(), DriverShift.id.desc()))
-            if shift is not None and shift.status == "prebieha":
+            from ..models import Driver
+            from ..planovanie.planovac import MOBILE_DRIVER, NASTUP_EARLY_MIN, due_shift, nastup_start
+
+            def who(sh) -> str:
+                name = sh.driver.name if sh.driver and sh.driver.name != MOBILE_DRIVER else ""
+                return f" ({name})" if name else ""
+
+            def start_text(start) -> str:
+                if start >= now:
+                    return "Limit pracovného času beží od tohto času."
+                # vlak už ide: nástup nahlásený dodatočne – limit beží najneskôr od odchodu mínus príprava
+                return (f"Vlak je už v jazde – limit pracovného času beží od {fmt(start)} (odchod mínus príprava). "
+                        f"Ak ste nastúpili až teraz (vystriedanie počas jazdy), oznámte to dispečerovi.")
+
+            # začína sa zmena, ktorá je na rade (nie neskoršie vystriedanie); vystriedanie ukončí bežiacu zmenu
+            shift = due_shift(s, train.id, now)
+            running = list(s.scalars(select(DriverShift).where(DriverShift.train_id == train.id,
+                                                               DriverShift.status == "prebieha")
+                                     .order_by(DriverShift.start_utc.desc(), DriverShift.id.desc())))
+            if shift is not None and running and ensure_utc(shift.start_utc) <= \
+                    ensure_utc(running[0].start_utc) + timedelta(minutes=NASTUP_EARLY_MIN):
+                shift = None  # naplánovaná na ten istý čas ako bežiaca zmena – nie vystriedanie (13 h sa nevynuluje)
+            if shift is None and running:
                 # začiatok bežiacej zmeny sa z odkazu nesmie zmeniť (vynulovanie 13 h limitu) – len dispečer
+                current = running[0]
                 skipped = throttle.audit_gate(train.id, "hlasenie_nastup_odmietnute")
                 if skipped is not None:
-                    audit(s, actor, "hlasenie_nastup_odmietnute", "train", train.id, shift_id=shift.id,
-                          start=shift.start_utc, nezapisane=skipped)
-                return JSONResponse({"ok": False, "detail": f"Nástup už bol zaznamenaný o "
-                                                            f"{fmt(shift.start_utc, False)}. Zmenu môže upraviť "
-                                                            f"len dispečer."}, status_code=409)
-            if shift is not None:
+                    audit(s, actor, "hlasenie_nastup_odmietnute", "train", train.id, shift_id=current.id,
+                          start=current.start_utc, nezapisane=skipped)
+                relief = s.scalar(select(DriverShift).where(
+                    DriverShift.train_id == train.id, DriverShift.status == "planovana",
+                    DriverShift.start_utc > ensure_utc(current.start_utc) + timedelta(minutes=NASTUP_EARLY_MIN))
+                    .order_by(DriverShift.start_utc, DriverShift.id))
+                text_409 = f"Nástup už bol zaznamenaný o {fmt(current.start_utc, False)}{who(current)}."
+                if relief is not None:
+                    text_409 += (f" Vystriedanie{who(relief)} je naplánované na {fmt(relief.start_utc, False)} – "
+                                 f"nástup sa dá zaznamenať najskôr {NASTUP_EARLY_MIN:.0f} min vopred.")
+                return JSONResponse({"ok": False, "detail": text_409 + " Zmenu môže upraviť len dispečer."},
+                                    status_code=409)
+            if shift is None and train.status != "v_jazde":
+                # žiadna zmena ešte nie je na rade: najbližšia naplánovaná (rušňovodič prišiel skôr). Pri idúcom vlaku
+                # je neskoršia naplánovaná zmena vystriedanie iného rušňovodiča – hlási ten, kto vlak vedie
+                shift = s.scalar(select(DriverShift).where(DriverShift.train_id == train.id,
+                                                           DriverShift.status == "planovana")
+                                 .order_by(DriverShift.start_utc, DriverShift.id))
+            if shift is None:
+                # zmena nie je naplánovaná: založí sa skutočná zmena (rušňovodič neznámy, dispečer doplní meno) –
+                # 13 h limit beží od nahláseného nástupu (plánovač aj upozornenia), pri idúcom vlaku najneskôr od
+                # odchodu mínus príprava (nástup nahlásený dodatočne nesmie limit posunúť neskôr)
+                start = nastup_start(s, train, None, now)
+                driver = s.scalar(select(Driver).where(Driver.name == MOBILE_DRIVER).order_by(Driver.id))
+                if driver is None:
+                    driver = Driver(name=MOBILE_DRIVER, active=False)  # neaktívny – návrh nasadenia ho nepoužije
+                    s.add(driver)
+                    s.flush()
+                shift = DriverShift(driver_id=driver.id, train_id=train.id, start_utc=start, status="prebieha")
+                s.add(shift)
+                s.flush()
+                detail["shift_id"] = shift.id
+                detail["shift_created"] = True
+                detail["start"] = start
+                message = (f"Nástup zaznamenaný o {fmt(now, False)}. {start_text(start)} Zmena pre tento vlak "
+                           f"nebola naplánovaná – dispečer doplní vaše meno.")
+            else:
+                ended = []
+                for current in running:  # vystriedanie: zmena predchádzajúceho rušňovodiča na vlaku končí
+                    current.status, current.actual_end_utc = "ukoncena", now
+                    audit(s, actor, "shift_end", "driver_shift", current.id, end=now,
+                          dovod="vystriedanie – nástup ďalšieho rušňovodiča z odkazu")
+                    ended.append(current)
+                # vystriedanie začína teraz; prvá zmena idúceho vlaku nahlásená dodatočne najneskôr pred odchodom
+                start = now if ended else nastup_start(s, train, shift, now)
                 detail["shift_id"] = shift.id
                 detail["previous_start"] = shift.start_utc
-                shift.start_utc = now
+                detail["start"] = start
+                if ended:
+                    detail["relieved_shift_ids"] = [x.id for x in ended]
+                shift.start_utc = start
                 shift.status = "prebieha"
-                message = f"Nástup zaznamenaný o {fmt(now, False)}. Limit pracovného času beží od tohto času."
-            else:
-                message = (f"Nástup zaznamenaný o {fmt(now, False)}. Zmena pre tento vlak nie je naplánovaná – "
-                           f"dispečer ju doplní.")
+                message = f"Nástup zaznamenaný o {fmt(now, False)}. {start_text(start)}"
+                if ended:
+                    message += f" Zmena predchádzajúceho rušňovodiča{who(ended[0])} je ukončená."
         elif body.typ == "pripraveny":
             if train.status == "v_jazde":
                 return JSONResponse({"ok": False, "detail": "Vlak je už v jazde."}, status_code=409)
@@ -286,6 +347,9 @@ def driver_report(body: ReportIn, request: Request, background: BackgroundTasks)
             from ..planovanie import stav
 
             detail["previous_status"] = train.status
+            # pre opravu omylom nahláseného odchodu (vlak nevyšiel) – stav.set_status si ich zapamätá tiež
+            detail["previous_standing_since"] = train.standing_since_utc
+            detail["previous_departed"] = train.departed_utc
             stav.set_status(s, train, "v_jazde", now)  # státie končí, zapíše sa skutočný čas odchodu
             message = f"Odchod zaznamenaný o {fmt(now, False)}."
         else:

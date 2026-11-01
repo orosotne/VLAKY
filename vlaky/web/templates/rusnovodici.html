@@ -50,6 +50,42 @@
 </section>
 {% endif %}
 
+{% if crew_missing %}
+<section class="card" id="bez-nastupu" aria-labelledby="h-bez-nastupu">
+  <h2 id="h-bez-nastupu">Vlaky v jazde bez záznamu o nástupe rušňovodiča ({{ crew_missing|length }})</h2>
+  <p class="muted small">Limit pracovného času {{ params.crew_max_duty_min|minutes }} sa pri nich nedá overiť – agent uvádza len odhad. Zadajte zmenu rušňovodiča so skutočným nástupom.</p>
+  <div class="table-scroll">
+  <table class="table">
+    <thead><tr><th scope="col">Vlak</th><th scope="col">Relácia</th><th scope="col">Pracovný čas rušňovodiča</th>{% if user.can("crew") %}<th scope="col">Akcie</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for r in crew_missing %}
+      <tr class="crew-row crew-row-{{ 'cervena' if r.crew.get('status') == 'ČERVENÁ' else 'oranzova' }}">
+        <td><a href="/vlaky/{{ r.train.id }}">{{ r.train.number }}</a></td>
+        <td>{{ r.train.origin }} → {{ r.train.destination }}</td>
+        <td class="small">{{ r.text }}</td>
+        {% if user.can("crew") %}
+        <td class="actions-cell">
+          <details class="mini">
+            <summary>Zadať nástup</summary>
+            <form method="post" action="/zmeny/nova" class="mini-form">{{ m.csrf() }}
+              <input type="hidden" name="train_id" value="{{ r.train.id }}">
+              <input type="hidden" name="status" value="prebieha">
+              <label for="bn-rus-{{ r.train.id }}">Rušňovodič</label>
+              <select id="bn-rus-{{ r.train.id }}" name="driver_id" required><option value="">—</option>{% for d in drivers if d.active %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select>
+              <label for="bn-start-{{ r.train.id }}">Skutočný nástup (miestny čas)</label><input id="bn-start-{{ r.train.id }}" type="datetime-local" name="start_utc" required>
+              <button type="submit" class="btn btn-sm btn-primary">Uložiť zmenu</button>
+            </form>
+          </details>
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
 <section class="card" id="zmeny" aria-labelledby="h-zmeny">
   <h2 id="h-zmeny">Zmeny</h2>
   <div class="table-scroll">
@@ -78,7 +114,9 @@
           <details class="mini">
             <summary>Upraviť</summary>
             <form method="post" action="/zmeny/{{ sh.id }}/upravit" class="mini-form">{{ m.csrf() }}
-              <input type="hidden" name="driver_id" value="{{ sh.driver_id }}">
+              {# rušňovodič sa dá zmeniť – napr. zmena založená hlásením „Nástup“ z mobilu bez naplánovanej zmeny #}
+              <label for="z-rus-{{ sh.id }}">Rušňovodič</label>
+              <select id="z-rus-{{ sh.id }}" name="driver_id">{% for d in drivers if d.active or d.id == sh.driver_id %}<option value="{{ d.id }}"{% if d.id == sh.driver_id %} selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
               <label for="z-vlak-{{ sh.id }}">Vlak</label>
               <select id="z-vlak-{{ sh.id }}" name="train_id"><option value="">—</option>{% for t in active_trains %}<option value="{{ t.id }}"{% if t.id == sh.train_id %} selected{% endif %}>{{ t.number }}</option>{% endfor %}</select>
               <label for="z-start-{{ sh.id }}">Nástup</label><input id="z-start-{{ sh.id }}" type="datetime-local" name="start_utc" value="{{ sh.start_utc|dtinput }}" required>
