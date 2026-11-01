@@ -785,12 +785,13 @@ def test_r19_iny_odosielatel_s_rovnakym_message_id_nezhltne_rov_zsr(env, session
     assert [e.kind for e in events(session)] == ["ine", "vyluka_nova"] and len(active(session)) == 1
     log = session.scalar(select(AuditLog).where(AuditLog.action == "email_message_id_kolizia"))
     assert log is not None
-    # rovnaká kópia znova aj ďalšia kópia od toho istého odosielateľa – bez duplicít
+    # rovnaká kópia znova – bez duplicít; iná správa od toho istého odosielateľa s rovnakým Message-ID sa uloží
+    # samostatne (revízia 3, MR8: nesmie potichu zmiznúť)
     shutil.copy(Path(env.mail_dir) / "spracovane" / "2.eml", Path(env.mail_dir) / "2b.eml")
     drop_raw(env, "3.eml", eml(AR_ZAKAZNIK + "From: logistika@zakaznik.example\nTo: agent@dopravca.example\n"
                                              "Subject: dotaz 2\nMessage-ID: <rov-1301@zsr.example>\n"
                                              "Content-Type: text/plain; charset=utf-8", "Ešte raz.\n"))
-    assert process_mailbox(session)["fetched"] == 0 and session.query(Email).count() == 2
+    assert process_mailbox(session)["fetched"] == 1 and session.query(Email).count() == 3
 
 
 def test_r19_graph_stiahne_rovnake_message_id_od_ineho_odosielatela(env, session, monkeypatch):

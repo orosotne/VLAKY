@@ -94,13 +94,37 @@ def train_digits(value: Any) -> str:
     return "".join(ch for ch in str(value or "") if ch.isdigit())
 
 
-def find_train(session: Session, number: Any, day: Optional[str] = None) -> Optional[Train]:
-    """Vlak podľa čísla (len číslice, napr. „Nex 54321“ = „54321“) a dňa jazdy (± 1 deň)."""
+_DONE_TRAIN = ("ukonceny", "odovzdany")
+
+
+def _run_day(t: Train) -> Optional[date]:
+    try:
+        return date.fromisoformat(t.run_date) if t.run_date else None
+    except ValueError:
+        return None
+
+
+def _train_candidates(session: Session, digits: str) -> list:
+    rows = session.scalars(select(Train).where(Train.number.contains(digits))).all()
+    return [t for t in rows if train_digits(t.number) == digits and t.status not in ("zruseny",)]
+
+
+def find_train(session: Session, number: Any, day: Optional[str] = None, *,
+               avizo: bool = False) -> Optional[Train]:
+    """Vlak podľa čísla (len číslice, napr. „Nex 54321“ = „54321“) a dňa jazdy (± 1 deň).
+
+    ``avizo`` – vlak pre avízo (príchod vlaku na hranicu): ukončený či odovzdaný vlak sa nevyberie (plánovač ho už
+    nevyhodnocuje – napr. minulotýždňová jazda vlaku s rovnakým číslom); ak žiadny aktívny vlak s týmto číslom nemá
+    dátum jazdy v rozsahu, použije sa jediný aktívny vlak bez dátumu jazdy (napr. založený vo webe s prázdnym poľom
+    „Dátum jazdy“, ako radí hláška k avízu pre vlak mimo systému). Viac takých vlakov je nejednoznačných – vlak sa
+    nevyberie. Trasy sa vlaku bez dátumu jazdy takto nepriraďujú (patrí mu len trasa jeho najbližšej jazdy –
+    plánovač, ``stav.allocated_paths``)."""
     digits = train_digits(number)
     if not digits:
         return None
-    rows = session.scalars(select(Train).where(Train.number.contains(digits))).all()
-    cands = [t for t in rows if train_digits(t.number) == digits and t.status not in ("zruseny",)]
+    cands = _train_candidates(session, digits)
+    if avizo:
+        cands = [t for t in cands if t.status not in _DONE_TRAIN]
     if not cands:
         return None
     if day:
@@ -114,17 +138,60 @@ def find_train(session: Session, number: Any, day: Optional[str] = None) -> Opti
         if d:
             near = []
             for t in cands:
-                try:
-                    diff = abs((date.fromisoformat(t.run_date) - d).days)
-                except ValueError:
+                rd = _run_day(t)
+                if rd is None:
                     continue
+                diff = abs((rd - d).days)
                 if diff <= 1:
                     near.append((diff, t))
             if near:
                 return sorted(near, key=lambda x: x[0])[0][1]
+            if avizo:
+                free = [t for t in cands if _run_day(t) is None]
+                if len(free) == 1:
+                    return free[0]
         return None
-    active = [t for t in cands if t.status not in ("ukonceny", "odovzdany")]
+    active = [t for t in cands if t.status not in _DONE_TRAIN]
     return active[0] if len(active) == 1 else None
+
+
+def _days_text(days: list) -> str:
+    return ", ".join(date.fromisoformat(x).strftime("%d.%m.%Y") for x in days[:5])
+
+
+def train_mismatch(session: Session, number: Any, day: Optional[str] = None) -> str:
+    """Prečo :func:`find_train` (``avizo=True``) vlak nenašiel – text pre dispečera s radou, čo urobiť („“ = vlak
+    s týmto číslom v systéme nie je). Ukončená jazda s rovnakým číslom (napr. minulý týždeň) sa neopravuje –
+    pre novú jazdu treba založiť nový vlak."""
+    digits = train_digits(number)
+    cands = _train_candidates(session, digits) if digits else []
+    if not cands:
+        return ""
+    try:
+        avizo_day = date.fromisoformat(str(day)) if day else None
+    except ValueError:
+        avizo_day = None
+    shown_day = avizo_day.strftime("%d.%m.%Y") if avizo_day else ""
+    new = "založte vlak pre túto jazdu" + (f" (dátum jazdy {shown_day})" if shown_day else "")
+    active = [t for t in cands if t.status not in _DONE_TRAIN]
+    undated = [t for t in active if _run_day(t) is None]
+    if len(undated) > 1:
+        return f"v systéme je {len(undated)}× vlak {digits} bez dátumu jazdy – doplňte dátum jazdy správnemu vlaku"
+    dated = sorted({t.run_date for t in active if _run_day(t) is not None})
+    if dated:
+        return (f"v systéme je vlak {digits} len s iným dátumom jazdy ({_days_text(dated)}) – ak ide o tento vlak, "
+                f"opravte jeho dátum jazdy alebo dátum v udalosti, inak {new}")
+    if undated:
+        return f"v systéme je vlak {digits} bez dátumu jazdy – doplňte mu dátum jazdy" + \
+            (f" {shown_day}" if shown_day else "")
+    done = sorted({t.run_date for t in cands if _run_day(t) is not None})
+    same = [x for x in done if avizo_day and abs((date.fromisoformat(x) - avizo_day).days) <= 1]
+    if same:
+        # rovnaká jazda je už ukončená (alebo ju dispečer omylom ukončil) – avízo sa ukončenému vlaku nepriradí
+        return (f"vlak {digits} s dátumom jazdy {_days_text(same)} je v systéme ukončený alebo odovzdaný – ak jazda "
+                f"ešte len príde, zmeňte stav vlaku, inak {new}")
+    when = f" ({_days_text(done)})" if done else ""
+    return (f"vlak {digits} je v systéme len ako ukončená alebo odovzdaná jazda{when} – tú avízo nemení; {new}")
 
 
 def ensure_borders(session: Session) -> None:
@@ -402,11 +469,16 @@ def validate_event(session: Session, kind: str, data: dict, *, confidence: float
                           "sk_station": bc.sk_station}
         if data.get("train_number") and train_digits(data["train_number"]):
             day = data.get("date") or (local(times["eta"]).date().isoformat() if "eta" in times else None)
-            tr = find_train(session, data["train_number"], day)
+            tr = find_train(session, data["train_number"], day, avizo=True)
             if tr is None:
                 res.errors.append(f"Vlak {data['train_number']} nenájdený – avízo nemožno priradiť.")
             else:
                 res.train_id = tr.id
+                if _run_day(tr) is None:
+                    # jediný aktívny vlak s týmto číslom je bez dátumu jazdy – môže to byť aj staršia, neukončená
+                    # jazda; dispečer to má vidieť skôr, ako avízo potvrdí
+                    res.warnings.append(f"Avízo sa priradí vlaku {tr.number} (#{tr.id}), ktorý nemá dátum jazdy – "
+                                        f"overte, že ide o jazdu z avíza, a doplňte vlaku dátum jazdy.")
 
     # --- objednávka
     if kind == "objednavka":
@@ -456,6 +528,10 @@ def confirmation_needed(kind: str, data: dict, confidence: float, verdict: str, 
         reasons.append("validácia našla chyby")
     if any("približne" in w for w in res.warnings):
         reasons.append("dopravňa určená len približne")
+    if kind == "avizo" and any("nemá dátum jazdy" in w for w in res.warnings):
+        # vlak bez dátumu jazdy môže byť aj staršia, neukončená jazda s rovnakým číslom – avízo sa mu nepriradí
+        # automaticky (rovnako ako pred zavedením tohto priradenia, keď sa avízo takému vlaku nepriradilo vôbec)
+        reasons.append("avízo sa priradí vlaku bez dátumu jazdy – overte, že ide o túto jazdu")
     if res.section_km is not None and res.section_km > MAX_SECTION_KM:
         # výluka či pomalá jazda na stovkách km je skôr zle určená dopravňa (napr. iná obec s podobným menom)
         reasons.append(f"úsek je neobvykle dlhý ({res.section_km:.0f} km) – skontrolujte dopravne")
