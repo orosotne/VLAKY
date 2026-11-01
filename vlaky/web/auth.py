@@ -354,6 +354,14 @@ async def login_submit(request: Request):
     if blocked is not None:
         return blocked
 
+    if not username or not password:
+        # prázdne meno alebo heslo sa nikdy neprihlási (formulár ich nepustí, posiela ich len skript): bez overenia
+        # hesla a bez zápisu do auditu – nával takých pokusov z mnohých adries by inak zahltil audit (stovky
+        # záznamov za sekundu, bez obmedzenia bcryptom); počítajú sa do limitu adresy, nie účtu (nie je to pokus
+        # o heslo a účet by sa nimi dal lacno zablokovať)
+        limiter.fail(ip_key)
+        return _login_page(request, next_url, "Zadajte meno aj heslo.", username, status_code=401)
+
     checks: PasswordChecks = request.app.state.password_checks
     async with checks.slot() as ok:
         if not ok:

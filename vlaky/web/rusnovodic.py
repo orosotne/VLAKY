@@ -323,6 +323,7 @@ def _notify_problem(number: str, relation: str, text: str, now=None) -> None:
 DRIVER_MAX_AGE = timedelta(minutes=15)   # poloha z mobilu musí byť aktuálna (nie spätné prepisovanie stopy)
 DRIVER_MIN_GAP_S = 10                     # najviac jedna poloha za 10 s
 DRIVER_MAX_KMH = 200.0                    # rýchlejší „skok“ medzi polohami je chyba alebo podvrh
+DRIVER_CLOCK_HINT_S = 60                  # aplikácia posiela polohu hneď (maximumAge 10 s) – väčší rozdiel = hodiny
 
 
 @router.post("/api/pozicie/rusnovodic")
@@ -348,6 +349,14 @@ def driver_position(body: DriverPositionIn, request: Request):
                         .order_by(PositionReport.ts_utc.desc(), PositionReport.id.desc()))
         if last is not None:
             gap = (ts - ensure_utc(last.ts_utc)).total_seconds()
+            if gap < 0:
+                # staršia ako posledná uložená (iný mobil, oneskorené doručenie) – stopa sa spätne neprepisuje; ak čas
+                # polohy výrazne zaostáva za časom servera, hodiny mobilu nesedia (aplikácia čas polohy prepočíta
+                # podľa hlavičky Date, staršia verzia nie)
+                detail = "Poloha je staršia ako posledná uložená."
+                if (now - ts).total_seconds() > DRIVER_CLOCK_HINT_S:
+                    detail += " Skontrolujte, či má mobil zapnutý automatický dátum a čas."
+                return {"ok": True, "skipped": True, "detail": detail}
             if gap < DRIVER_MIN_GAP_S:
                 return {"ok": True, "skipped": True, "detail": "Poloha prišla príliš skoro po predchádzajúcej."}
             km = haversine(last.lat, last.lon, body.lat, body.lon) / 1000.0

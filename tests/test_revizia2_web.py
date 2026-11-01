@@ -463,8 +463,10 @@ def test_bez_cerstvych_dat_agenta_web_neukaze_zelenu(client, fixed_now):
     assert row["data_age"] == {"mailbox_min": 29.0, "agent_cycle_min": 29.0, "stale": False}
 
 
-def test_zoznam_vlakov_bez_cerstvych_dat_neukaze_zelenu(cfg, fixed_now):
-    """Šablóna zoznamu vlakov: s údajom o veku dát (fresh) sa ZELENÁ zobrazí ako ORANŽOVÁ s vysvetlením."""
+def test_sablona_zoznamu_vlakov_s_vekom_dat_neukaze_zelenu(cfg, fixed_now):
+    """Len šablóna vlaky.html (kontext zostavený v teste): keď jej pohľad odovzdá vek dát (fresh), ZELENÁ sa zobrazí
+    ako ORANŽOVÁ s vysvetlením. Pohľad trains_page vek dát zatiaľ neodovzdáva – skutočnú stránku /vlaky overuje
+    test_revizia2_web_doplnok.py (očakávané zlyhanie do úpravy pohľadu)."""
     from starlette.requests import Request
 
     from vlaky.db import session_scope
