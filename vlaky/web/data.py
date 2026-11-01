@@ -373,12 +373,57 @@ def _anchor(train: Train, ho: Optional[Handover]) -> Optional[dict]:
     return {"lat": st.lat, "lon": st.lon, "kind": "vychodzia", "label": f"východisková stanica {st.name}"}
 
 
+MAILBOX_MAX_AGE_MIN = 30   # bez úspešnej kontroly schránky za 30 min nikdy ZELENÁ (rovnako ako plánovač)
+
+
+def _kv_age_minutes(s: Session, key: str, now: datetime) -> Optional[float]:
+    """Vek záznamu agenta {"ts": ISO} v minútach (None = záznam chýba alebo je neplatný)."""
+    from ..models import KeyValue
+
+    kv = s.scalar(select(KeyValue).where(KeyValue.key == key))
+    try:
+        ts = ensure_utc(datetime.fromisoformat(str((kv.value or {}).get("ts"))))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return (now - ts).total_seconds() / 60.0
+
+
+def data_freshness(s: Session, now: Optional[datetime] = None) -> dict:
+    """Vek dát agenta: posledná úspešná kontrola schránky a posledný cyklus agenta.
+
+    Semafor odporúčania platí len k času prepočtu. Keď agent stojí (neprepočítava, nečíta schránku), web nesmie
+    ďalej ukazovať jeho poslednú ZELENÚ (PROMPT 12: bez čerstvých dát nikdy zelená) – train_rows ju zníži na
+    ORANŽOVÚ a dôvod je v „text“. Cyklus je starý po 2 × VLAKY_REEVALUATE_MINUTES, schránka po 30 min.
+    """
+    now = now or now_utc()
+    cycle_limit = 2 * settings().reevaluate_minutes
+    mailbox = _kv_age_minutes(s, "mail_last_ok", now)
+    cycle = _kv_age_minutes(s, "agent_last_cycle", now)
+    reasons = []
+    if cycle is None:
+        reasons.append("agent zatiaľ neprebehol")
+    elif cycle > cycle_limit:
+        reasons.append(f"posledný cyklus agenta pred {cycle:.0f} min")
+    if mailbox is None:
+        reasons.append("schránka agenta ešte nebola úspešne skontrolovaná")
+    elif mailbox > MAILBOX_MAX_AGE_MIN:
+        reasons.append(f"schránka agenta sa nekontrolovala {mailbox:.0f} min")
+    return {"mailbox_min": round(mailbox, 1) if mailbox is not None else None,
+            "agent_cycle_min": round(cycle, 1) if cycle is not None else None,
+            "stale": bool(reasons),
+            "text": f"Údaje agenta nie sú čerstvé ({', '.join(reasons)})." if reasons else ""}
+
+
 def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = False,
                train_id: Optional[int] = None) -> list:
-    """Vlaky pre mapu a tabuľku (zoradené podľa naliehavosti: ČERVENÁ, ORANŽOVÁ, bez odporúčania, ZELENÁ)."""
+    """Vlaky pre mapu a tabuľku (zoradené podľa naliehavosti: ČERVENÁ, ORANŽOVÁ, bez odporúčania, ZELENÁ).
+
+    Bez čerstvých dát agenta (data_freshness) sa ZELENÁ zobrazí ako ORANŽOVÁ („downgraded“, dôvod v „data_note“).
+    """
     now = now or now_utc()
     cfg = settings()
     params = current_params(s, now)
+    fresh = data_freshness(s, now)
     q = select(Train).options(selectinload(Train.locomotive), selectinload(Train.entry_border),
                               selectinload(Train.exit_border))
     if train_id is not None:
@@ -432,6 +477,9 @@ def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = 
                         "intervaly": [[iso(a), iso(b)] for a, b in spans if b >= now][:10]})
             route_closures.sort(key=lambda x: x["od"] or "")
         color = rec.color if rec is not None else None
+        downgraded = fresh["stale"] and color == "ZELENÁ"
+        if downgraded:  # posledný prepočet už nie je aktuálny – nikdy zelená bez čerstvých dát
+            color = "ORANŽOVÁ"
         stale = pos is None or pos["stale"]
         conflict = False
         if depart and route_closures:
@@ -453,7 +501,12 @@ def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = 
             "deadline_utc": iso(t.deadline_utc), "position": pos, "estimate": estimate,
             "anchor": None if pos is not None else _anchor(t, ho),
             "recommendation": _rec_dict(rec), "color": color, "display_color": "SIVÁ" if stale else (color or "SIVÁ"),
-            "stale": stale, "eta_p50": iso(arr50), "eta_p90": iso(arr90), "slack_min": slack,
+            "stale": stale, "downgraded": downgraded,
+            "data_age": {"mailbox_min": fresh["mailbox_min"], "agent_cycle_min": fresh["agent_cycle_min"],
+                         "stale": fresh["stale"]},
+            "data_note": (fresh["text"] + " Posledné odporúčanie bolo ZELENÁ – bez čerstvých údajov sa zobrazuje "
+                                          "ORANŽOVÁ.") if downgraded else "",
+            "eta_p50": iso(arr50), "eta_p90": iso(arr90), "slack_min": slack,
             "delay_min": (-slack if slack is not None and slack < 0 else 0) if slack is not None else None,
             "next_station": _next_station(rec, now), "route_closures": route_closures[:5],
             "conflict": conflict, "risk": _risk_text(route_closures, driver, rec, pos, running),

@@ -99,6 +99,9 @@
         if (navigator.vibrate) { navigator.vibrate(80); }
       }).catch(function (err) {
         if (err.status === 403) { invalid(); return; }
+        // 409 = stav už bol zaznamenaný (opakovanie nič nezmení) – len informácia, nie výzva skúsiť znova
+        if (err.status === 409) { show('Už zaznamenané: ' + err.message, false); return; }
+        if (err.status === 429) { show('Neodoslané: ' + err.message, true); return; }
         show('Neodoslané: ' + err.message + ' Skúste znova alebo volajte dispečing.', true);
       }).then(function () { btn.disabled = false; });
     });
@@ -121,6 +124,12 @@
                  speed_kmh: (c.speed !== null && !isNaN(c.speed)) ? Math.round(c.speed * 3.6 * 10) / 10 : null };
     post('/api/pozicie/rusnovodic', body).then(function (data) {
       var when = new Date().toLocaleTimeString('sk-SK');
+      if (data.skipped) {
+        // server polohu neuložil (prišla príliš skoro po predchádzajúcej) – nehlásiť ju ako odoslanú
+        gpsStatus.textContent = 'Poloha o ' + when + ' sa neuložila: ' +
+          (data.detail || 'prišla príliš skoro po predchádzajúcej.') + ' Zdieľanie pokračuje.';
+        return;
+      }
       gpsStatus.textContent = 'Poloha odoslaná o ' + when + ' (presnosť ' + (body.accuracy_m || '?') + ' m' +
         (data.nearest_station ? ', pri ' + data.nearest_station : '') + ').';
     }).catch(function (err) {

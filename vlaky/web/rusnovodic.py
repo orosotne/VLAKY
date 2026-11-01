@@ -27,10 +27,12 @@ from .pozicie import DriverPositionIn, ingest_position
 from .prepocet import evaluate_train_bg
 
 TOKEN_MAX_AGE = 24 * 3600
-REPORTS_PER_WINDOW = 6          # najviac hlásení jedného vlaku za okno (ochrana pred zneužitím odkazu)
-REPORT_WINDOW_S = 600
+REPORTS_PER_WINDOW = 6          # najviac hlásení jedného vlaku za okno (ochrana pred zneužitím odkazu) – hlásenia
+REPORT_WINDOW_S = 600           # stavu (nástup, pripravený, odchod) a hlásenia o probléme majú každé vlastný limit
 PROBLEM_WINDOW_S = 600          # upozornenia na problém: najviac jedno za 10 min na vlak (aj pri inom texte)
-EVALUATE_MIN_GAP_S = 30         # prepočet vlaku po hlásení najviac raz za 30 s
+EVALUATE_MIN_GAP_S = 30         # prepočet po hlásení o probléme najviac raz za 30 s (zmena stavu sa prepočíta vždy)
+AUDIT_WINDOW_S = 600            # odmietnuté požiadavky z odkazu: do auditu najviac raz za 10 min na vlak a druh
+STATE_TYPES = ("nastup", "pripraveny", "odchod")
 router = APIRouter()
 
 
@@ -39,13 +41,16 @@ class _TrainThrottle:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._reports: dict[int, deque] = {}
+        self._reports: dict[tuple, deque] = {}
         self._last_eval: dict[int, float] = {}
+        self._audited: dict[tuple, list] = {}       # (vlak, druh) → [čas posledného zápisu, nezapísané odvtedy]
+        self._eval_locks: dict[int, threading.Lock] = {}
 
-    def allow_report(self, train_id: int) -> bool:
+    def allow_report(self, train_id: int, problem: bool = False) -> bool:
+        """Hlásenie o probléme má vlastný limit – odmietnuté (409) ani opakované hlásenia stavu ho nevyčerpajú."""
         now = time.monotonic()
         with self._lock:
-            q = self._reports.setdefault(train_id, deque())
+            q = self._reports.setdefault((train_id, problem), deque())
             while q and now - q[0] > REPORT_WINDOW_S:
                 q.popleft()
             if len(q) >= REPORTS_PER_WINDOW:
@@ -55,16 +60,47 @@ class _TrainThrottle:
                 self._reports = {k: v for k, v in self._reports.items() if v and now - v[-1] <= REPORT_WINDOW_S}
             return True
 
-    def allow_evaluate(self, train_id: int) -> bool:
+    def allow_evaluate(self, train_id: int, force: bool = False) -> bool:
+        """Prepočet po hlásení. Zmena stavu vlaku (force) sa prepočíta vždy – zahodený prepočet by nechal staré
+        odporúčanie až do pravidelného prepočtu agenta; hlásenie o probléme najviac raz za EVALUATE_MIN_GAP_S."""
         now = time.monotonic()
         with self._lock:
             last = self._last_eval.get(train_id)
-            if last is not None and now - last < EVALUATE_MIN_GAP_S:
+            if not force and last is not None and now - last < EVALUATE_MIN_GAP_S:
                 return False
             self._last_eval[train_id] = now
             if len(self._last_eval) > 5000:
                 self._last_eval = {k: v for k, v in self._last_eval.items() if now - v < EVALUATE_MIN_GAP_S}
             return True
+
+    def audit_gate(self, train_id: int, kind: str) -> Optional[int]:
+        """Odmietnutá požiadavka sa do auditu zapíše najviac raz za AUDIT_WINDOW_S (na vlak a druh odmietnutia).
+
+        Vráti počet odmietnutí od posledného zápisu, ktoré sa nezapísali, alebo None (teraz sa nezapisuje).
+        Nával odmietnutých požiadaviek tak nezahltí audit ani históriu vlaku.
+        """
+        now = time.monotonic()
+        key = (train_id, kind)
+        with self._lock:
+            entry = self._audited.get(key)
+            if entry is not None and now - entry[0] < AUDIT_WINDOW_S:
+                entry[1] += 1
+                return None
+            skipped = entry[1] if entry is not None else 0
+            self._audited[key] = [now, 0]
+            if len(self._audited) > 5000:
+                self._audited = {k: v for k, v in self._audited.items() if now - v[0] < AUDIT_WINDOW_S}
+            return skipped
+
+    def eval_lock(self, train_id: int) -> threading.Lock:
+        """Prepočty toho istého vlaku po hláseniach idú za sebou (posledný vždy číta aktuálny stav vlaku)."""
+        with self._lock:
+            lock = self._eval_locks.get(train_id)
+            if lock is None:
+                if len(self._eval_locks) > 5000:
+                    self._eval_locks = {k: v for k, v in self._eval_locks.items() if v.locked()}
+                lock = self._eval_locks[train_id] = threading.Lock()
+            return lock
 
 
 
@@ -200,8 +236,12 @@ def driver_report(body: ReportIn, request: Request, background: BackgroundTasks)
             return _forbidden()
         actor = f"rusnovodic:{train.number}"
         throttle = _throttle(request)
-        if not throttle.allow_report(train.id):
-            audit(s, actor, "hlasenie_obmedzene", "train", train.id, typ=body.typ)
+        problem = body.typ == "problem"
+        if not throttle.allow_report(train.id, problem=problem):
+            skipped = throttle.audit_gate(train.id, "hlasenie_obmedzene:" + ("problem" if problem else "stav"))
+            if skipped is not None:
+                audit(s, actor, "hlasenie_obmedzene", "train", train.id, typ=body.typ, nezapisane=skipped,
+                      **({"text": text[:500]} if problem else {}))
             return JSONResponse({"ok": False, "detail": "Príliš veľa hlásení za krátky čas. Ak ide o niečo "
                                                         "naliehavé, zavolajte dispečerovi."}, status_code=429)
         detail: dict = {"typ": body.typ, "text": text}
@@ -211,8 +251,10 @@ def driver_report(body: ReportIn, request: Request, background: BackgroundTasks)
                              .order_by(DriverShift.start_utc.desc(), DriverShift.id.desc()))
             if shift is not None and shift.status == "prebieha":
                 # začiatok bežiacej zmeny sa z odkazu nesmie zmeniť (vynulovanie 13 h limitu) – len dispečer
-                audit(s, actor, "hlasenie_nastup_odmietnute", "train", train.id, shift_id=shift.id,
-                      start=shift.start_utc)
+                skipped = throttle.audit_gate(train.id, "hlasenie_nastup_odmietnute")
+                if skipped is not None:
+                    audit(s, actor, "hlasenie_nastup_odmietnute", "train", train.id, shift_id=shift.id,
+                          start=shift.start_utc, nezapisane=skipped)
                 return JSONResponse({"ok": False, "detail": f"Nástup už bol zaznamenaný o "
                                                             f"{fmt(shift.start_utc, False)}. Zmenu môže upraviť "
                                                             f"len dispečer."}, status_code=409)
@@ -244,9 +286,17 @@ def driver_report(body: ReportIn, request: Request, background: BackgroundTasks)
         relation = f"{train.origin} → {train.destination}"
     if body.typ == "problem":
         _notify_problem(number, relation, text, now)
-    if request.app.state.auto_evaluate and _throttle(request).allow_evaluate(train_id):
-        background.add_task(evaluate_train_bg, train_id, f"hlásenie rušňovodiča: {TYP_TEXT[body.typ]}")
+    # zmena stavu (nástup, pripravenosť, odchod) sa prepočíta vždy – počet je obmedzený limitom hlásení a 409
+    if request.app.state.auto_evaluate and throttle.allow_evaluate(train_id, force=body.typ in STATE_TYPES):
+        background.add_task(_evaluate_after_report, throttle, train_id, f"hlásenie rušňovodiča: {TYP_TEXT[body.typ]}")
     return {"ok": True, "message": message, "typ": body.typ, "ts": now.isoformat()}
+
+
+def _evaluate_after_report(throttle: _TrainThrottle, train_id: int, trigger: str) -> None:
+    """Prepočet vlaku po hlásení (na pozadí). Prepočty jedného vlaku idú za sebou, aby starší prepočet
+    (napr. po nástupe) neprepísal novší (po pripravenosti o sekundu neskôr) – každý číta stav z DB až po zámku."""
+    with throttle.eval_lock(train_id):
+        evaluate_train_bg(train_id, trigger)
 
 
 def _notify_problem(number: str, relation: str, text: str, now=None) -> None:
@@ -276,29 +326,36 @@ DRIVER_MAX_KMH = 200.0                    # rýchlejší „skok“ medzi poloha
 
 
 @router.post("/api/pozicie/rusnovodic")
-def driver_position(body: DriverPositionIn):
+def driver_position(body: DriverPositionIn, request: Request):
     data = verify_driver_token(body.t)
     if data is None:
         return _forbidden()
     now = now_utc()
-    ts = body.ts or now
+    # hodiny mobilu môžu ísť dopredu (vstupná kontrola pripustí najviac +10 min): poloha z „budúcnosti“ by
+    # inak bola najnovšia a ďalšie polohy by sa až 10 min zahadzovali – na kontroly aj uloženie najviac „teraz“
+    ts = min(ensure_utc(body.ts), now) if body.ts else now
     if ts < now - DRIVER_MAX_AGE:
         return JSONResponse({"ok": False, "detail": "Poloha je staršia ako 15 min."}, status_code=422)
     with session_scope() as s:
         train = _train_for_token(s, data)
         if train is None:
             return _forbidden()
+        # poloha s časom v budúcnosti (napr. staršia z brány) sa na odstup a rýchlosť nepoužije
+        # (now_utc() je zaokrúhlený na sekundy – tolerancia 1 s)
         last = s.scalar(select(PositionReport).where(PositionReport.train_id == train.id,
-                                                     PositionReport.source == "driver")
+                                                     PositionReport.source == "driver",
+                                                     PositionReport.ts_utc <= now + timedelta(seconds=1))
                         .order_by(PositionReport.ts_utc.desc(), PositionReport.id.desc()))
         if last is not None:
-            gap = (ensure_utc(ts) - ensure_utc(last.ts_utc)).total_seconds()
+            gap = (ts - ensure_utc(last.ts_utc)).total_seconds()
             if gap < DRIVER_MIN_GAP_S:
                 return {"ok": True, "skipped": True, "detail": "Poloha prišla príliš skoro po predchádzajúcej."}
             km = haversine(last.lat, last.lon, body.lat, body.lon) / 1000.0
             if km > 1.0 and km / (gap / 3600.0) > DRIVER_MAX_KMH:
-                audit(s, f"rusnovodic:{train.number}", "poloha_odmietnuta", "train", train.id,
-                      km=round(km, 1), gap_s=round(gap), lat=body.lat, lon=body.lon)
+                skipped = _throttle(request).audit_gate(train.id, "poloha_odmietnuta")
+                if skipped is not None:
+                    audit(s, f"rusnovodic:{train.number}", "poloha_odmietnuta", "train", train.id,
+                          km=round(km, 1), gap_s=round(gap), lat=body.lat, lon=body.lon, nezapisane=skipped)
                 return JSONResponse({"ok": False, "detail": "Nepravdepodobný skok polohy – poloha sa neuložila."},
                                     status_code=422)
         out = ingest_position(s, train.number, body.lat, body.lon, ts, body.speed_kmh, body.accuracy_m,
