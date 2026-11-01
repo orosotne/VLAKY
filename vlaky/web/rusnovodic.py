@@ -192,8 +192,10 @@ def driver_info(body: TokenIn):
         train = _train_for_token(s, data)
         if train is None:
             return _forbidden()
-        shift = s.scalar(select(DriverShift).where(DriverShift.train_id == train.id, DriverShift.status != "ukoncena")
-                         .order_by(DriverShift.start_utc.desc(), DriverShift.id.desc()))
+        # zmena, ktorá prebieha, inak tá, ktorá je na rade, inak najbližšia naplánovaná – nie neskoršie vystriedanie
+        from ..planovanie.planovac import link_shift
+
+        shift = link_shift(s, train.id, now_utc())
         valid_until = data["ts"] + timedelta(seconds=TOKEN_MAX_AGE)
         return {"ok": True, "train": {"number": train.number, "origin": train.origin,
                                       "destination": train.destination,
