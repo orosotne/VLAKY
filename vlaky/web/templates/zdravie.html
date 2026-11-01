@@ -8,7 +8,7 @@
 {% if agent %}
 <section class="card health-summary health-{{ 'ok' if agent.ok else 'error' }}">
   <h2>Celkový stav: {{ "OK" if agent.ok else "PROBLÉM" }}</h2>
-  <dl class="meta">{% for k, v in agent.detail.items() %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+  <dl class="meta">{% for k, v in agent.detail.items() %}<dt>{{ HEALTH_DETAIL.get(k, k) }}</dt><dd>{{ HEALTH_STATUS.get(v, v) if v == "ok" else v }}</dd>{% endfor %}</dl>
 </section>
 {% endif %}
 <section class="card">
@@ -20,7 +20,7 @@
     {% for r in rows %}
       <tr>
         <td><strong>{{ r.c.component }}</strong></td>
-        <td><span class="badge health-badge-{{ r.c.status }}">{{ r.c.status }}</span>{% if r.stale %} <span class="badge badge-warn">starý údaj</span>{% endif %}</td>
+        <td><span class="badge health-badge-{{ r.c.status }}">{{ HEALTH_STATUS.get(r.c.status, r.c.status) }}</span>{% if r.stale %} <span class="badge badge-warn">starý údaj</span>{% endif %}</td>
         <td class="nowrap">{{ r.c.ts|tfull }} <span class="muted small">({{ r.c.ts|ago }})</span></td>
         <td>{% if r.c.detail %}<details><summary class="small">zobraziť</summary><pre class="mono small">{{ r.c.detail|jsonpretty }}</pre></details>{% endif %}</td>
       </tr>
@@ -35,7 +35,7 @@
   <h2>Kontroly webovej aplikácie</h2>
   <ul class="checks-list">
   {% for name, status, detail in checks %}
-    <li><span class="badge health-badge-{{ status }}">{{ status }}</span> <strong>{{ name }}</strong>: {{ detail }}</li>
+    <li><span class="badge health-badge-{{ status }}">{{ HEALTH_STATUS.get(status, status) }}</span> <strong>{{ name }}</strong>: {{ detail }}</li>
   {% endfor %}
   </ul>
   <p class="muted small">Monitoring zvonku: <code>GET /health</code> (bez prihlásenia) vracia <code>{"status": "ok"}</code>.</p>

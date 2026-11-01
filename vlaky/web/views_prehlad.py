@@ -5,7 +5,7 @@ import importlib
 import json
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -13,14 +13,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from ..audit import audit
-from ..cas import local, local_naive_to_utc, now_utc
+from ..cas import ensure_utc, local, local_naive_to_utc, now_utc
 from ..config import settings
 from ..db import session_scope
 from ..models import (Email, ExtractedEvent, Recommendation, ShiftHandoverReport, Train)
 from .auth import csrf_form, require
-from .common import (DONE_TRAIN_STATES, EVENT_KIND, FormReader, REC_STATE, TRAIN_STATUS, log, parse_iso, redirect,
-                     render)
-from .data import alerts, auto_applied_unconfirmed, borders_list, data_freshness, train_rows
+from .common import (DONE_TRAIN_STATES, EVENT_KIND, FormReader, REC_STATE, TRAIN_STATUS, current_params, log,
+                     parse_iso, redirect, render)
+from .data import (alerts, auto_applied_unconfirmed, borders_list, capped_variants, crew_live, data_freshness,
+                   display_color, is_current, latest_positions, semafor_cap, train_rows)
 from .prepocet import evaluate_all_bg
 
 router = APIRouter()
@@ -340,7 +341,9 @@ def recommendations_page(request: Request, stav: str = "", farba: str = "", vlak
                       user=user)
 
 
-def _next_steps(rec: Recommendation) -> list:
+def _next_steps(rec: Recommendation, color: Optional[str] = None) -> list:
+    """Kroky pre dispečera; color – farba, ako ju web ukazuje (bez čerstvých dát agenta nie ZELENÁ)."""
+    color = color or rec.color
     steps = []
     chosen = rec.chosen or {}
     proposal = rec.path_proposal or {}
@@ -359,13 +362,15 @@ def _next_steps(rec: Recommendation) -> list:
         steps.append("Zabezpečiť odstavnú koľaj a uvoľniť rušňovodiča.")
     if rec.decision in ("POČKAŤ", "ODSTAVIŤ", "PRESMEROVAŤ", "ESKALOVAŤ"):
         steps.append("Informovať zákazníka o novom predpokladanom príchode.")
-    if rec.color == "ORANŽOVÁ":
+    if color == "ORANŽOVÁ":
         steps.append("ORANŽOVÁ: vypraviť len po výslovnom potvrdení dispečera (zvážiť dôvody nižšie).")
     return steps
 
 
 @router.get("/odporucania/{rec_id}", response_class=HTMLResponse)
 def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
+    cfg = settings()
+    now = now_utc()
     with session_scope() as s:
         rec = s.scalar(select(Recommendation).options(selectinload(Recommendation.train))
                        .where(Recommendation.id == rec_id))
@@ -375,13 +380,28 @@ def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
                           .order_by(Recommendation.id.desc()))
         history = list(s.scalars(select(Recommendation).where(Recommendation.train_id == rec.train_id)
                                  .order_by(Recommendation.id.desc()).limit(10)))
-        fresh = data_freshness(s)
-        # aktuálne odporúčanie idúceho vlaku bez čerstvých dát agenta: ZELENÁ sa ukáže ako ORANŽOVÁ (PROMPT 12)
-        downgraded = bool(fresh["stale"] and rec.color == "ZELENÁ" and rec.id == latest and rec.train is not None
-                          and rec.train.status not in DONE_TRAIN_STATES)
+        fresh = data_freshness(s, now)
+        current = is_current(rec, latest)
+        # aktuálne odporúčanie vlaku bez čerstvých dát agenta: ZELENÁ sa ukáže ako ORANŽOVÁ (PROMPT 12); varianty
+        # a okná obmedzeného semaforu (plánovač alebo web) sa nikde neukážu ako ZELENÉ
+        color = display_color(rec, fresh, current)
+        cap = semafor_cap(rec, fresh, current, cfg.position_stale_minutes)
+        newest = next((h for h in history if h.id == latest), None)
+        newest_color = display_color(newest, fresh, is_current(newest, latest))
+        history_colors = {h.id: newest_color if h.id == latest else h.color for h in history}
+        # aktuálne odporúčanie: pracovný čas rušňovodiča a vek dát k teraz, nie zmrazené čísla z prepočtu
+        crew_now = crew_live(rec.crew, current_params(s, now), now) if current and rec.crew else None
+        position_age = None
+        if current:
+            rows = latest_positions(s, [rec.train_id]).get(rec.train_id)
+            if rows:
+                position_age = round((now - ensure_utc(rows[0].ts_utc)).total_seconds() / 60.0, 1)
         return render(request, "odporucanie.html", {
-            "rec": rec, "train": rec.train, "latest_id": latest, "history": history, "steps": _next_steps(rec),
-            "stale_minutes": settings().position_stale_minutes, "fresh": fresh, "downgraded": downgraded},
+            "rec": rec, "train": rec.train, "latest_id": latest, "history": history,
+            "history_colors": history_colors, "steps": _next_steps(rec, color),
+            "stale_minutes": cfg.position_stale_minutes, "fresh": fresh, "current": current,
+            "agent_stale": bool(current and fresh["stale"]), "color": color, "downgraded": color != rec.color,
+            "cap": cap, "variants": capped_variants(rec, cap), "crew_now": crew_now, "position_age": position_age},
             user=user)
 
 

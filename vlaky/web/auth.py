@@ -8,7 +8,7 @@ import itertools
 import secrets
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -154,26 +154,45 @@ class LoginLimiter:
     """Obmedzenie v pamäti: po `max_failures` neúspechoch pre kľúč (IP alebo účet) blokovať na `window_s`.
 
     Úspešné prihlásenie nesmie vynulovať počítadlo IP adresy (inak by útočník striedal pokusy na cudzí účet
-    s prihlásením do vlastného). Pri zaplnení pamäte sa najprv mažú vypršané záznamy, nikdy nie blokované.
+    s prihlásením do vlastného). Nad `max_keys` záznamov sa mažú vypršané a potom najstaršie neblokované záznamy;
+    blokované až nad dvojnásobkom limitu (nával z mnohých adries), od najstarších – bez prechodu všetkých záznamov
+    pri každom pokuse (záznamy sú zoradené podľa posledného neúspechu).
+
+    Pokusy bez overenia hesla (prázdne meno alebo heslo) majú spoločný rozpočet `empty_burst` naraz a
+    `empty_per_s` za sekundu pre všetky adresy (allow_empty) – nával z mnohých adries tak nestojí nič ani
+    pamäť limitu.
     """
 
-    def __init__(self, max_failures: int = 5, window_s: int = 900, max_keys: int = 10000) -> None:
+    def __init__(self, max_failures: int = 5, window_s: int = 900, max_keys: int = 10000,
+                 empty_burst: int = 100, empty_per_s: float = 20.0) -> None:
         self.max_failures = max_failures
         self.window_s = window_s
         self.max_keys = max_keys
-        self._fails: dict[str, deque] = {}
+        self._fails: "OrderedDict[str, deque]" = OrderedDict()  # podľa času posledného neúspechu
+        self._light: "OrderedDict[str, None]" = OrderedDict()   # neblokované záznamy (prednostne sa mažú)
         self._logged: dict[str, float] = {}
         self._lock = threading.Lock()
+        self.empty_burst = float(empty_burst)
+        self.empty_per_s = float(empty_per_s)
+        self._empty_tokens = float(empty_burst)
+        self._empty_ts = time.monotonic()
+
+    def _drop(self, key: str) -> None:
+        self._fails.pop(key, None)
+        self._light.pop(key, None)
 
     def _prune(self, key: str, now: float) -> Optional[deque]:
         q = self._fails.get(key)
         if q is None:
             return None
+        before = len(q)
         while q and now - q[0] > self.window_s:
             q.popleft()
         if not q:
-            self._fails.pop(key, None)
+            self._drop(key)
             return None
+        if len(q) < self.max_failures <= before:
+            self._light[key] = None  # staršie neúspechy vypršali – záznam už neblokuje
         return q
 
     def retry_after(self, key: str) -> int:
@@ -191,18 +210,51 @@ class LoginLimiter:
             if q is None:
                 q = self._fails[key] = deque()
             q.append(now)
-            if len(self._fails) > self.max_keys:  # ochrana pamäte: najprv vypršané, potom neblokované
-                for k in list(self._fails):
-                    self._prune(k, now)
-                if len(self._fails) > self.max_keys:
-                    for k in [k for k, v in self._fails.items() if len(v) < self.max_failures]:
-                        if len(self._fails) <= self.max_keys // 2:
-                            break
-                        self._fails.pop(k, None)
+            self._fails.move_to_end(key)
+            if len(q) < self.max_failures:
+                self._light[key] = None
+                self._light.move_to_end(key)
+            else:
+                self._light.pop(key, None)
+            if len(self._fails) > self.max_keys:
+                self._evict(now, key)
+
+    def _evict(self, now: float, keep: str) -> None:
+        """Ochrana pamäte bez prechodu všetkých záznamov (každý krok O(1)): vypršané záznamy sú na začiatku
+        poradia, potom najstaršie neblokované; blokované až nad dvojnásobkom limitu. Práve zapísaný kľúč sa nemaže
+        (inak by sa nový útočník pri plnej pamäti nikdy nezablokoval)."""
+        fails, light = self._fails, self._light
+        while fails:
+            key, q = next(iter(fails.items()))
+            if key == keep or now - q[-1] <= self.window_s:
+                break
+            self._drop(key)
+        while len(fails) > self.max_keys and len(light) > (1 if keep in light else 0):
+            key = next(iter(light))
+            if key == keep:  # zapísaný kľúč je v poradí posledný – sem sa dostane len ako jediný
+                break
+            self._drop(key)
+        while len(fails) > 2 * self.max_keys:
+            key = next(iter(fails))
+            if key == keep:
+                break
+            self._drop(key)
+
+    def allow_empty(self) -> bool:
+        """Spoločný rozpočet pre pokusy bez overenia hesla (prázdne meno alebo heslo) zo všetkých adries."""
+        now = time.monotonic()
+        with self._lock:
+            self._empty_tokens = min(self.empty_burst,
+                                     self._empty_tokens + (now - self._empty_ts) * self.empty_per_s)
+            self._empty_ts = now
+            if self._empty_tokens < 1.0:
+                return False
+            self._empty_tokens -= 1.0
+            return True
 
     def reset(self, key: str) -> None:
         with self._lock:
-            self._fails.pop(key, None)
+            self._drop(key)
 
     def should_log(self, key: str) -> bool:
         """Zablokovaný pokus sa do auditu zapíše najviac raz za okno (ochrana pred zahltením auditu).
@@ -358,8 +410,12 @@ async def login_submit(request: Request):
         # prázdne meno alebo heslo sa nikdy neprihlási (formulár ich nepustí, posiela ich len skript): bez overenia
         # hesla a bez zápisu do auditu – nával takých pokusov z mnohých adries by inak zahltil audit (stovky
         # záznamov za sekundu, bez obmedzenia bcryptom); počítajú sa do limitu adresy, nie účtu (nie je to pokus
-        # o heslo a účet by sa nimi dal lacno zablokovať)
-        limiter.fail(ip_key)
+        # o heslo a účet by sa nimi dal lacno zablokovať). Spoločný rozpočet pre všetky adresy ich obmedzí a zápis
+        # do limitu ide mimo slučky udalostí – nával z mnohých sietí /64 nespomalí ostatné požiadavky.
+        if not limiter.allow_empty():
+            return _login_page(request, next_url, "Príliš veľa neúplných pokusov o prihlásenie. Skúste to o chvíľu.",
+                               username, status_code=429)
+        await run_in_threadpool(limiter.fail, ip_key)
         return _login_page(request, next_url, "Zadajte meno aj heslo.", username, status_code=401)
 
     checks: PasswordChecks = request.app.state.password_checks
