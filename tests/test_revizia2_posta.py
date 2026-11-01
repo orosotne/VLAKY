@@ -129,12 +129,14 @@ def local_input(dt: datetime) -> str:
 
 
 def register_form(c: Closure, **changes) -> dict:
-    """Formulár úpravy výluky tak, ako ho pošle prehliadač (nezaškrtnuté políčko sa neposiela)."""
+    """Formulár úpravy výluky tak, ako ho pošle prehliadač (nezaškrtnuté políčko sa neposiela; skryté pole
+    ``zobrazeny_koniec`` nesie koniec, ktorý formulár zobrazil)."""
     form = {"from_station": c.from_station, "to_station": c.to_station, "kind": c.kind, "line_ref": c.line_ref or "",
             "track": c.track or "", "start_utc": local_input(as_utc(c.start_utc)),
             "end_utc": local_input(as_utc(c.end_utc)), "daily_from": c.daily_from or "", "daily_to": c.daily_to or "",
             "speed_kmh": "" if c.speed_kmh is None else str(c.speed_kmh), "status": c.status,
-            "external_ref": c.external_ref or "", "note": c.note or ""}
+            "external_ref": c.external_ref or "", "note": c.note or "",
+            "zobrazeny_koniec": local_input(as_utc(c.end_utc))}
     if c.electric_only:
         form["electric_only"] = "1"
     form.update(changes)

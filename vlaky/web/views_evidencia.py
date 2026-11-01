@@ -344,7 +344,7 @@ def _closure_values(c: Closure) -> dict:
             "track": c.track, "start_utc": input_dt(c.start_utc), "end_utc": input_dt(c.end_utc),
             "daily_from": c.daily_from, "daily_to": c.daily_to, "electric_only": "1" if c.electric_only else "",
             "speed_kmh": c.speed_kmh if c.speed_kmh is not None else "", "status": c.status,
-            "external_ref": c.external_ref, "note": c.note}
+            "external_ref": c.external_ref, "note": c.note, "zobrazeny_koniec": input_dt(c.end_utc)}
 
 
 @router.get("/vyluky/nova", response_class=HTMLResponse)
@@ -394,13 +394,17 @@ def closure_update(closure_id: int, request: Request, background: BackgroundTask
         if not reader.ok:
             return render(request, "vyluka_form.html", {"closure": c, "values": reader.values(),
                                                         "errors": reader.errors}, user=user, status_code=422)
+        if c.until_revoked and values.get("end_utc") and c.end_utc is not None:
+            # výluka „do odvolania“: koniec vo formulári je technický (agent ho posúva). Skutočný koniec zadal
+            # dispečer, len ak ho zmenil oproti koncu, ktorý formulár zobrazil – potom ho agent už neposúva a
+            # potvrdenie udalosti ho neprepíše. Zastaraný formulár (agent medzitým koniec posunul) príznak nezruší
+            # a technický koniec neskráti; formulár bez zobrazeného konca príznak ponechá (agent koniec posunie).
+            shown = FormReader(form).local_dt("zobrazeny_koniec", "Zobrazený koniec")
+            if shown is not None and abs(values["end_utc"] - shown) >= timedelta(minutes=1):
+                values = {**values, "until_revoked": False}
+            elif shown is not None:
+                values = {**values, "end_utc": max(values["end_utc"], ensure_utc(c.end_utc))}
         changes = _diff(c, values)
-        if c.until_revoked and values.get("end_utc") and c.end_utc is not None and \
-                abs(values["end_utc"] - ensure_utc(c.end_utc)) >= timedelta(minutes=1):
-            # dispečer zadal skutočný koniec výluky „do odvolania“ – inak by ho agent posúval ďalej (technický
-            # koniec) a potvrdenie udalosti by ho prepísalo
-            values = {**values, "until_revoked": False}
-            changes["until_revoked"] = [True, False]
         if changes:
             for k, v in values.items():
                 setattr(c, k, v)
@@ -412,6 +416,8 @@ def closure_update(closure_id: int, request: Request, background: BackgroundTask
     if changes and request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"zmena výluky #{closure_id}")
     msg = "Výluka uložená." if changes else "Bez zmien."
+    if "until_revoked" in changes:
+        msg += " Výluka už neplatí „do odvolania“ – platí do konca, ktorý ste zadali."
     if changes and pending_id is not None:
         msg += (f" Výluka z e-mailu ešte čaká na potvrdenie (udalosť #{pending_id}) – pri potvrdení ostanú vaše "
                 "úpravy, nie údaje z e-mailu.")

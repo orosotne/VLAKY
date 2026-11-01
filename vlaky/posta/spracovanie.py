@@ -753,16 +753,29 @@ def _event_closures(session: Session, ev_id: int) -> tuple[Optional[Closure], Op
     return own, temp
 
 
-def _agrees(t: Closure, kind: str, d: dict) -> bool:
-    """Výluka ``t`` zodpovedá (potvrdeným) dátam udalosti: rovnaký úsek, druh a nie iné číslo výluky.
+def _agrees(session: Session, t: Closure, ev: ExtractedEvent, d: dict, start: datetime) -> bool:
+    """Výluka ``t`` (priradenie zistené pri spracovaní e-mailu) zodpovedá potvrdeným dátam udalosti.
 
-    Dispečer pri potvrdení môže opraviť číslo alebo druh – priradenie zistené pri spracovaní e-mailu
-    (``proposed_change_of``) potom už neplatí a výluka sa hľadá znova.
+    Dispečer pri potvrdení môže opraviť číslo, druh alebo úsek – priradenie (``proposed_change_of``) potom už
+    nemusí platiť a výluka sa hľadá znova. Neplatí, keď nesedí úsek, druh obmedzenia alebo číslo výluky; keď
+    ``t`` je bez čísla a doplnené číslo má v tom istom úseku iná výluka (zmena patrí jej); a keď udalosť už nie
+    je zmena výluky a ``t`` by podľa pravidiel jej druhu nesedela (napr. nová výluka v blízkom termíne je ďalší
+    termín, nie presun – rovnaká výluka je len s rovnakým číslom alebo začiatkom ± 1 h).
     """
     ref = d.get("external_ref")
-    return (_same_section(t, d.get("from_station"), d.get("to_station"))
-            and _closure_family(t) == _event_family(kind, d)
-            and (not ref or not t.external_ref or refs_match(t.external_ref, ref)))
+    a, b = d.get("from_station"), d.get("to_station")
+    fam = _event_family(ev.kind, d)
+    if not (_same_section(t, a, b) and _closure_family(t) == fam
+            and (not ref or not t.external_ref or refs_match(t.external_ref, ref))):
+        return False
+    if ref and not t.external_ref:
+        for c in _active_closures(session, ev.id):
+            if c.id != t.id and c.external_ref and refs_match(c.external_ref, ref) and _closure_family(c) == fam \
+                    and _same_section(c, a, b):
+                return False
+    if ev.kind != "vyluka_zmena":
+        return bool(ref and t.external_ref) or abs(_utc(t.start_utc) - start) <= MATCH_TOLERANCE
+    return True
 
 
 def _carry_note(target: Closure, row: Closure) -> None:
@@ -794,7 +807,7 @@ def _apply_closure(session: Session, ev: ExtractedEvent, confirmed: bool) -> dic
     target, how, promote = None, "", False
     if temp is not None and temp.proposed_change_of:
         t = session.get(Closure, temp.proposed_change_of)
-        if t is not None and t.status != "zrusene" and _agrees(t, ev.kind, d):
+        if t is not None and t.status != "zrusene" and _agrees(session, t, ev, d, fields["start_utc"]):
             target, how = t, "navrhovaná zmena výluky"
     if target is None and own is not None and not rebind:
         target, how = own, "rovnaká udalosť"

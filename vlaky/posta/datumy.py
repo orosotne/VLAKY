@@ -43,6 +43,17 @@ _WINDOW_RE = re.compile(r"(?<![\d.:,])(\d{1,2})\s?[:.]\s?(\d{2})(?!\d)(?:\s?(?:h
                         r"(\d{1,2})\s?[:.]\s?(\d{2})(?!\d)")
 # zoznam dní či nocí s jedným oknom: „12.11. a 13.11.2026 od 8:00“, „v nociach 12./13.11. a 13./14.11.2026“
 _LIST_GAP = re.compile(r"^\s*(?:,|;|/|\+|&|a|aj|i|a\s+tiez|a\s+aj|ako\s+aj)\s*(?:z\s+|zo\s+|dna\s+|dne\s+)?$")
+# holý deň (alebo dvojica dní noci) tesne pred plným dátumom – skrátený zoznam „v dňoch 03., 04. a 05.11.2026“,
+# „v nociach 03./04. a 04./05.11.2026“ alebo začiatok obdobia „od 3. do 5.11.2026“; mesiac a rok z plného dátumu
+_BARE_BEFORE = re.compile(r"(?<![\d.,/:])(?<!\d\.\s)(\d{1,2})\s?\.(?:\s?(na\s+|/\s?)(\d{1,2})\s?\.)?"
+                          r"(?:(?P<lst>\s*(?:,|;|\+|&|a|aj|i|a\s+tiez|a\s+aj|ako\s+aj)\s*(?:z\s+|zo\s+|dna\s+|dne\s+)?)"
+                          r"|(?P<rng>\s*(?:-+|do|az)\s*(?:dna\s*|dne\s*)?))\Z")
+# dátum, ktorý podľa textu pred ním nie je termínom: pôvodný deň presunu („z 12.11. na 13.11.“, „namiesto 12.11.“),
+# dátum vydania, vyhotovenia či rozhodnutia („ROV z 30.10.“, „zo dňa 30.10.“), platnosť samotného rozkazu
+NOT_TERM_BEFORE = re.compile(r"(?<![^\s(])(?:z|zo|ze)\s+(?:termin\w*\s+)?$|(?:zo|ze)\s+dn[ae]\s*$|v\s+\w+\s+dn[ae]\s*$"
+                             r"|\b(?:namiesto|namisto|misto)\s*$|povodn|puvodn|doterajs|vydan|vydavan|rozhodnut"
+                             r"|vyhotoven|vypracovan|\b(?:platnost|ucinnost)\w*\s+(?:rov|srov|rozkaz|telegram|tlg|potr"
+                             r"|oznamen)\w*\s+od\s*$")
 # ďalšie časové okno v tej istej vete: „8:00 – 12:00 a 13:00 – 16:00“, „8–12, 13–16 hod.“
 _AND_GAP = re.compile(r"^\s*(?:hod\.?\s*)?(?:,|;|\+|&|a|aj|a\s+tiez|a\s+aj)?\s*(?:od\s+|v\s+case\s+|v\s+)?$")
 # „obsahuje čas“ – 08:00, 8.00 hod.; nie dátum 23.11.2026
@@ -147,6 +158,82 @@ def _is_night(folded: str, start: int, end: int, slash: bool) -> bool:
     return marked or _crosses_midnight(folded, end)
 
 
+def _bare_items(folded: str, pos: int, taken: list, allow_range: bool) -> list[tuple]:
+    """Holé dni zoznamu tesne pred plným dátumom na pozícii ``pos`` (zľava doprava).
+
+    Položka: (začiatok, koniec, deň, druhý deň dvojice alebo None, pozícia „/“ či „na“ v dvojici, „na“-tvar).
+    Rozsah („od 3. do 5.11.“, „3. – 5. a 10.11.“) je len medzi dvoma dňami (nie pri nociach); pred plným
+    dátumom len pri ``allow_range`` (plný dátum je jeden deň)."""
+    out: list[tuple] = []
+    while True:
+        m = _BARE_BEFORE.search(folded, max(0, pos - 30), pos)
+        if m is None:
+            break
+        rng = m.group("rng") is not None
+        item_end = m.start("rng" if rng else "lst")
+        if _overlaps(taken, m.start(), item_end):
+            break
+        if rng and (m.group(3) or (out[-1][3] is not None if out else not allow_range)):
+            break
+        pair = m.group(2)
+        out.append((m.start(), item_end, int(m.group(1)), int(m.group(3)) if m.group(3) else None,
+                    m.start(2) if pair else None, bool(pair) and "/" not in pair))
+        pos = m.start()
+    out.reverse()
+    return out
+
+
+def _prev_month(d: date) -> date:
+    return d.replace(day=1) - timedelta(days=1)
+
+
+def _expand_bare(items: list[tuple], first: date, year_given: bool, night: bool) -> list[Temporal]:
+    """Tokeny holých dní zoznamu (``items`` z :func:`_bare_items`) pred plným dátumom s prvým dňom ``first``.
+
+    Zoznam ide chronologicky: deň položky je v mesiaci nasledujúcej položky, ak je pred ňou, inak v mesiaci
+    predchádzajúcom („30. a 1.12.“ = 30.11. a 1.12.). Noc (``night``) = dvojica po sebe idúcich dní, token je jej
+    prvý deň; mimo noci dvojica „12./13.“ = oba dni a „z 12. na 13.“ zoznam ukončí. Nezmyselná položka (zlý deň,
+    zlé poradie) zoznam ukončí – ďalšie dni sa nevymýšľajú (nepriradené dni ohlási kontrola pravidiel)."""
+    out: list[Temporal] = []
+    nxt = first
+
+    def tok(a: int, b: int, d: date) -> Temporal:
+        return Temporal("date", a, b, d, year_given=year_given, month_day=None if year_given else (d.day, d.month))
+
+    for s, e, d1, d2, sep, na in reversed(items):
+        if (na and not night) or (night and d2 is None):
+            break
+        last = d2 if d2 is not None else d1
+        shared = night and d2 is not None          # susedné noci majú spoločný deň („03./04. a 04./05.“)
+        cand = _mkdate(nxt.year, nxt.month, last)
+        if cand is None or cand > nxt or (cand == nxt and not shared):
+            prev = _prev_month(nxt)
+            cand = _mkdate(prev.year, prev.month, last)
+            if cand is not None and (nxt - cand).days > 10:
+                cand = None                         # „5. a 3.11.“ – nie je to prelom mesiacov, ale chyba poradia
+        if cand is None or cand > nxt or (cand == nxt and not shared):
+            break
+        day1 = cand - timedelta(days=1) if d2 is not None else cand
+        if day1.day != d1:
+            break                                   # dvojica nie sú dva po sebe idúce dni
+        if d2 is None or night:
+            out.append(tok(s, e, day1))
+        else:                                       # „12./13.“ v zozname dní – oba dni
+            out.append(tok(sep + 1, e, cand))
+            out.append(tok(s, sep, day1))
+        nxt = day1
+    out.reverse()
+    return out
+
+
+def _add_bare(folded: str, toks: list[Temporal], taken: list, pos: int, first: date, year_given: bool,
+              allow_range: bool) -> None:
+    """Holé dni zoznamu (alebo začiatok obdobia) pred plným dátumom na pozícii ``pos`` pridá ako dátumy."""
+    for t in _expand_bare(_bare_items(folded, pos, taken, allow_range), first, year_given, night=False):
+        toks.append(t)
+        taken.append((t.start, t.end))
+
+
 def scan(folded: str, ref: date) -> list[Temporal]:
     """Nájde dátumy a časy, spojí dátum + čas do dátumu s časom. Výsledok je zoradený podľa pozície."""
     toks: list[Temporal] = []
@@ -179,7 +266,10 @@ def scan(folded: str, ref: date) -> list[Temporal]:
         slash = "/" in folded[m.start():m.end()]
         a = b - timedelta(days=1)
         md_a = None if y else (a.day, a.month)          # rok doplní _fix_years z ďalšieho dátumu v zozname
-        if _is_night(folded, m.start(), m.end(), slash):
+        # skrátený zoznam nocí pred ňou („v nociach 03./04. a 04./05.11.“) – označenie noci sa hľadá pred celým zoznamom
+        items = _bare_items(folded, m.start(), taken, allow_range=False)
+        night = _is_night(folded, items[0][0] if items else m.start(), m.end(), slash)
+        if night:
             toks.append(Temporal("date", m.start(), m.end(), a, year_given=bool(y), month_day=md_a))
         elif slash:                       # „12./13.11. 8:00 – 14:00“ – dva dni (obidva, prísnejší prípad)
             sep = folded.index("/", m.start(), m.end())
@@ -189,6 +279,9 @@ def scan(folded: str, ref: date) -> list[Temporal]:
         else:                             # „z 12. na 13.11.“ – presun na nový deň, dátum 13.11. nájde _DATE_RE
             continue
         taken.append((m.start(), m.end()))
+        for t in _expand_bare(items, a, bool(y), night):
+            toks.append(t)
+            taken.append((t.start, t.end))
 
     for m in _DAYRANGE_RE.finditer(folded):
         if _overlaps(taken, m.start(), m.end()):
@@ -208,6 +301,7 @@ def scan(folded: str, ref: date) -> list[Temporal]:
         toks.append(Temporal("date", m.start(), sep, a, year_given=bool(y)))
         toks.append(Temporal("date", sep + 1, m.end(), b, year_given=bool(y)))
         taken.append((m.start(), m.end()))
+        _add_bare(folded, toks, taken, m.start(), a, bool(y), allow_range=False)
 
     for m in _DATE_RE.finditer(folded):
         if _overlaps(taken, m.start(), m.end()):
@@ -227,6 +321,7 @@ def scan(folded: str, ref: date) -> list[Temporal]:
                 continue
             toks.append(Temporal("date", m.start(), m.end(), d, year_given=False, month_day=(dd, mon)))
         taken.append((m.start(), m.end()))
+        _add_bare(folded, toks, taken, m.start(), d, bool(y), allow_range=True)
 
     for m in _DATE_NAME_RE.finditer(folded):
         if _overlaps(taken, m.start(), m.end()):
@@ -239,6 +334,7 @@ def scan(folded: str, ref: date) -> list[Temporal]:
         toks.append(Temporal("date", m.start(), m.end(), d, year_given=bool(y),
                              month_day=None if y else (dd, mon)))
         taken.append((m.start(), m.end()))
+        _add_bare(folded, toks, taken, m.start(), d, bool(y), allow_range=True)
 
     for m in _TIME_RE.finditer(folded):
         if _overlaps(taken, m.start(), m.end()):
@@ -350,15 +446,25 @@ def _window_period(day: date, wa: Temporal, wb: Temporal, pos: int, end_pos: int
     return p
 
 
+def not_term_date(folded: str, t: Temporal, floor: int = 0) -> bool:
+    """Dátum, ktorý podľa textu pred ním nie je termínom výluky (pôvodný deň presunu, dátum vydania či vyhotovenia).
+
+    Noc „z 12. na 13.11.“ termínom je – „z“ patrí k noci."""
+    if "/" in folded[t.start:t.end] or re.search(r"\bna\b", folded[t.start:t.end]):
+        return False
+    return bool(NOT_TERM_BEFORE.search(folded, max(floor, t.start - 30), t.start))
+
+
 def _listed_dates(folded: str, toks: list[Temporal], i: int, used: set[int], step: int) -> list[int]:
     """Indexy dátumov spojených s tokenom ``i`` do zoznamu („12.11. a 13.11.“, „12./13.11. a 13./14.11.“).
 
-    ``step`` = -1 hľadá pred tokenom, +1 za ním. Zoznam s jedným oknom znamená obdobie pre každý deň (noc)."""
+    ``step`` = -1 hľadá pred tokenom, +1 za ním. Zoznam s jedným oknom znamená obdobie pre každý deň (noc).
+    Dátum vydania či pôvodný deň presunu („Rozkaz zo dňa 30.10.2026, 12.11.2026 od 8:00“) do zoznamu nepatrí."""
     out: list[int] = []
     j = i + step
     while 0 <= j < len(toks) and toks[j].kind == "date" and j not in used:
         left, right = (toks[j], toks[j - step]) if step < 0 else (toks[j - step], toks[j])
-        if not _LIST_GAP.match(folded[left.end:right.start]):
+        if not _LIST_GAP.match(folded[left.end:right.start]) or not_term_date(folded, toks[j]):
             break
         out.append(j)
         j += step
@@ -442,6 +548,10 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
             dist = min(abs(wa.start - b.end), abs(a.start - wb.end))
             if dist <= 160 and dist < best_dist:
                 best, best_dist = k, dist
+        # dni zoznamu pred obdobím („v dňoch 3., 4. a 10. – 12.11.2026 v čase 8:00 – 14:00“) majú to isté okno
+        idx = _listed_dates(folded, toks, next(n for n, t in enumerate(toks) if t is a), used, -1)
+        listed = [toks[j] for j in idx]
+        used.update(idx)
         if best is not None:
             picked = [best]
             # ďalšie denné okná hneď za ním („v čase 8:00 – 12:00 a 13:00 – 16:00“)
@@ -460,10 +570,15 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
                     flags.add("cez_polnoc")
                 out.append(Period(start, end, min(a.start, wa.start), max(b.end, wb.end),
                                   _hhmm(wa.tm), _hhmm(wb.tm), flags))
+                for e in listed:
+                    out.append(_window_period(e.day, wa, wb, e.start, e.end, not e.year_given))
         else:
             out.append(Period(datetime.combine(a.day, time(0, 0)),
                               datetime.combine(b.day, time(0, 0)) + timedelta(days=1),
                               a.start, b.end, flags={"cely_den"}))
+            for e in listed:
+                out.append(Period(datetime.combine(e.day, time(0, 0)), datetime.combine(e.day, time(0, 0))
+                                  + timedelta(days=1), e.start, e.end, flags={"cely_den"}))
     # okno s jedným dátumom (napr. „12.11.2026, denne 08:00 – 14:00“ alebo dátum za oknom)
     for k, (wa, wb) in enumerate(windows):
         if k in used_windows:
