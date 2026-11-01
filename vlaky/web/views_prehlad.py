@@ -18,8 +18,9 @@ from ..config import settings
 from ..db import session_scope
 from ..models import (Email, ExtractedEvent, Recommendation, ShiftHandoverReport, Train)
 from .auth import csrf_form, require
-from .common import EVENT_KIND, FormReader, REC_STATE, TRAIN_STATUS, log, parse_iso, redirect, render
-from .data import alerts, auto_applied_unconfirmed, borders_list, train_rows
+from .common import (DONE_TRAIN_STATES, EVENT_KIND, FormReader, REC_STATE, TRAIN_STATUS, log, parse_iso, redirect,
+                     render)
+from .data import alerts, auto_applied_unconfirmed, borders_list, data_freshness, train_rows
 from .prepocet import evaluate_all_bg
 
 router = APIRouter()
@@ -324,9 +325,19 @@ def recommendations_page(request: Request, stav: str = "", farba: str = "", vlak
         total = s.scalar(select(func.count()).select_from(q.subquery())) or 0
         recs = list(s.scalars(q.order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
                               .offset((strana - 1) * per_page).limit(per_page)))
+        # bez čerstvých dát agenta sa aktuálne (posledné) odporúčanie idúceho vlaku neukáže ako ZELENÁ – staršie
+        # odporúčania si farbu ponechajú (záznam o tom, čo sa vtedy odporučilo)
+        fresh = data_freshness(s)
+        current: set = set()
+        if fresh["stale"]:
+            train_ids = {r.train_id for r in recs if r.train is not None and r.train.status not in DONE_TRAIN_STATES}
+            if train_ids:
+                current = set(s.scalars(select(func.max(Recommendation.id)).where(
+                    Recommendation.train_id.in_(train_ids)).group_by(Recommendation.train_id)))
         return render(request, "odporucania.html", {"recs": recs, "stav": stav, "farba": farba, "vlak": vlak,
                                                     "strana": strana, "pages": max(1, -(-total // per_page)),
-                                                    "total": total}, user=user)
+                                                    "total": total, "fresh": fresh, "current_ids": current},
+                      user=user)
 
 
 def _next_steps(rec: Recommendation) -> list:
@@ -364,9 +375,14 @@ def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
                           .order_by(Recommendation.id.desc()))
         history = list(s.scalars(select(Recommendation).where(Recommendation.train_id == rec.train_id)
                                  .order_by(Recommendation.id.desc()).limit(10)))
+        fresh = data_freshness(s)
+        # aktuálne odporúčanie idúceho vlaku bez čerstvých dát agenta: ZELENÁ sa ukáže ako ORANŽOVÁ (PROMPT 12)
+        downgraded = bool(fresh["stale"] and rec.color == "ZELENÁ" and rec.id == latest and rec.train is not None
+                          and rec.train.status not in DONE_TRAIN_STATES)
         return render(request, "odporucanie.html", {
             "rec": rec, "train": rec.train, "latest_id": latest, "history": history, "steps": _next_steps(rec),
-            "stale_minutes": settings().position_stale_minutes}, user=user)
+            "stale_minutes": settings().position_stale_minutes, "fresh": fresh, "downgraded": downgraded},
+            user=user)
 
 
 DECISION_STATE = {"prijat": "prijate", "upravit": "upravene", "zamietnut": "zamietnute"}

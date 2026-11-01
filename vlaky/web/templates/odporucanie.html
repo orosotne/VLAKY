@@ -15,12 +15,13 @@
 <p class="flash flash-varovanie" role="status">Toto odporúčanie nie je posledné. <a href="/odporucania/{{ latest_id }}">Zobraziť aktuálne odporúčanie</a>.</p>
 {% endif %}
 
-<section class="decision decision-{{ rec.color|color_class }}" aria-labelledby="rozhodnutie">
+<section class="decision decision-{{ ("ORANŽOVÁ" if downgraded else rec.color)|color_class }}" aria-labelledby="rozhodnutie">
   <div class="decision-main">
     <span class="decision-word" id="rozhodnutie">{{ rec.decision }}</span>
-    {{ m.semafor(rec.color) }} {{ m.priority(rec.priority) }}
+    {% if downgraded %}{{ m.semafor("ORANŽOVÁ") }} <span class="small muted" title="{{ fresh.text }}">bez čerstvých údajov agenta – pôvodne ZELENÁ</span>{% else %}{{ m.semafor(rec.color) }}{% endif %} {{ m.priority(rec.priority) }}
     <span class="badge">stav: {{ REC_STATE.get(rec.state, rec.state) }}</span>
   </div>
+  {% if downgraded %}<p class="small">{{ fresh.text }} Semafor platí len k času prepočtu – pred vypravením overte aktuálny stav (výluky, polohu, rušňovodiča).</p>{% endif %}
   <p class="decision-summary">{{ rec.summary }}</p>
   <p class="muted small">Vytvorené {{ rec.created_at|tfull }}{% if rec.trigger %} · podnet: {{ rec.trigger }}{% endif %}</p>
 </section>

@@ -32,7 +32,7 @@
       <td class="nowrap">{{ r.created_at|t }}</td>
       <td>{% if r.train %}<a href="/vlaky/{{ r.train.id }}">{{ r.train.number }}</a>{% endif %}</td>
       <td><a href="/odporucania/{{ r.id }}"><strong>{{ r.decision }}</strong></a></td>
-      <td>{{ m.semafor(r.color) }}</td>
+      <td>{% if current_ids and r.id in current_ids and r.color == "ZELENÁ" %}<span title="{{ fresh.text }}">{{ m.semafor("ORANŽOVÁ") }} <span class="small muted">bez čerstvých údajov agenta – pôvodne ZELENÁ</span></span>{% else %}{{ m.semafor(r.color) }}{% endif %}</td>
       <td>{{ m.priority(r.priority) }}</td>
       <td class="small">{{ r.summary }}</td>
       <td>{{ REC_STATE.get(r.state, r.state) }}</td>

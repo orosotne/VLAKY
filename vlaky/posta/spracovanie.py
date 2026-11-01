@@ -1413,10 +1413,14 @@ def apply_failed(ev: ExtractedEvent) -> bool:
 
 
 def failed_confirmations(session: Session, limit: int = 200) -> list[ExtractedEvent]:
-    """Potvrdené udalosti s neúspešným zápisom (čakajú na dispečera rovnako ako udalosti vo fronte)."""
-    rows = session.scalars(select(ExtractedEvent).where(ExtractedEvent.status == "potvrdene")
-                           .order_by(ExtractedEvent.created_at, ExtractedEvent.id).limit(1000))
-    return [e for e in rows if apply_failed(e)][:limit]
+    """Potvrdené udalosti s neúspešným zápisom (čakajú na dispečera rovnako ako udalosti vo fronte).
+
+    Filtruje sa v databáze (validation.apply_result.ok = false) – potvrdených udalostí pribúda a výber prvých N
+    potvrdených by nové zlyhané zápisy časom vynechal."""
+    failed = ExtractedEvent.validation["apply_result"]["ok"].as_boolean().is_(False)
+    rows = session.scalars(select(ExtractedEvent).where(ExtractedEvent.status == "potvrdene", failed)
+                           .order_by(ExtractedEvent.created_at, ExtractedEvent.id).limit(limit))
+    return [e for e in rows if apply_failed(e)]
 
 
 def reject_event(session: Session, event_id: int, actor: str, reason: str = "") -> ExtractedEvent:
