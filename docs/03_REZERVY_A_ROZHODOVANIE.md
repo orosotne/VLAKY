@@ -96,6 +96,8 @@ Odstaviť sa oplatí, ak čakanie potrvá dlhšie ako
 
 Pri vzorových hodnotách: T = 600 / (180 − 60) = **5 hodín**. S vašimi skutočnými nákladmi vyjde iné číslo.
 
+Bod zlomu rozhoduje pri voľbe. Potom sa voľba bez zmeny údajov nemení len preto, že čas plynie: vlak, ktorý už stojí odstavený (alebo dispečer odstavenie prijal), jednorazový náklad odstavenia už neplatí a ostáva odstavený až do odchodu; neprijatú voľbu čakať/odstaviť pri tom istom odchode agent zmení, až keď je druhá možnosť lacnejšia o viac ako `robustness_premium` (10 %).
+
 ## 6. Najneskorší bezpečný odchod a „bod, odkiaľ niet návratu“
 
 Pri výluke na trase aplikácia ukáže **okná bezpečného odchodu**, napríklad:

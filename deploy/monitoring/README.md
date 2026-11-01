@@ -11,12 +11,12 @@ Keď agent nebeží, dispečing pracuje ako doteraz – prevádzkové e-maily ch
 | **Heartbeat agenta** | agent pinguje `VLAKY_HEARTBEAT_URL` (healthchecks.io a pod.) | 5 min | ping neprišiel 15 min (perióda 5 + tolerancia 10) alebo agent poslal `/fail` |
 | **Dostupnosť webu** | externá služba volá `https://DOMÉNA/health` | 1 – 5 min | 2 zlyhania po sebe (iný kód ako 200) |
 | **Certifikát HTTPS** | externá služba (ak to vie) + `check.sh` | denne / 15 min | platí menej ako 10 dní |
-| **Server** – disk, vek zálohy, kontajnery, HTTPS | `deploy/monitoring/check.sh` (časovač `vlaky-check.timer`) → `CHECK_HEARTBEAT_URL` | 15 min | `/fail` s dôvodom, alebo ping chýba 30 min |
+| **Server** – disk, vek zálohy, kontajnery alebo služby, bez Dockera zdravie agenta, HTTPS | `deploy/monitoring/check.sh` (časovač `vlaky-check.timer`) → `CHECK_HEARTBEAT_URL` | 15 min | `/fail` s dôvodom, alebo ping chýba 30 min |
 | **Denná záloha** | `deploy/backup/backup.sh` → `BACKUP_HEARTBEAT_URL` | 1 deň | `/fail`, alebo ping chýba viac ako 26 h |
 
 `GET /health` je bez prihlásenia a overuje **webovú aplikáciu a databázu** (`{"status":"ok","db":"ok"}`,
 inak HTTP 503). Stav **agenta** pokrýva heartbeat a `python -m vlaky health` (posledný cyklus agenta
-do 10 min, posledná kontrola schránky do 30 min) – ten používa aj Docker ako kontrolu zdravia kontajnera `agent`.
+do 10 min, posledná úplná kontrola schránky do 30 min – aj počas dočítavania nahromadenej pošty) – ten používa aj Docker ako kontrolu zdravia kontajnera `agent`.
 
 ## Nastavenie krok za krokom (príklad healthchecks.io)
 
@@ -52,12 +52,18 @@ journalctl -u vlaky-check -n 50       # výsledky z časovača
 
 Kontroluje: zaplnenie diskov a inódov (`CHECK_DISK_PATHS`, limit `CHECK_DISK_MAX_PCT`=85 %),
 vek najnovšej zálohy databázy (`CHECK_BACKUP_MAX_AGE_HOURS`=26), stav a zdravie kontajnerov
-`db`, `web`, `agent`, `caddy` (pri inštalácii bez Dockera služieb systemd), `https://DOMÉNA/health`
-cez lokálny Caddy a platnosť certifikátu (`CHECK_CERT_MIN_DAYS`=10). Upozorní aj na čakajúci reštart
-po aktualizáciách, chýbajúcu zálohu mimo servera a príliš otvorené práva súboru `.env`.
+`db`, `web`, `agent`, `caddy` (pri inštalácii bez Dockera služieb systemd a navyše zdravie agenta
+`python -m vlaky health` s konfiguráciou služieb – `CHECK_ENV_FILE`, predvolene `/etc/vlaky/vlaky.env`,
+a Python `CHECK_PYTHON`), `https://DOMÉNA/health` cez lokálny Caddy a platnosť certifikátu
+(`CHECK_CERT_MIN_DAYS`=10). Doména: `CHECK_URL`, inak `VLAKY_DOMAIN` alebo `VLAKY_PUBLIC_URL` zo súboru
+`CHECK_ENV_FILE` (pri Dockeri `.env`); neznáma doména je CHYBA (HTTPS ani certifikát by sa nekontrolovali).
+Upozorní aj na čakajúci reštart po aktualizáciách, chýbajúcu zálohu mimo servera a príliš otvorené práva
+súboru `.env`.
 
-Výstup: riadky `OK`, `POZOR` (upozornenie, nespôsobí chybu) a `CHYBA` (dôvod a ďalší krok).
-Návratový kód 0 = v poriadku, 1 = aspoň jedna chyba. Nastavenia sú v `/etc/vlaky/ops.env`.
+Výstup: riadky `OK`, `POZOR` (upozornenie, nespôsobí chybu) a `CHYBA` (dôvod a ďalší krok – pri Dockeri
+príkazy `docker compose`, bez Dockera `systemctl` a `journalctl`). Návratový kód 0 = v poriadku, 1 = aspoň
+jedna chyba. Podrobnosti zdravia agenta idú len do výpisu, na externý monitoring len riadok CHYBA.
+Nastavenia sú v `/etc/vlaky/ops.env`.
 
 ## Kto dostáva upozornenia
 

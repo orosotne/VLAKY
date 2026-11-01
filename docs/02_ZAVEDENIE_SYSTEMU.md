@@ -83,7 +83,7 @@ Podrobný postup je v `docs/PREVADZKA.md`. Hlavné body:
 
 **Pred každým odchodom** musí byť vlak aktivovaný a v KIS/PIS zadaný súpis vlaku ND a správa o zostave vlaku – bez nich ŽSR vlak nevypraví (Z 1). Agent to pripomína v každom odporúčaní.
 
-**Odstavenie** podľa PPŽS: len v nácestnej dopravni, koľaj určí ŽSR, najviac 18 h. Pôvodnú trasu treba odrieknuť (poplatok U1, ak menej ako 20 pracovných dní vopred).
+**Odstavenie** podľa PPŽS: len v nácestnej dopravni, koľaj určí ŽSR, najviac 18 h. Pôvodnú trasu treba odrieknuť (poplatok U1, ak menej ako 20 pracovných dní vopred). Ak vlak po odstavení odchádza na svoju pridelenú trasu (v tolerancii ± 15 min), trasa sa neodrieka.
 
 ## 5. Poloha vlakov – porovnanie zdrojov
 

@@ -80,6 +80,8 @@ Rovnaké testy proti PostgreSQL (ako na serveri) – do prázdnej testovacej dat
 VLAKY_TEST_DATABASE_URL=postgresql+psycopg://postgres@127.0.0.1:5432/vlaky_test python -m pytest -q
 ```
 
+Testy v skutočnom prehliadači (Playwright + Chromium cez Node.js) sa preskočia, ak `node` s balíkom `playwright` chýba (alebo pri `VLAKY_SKIP_BROWSER=1`). Nesťahujú dlaždice podkladovej mapy a všetky požiadavky mimo lokálneho servera blokujú – výnimkou je knižnica MapLibre z unpkg.com (raz za beh testu); bez prístupu k nej sa testy mapy preskočia.
+
 ## Spustenie referenčnej implementácie
 
 Fiktívny príklad (vlak Košice → Žilina s výlukou):

@@ -191,6 +191,11 @@ v produkcii nespustia. Na začiatok stačí:
 | `VLAKY_HEARTBEAT_URL` | ping URL externého monitoringu (kapitola 12) |
 | `VLAKY_MAIL_SOURCE` | zatiaľ `directory`; po nastavení schránky `graph` alebo `imap` (kapitola 5) |
 
+**Poloha z GPS:** `VLAKY_POSITION_STALE_MINUTES` (predvolene 15 = cyklus agenta) určuje, po koľkých minútach je
+poloha vlaku stará. Ak GPS posiela polohu zriedkavejšie (napr. každých 30 min), nastav hodnotu aspoň na interval
+hlásení polohy + cyklus agenta (napr. 45) – inak je každý druhý prepočet bez čerstvej polohy (ORANŽOVÁ, nikdy
+ZELENÁ), farba odporúčania sa strieda so ZELENOU a každá zmena farby je nové odporúčanie a upozornenie.
+
 **Celý obsah `.env` ulož do firemného trezoru hesiel.** Po každej zmene `.env` použi
 `docker compose up -d` (príkaz `docker compose restart` zmeny v `.env` nenačíta).
 
@@ -215,24 +220,39 @@ Tabuľky a hraničné priechody vytvorí automaticky jednorazová služba `init-
 ### 4.8 Prvý používateľ
 
 ```bash
-read -rsp "Heslo pre nového používateľa: " PW; echo
-docker compose exec web python -m vlaky create-user admin --role admin --password "$PW" \
+docker compose exec web python -m vlaky create-user admin --role admin --password \
     --full-name "Meno Priezvisko" --email spravca@dopravca.example
-unset PW
 ```
 
-Roly: `dispecer`, `veduci`, `planovac`, `obchod`, `admin`. Heslo sa takto neuloží do histórie príkazov.
-Prihlás sa na `https://agent.dopravca.example` a ďalších používateľov vytváraj podľa potreby.
+`--password` bez hodnoty: heslo sa vypýta (dvakrát) a neuloží sa do histórie príkazov ani do zoznamu procesov;
+v skripte sa prečíta z prvého riadku vstupu (`printf '%s\n' "$PW" | docker compose exec -T web python -m vlaky create-user … --password`).
+Heslo má aspoň 10 znakov. Roly: `dispecer`, `veduci`, `planovac`, `obchod`, `admin`. Prihlasovacie meno je ako
+vo webe: malé písmená, 3 – 80 znakov (písmená, číslice, `.`, `_`, `-`).
+
+Existujúci účet `create-user` nikdy nezmení – ani zrušený, ani starší účet s veľkými písmenami (napr. `Admin`):
+skončí chybou „Používateľ … už existuje“ (návratový kód 2) a nič nezmení. Zmena existujúceho účtu je `--update`
+a zmenia sa len zadané údaje (`--password`, `--role`, `--full-name`, `--email`, `--phone`): nové heslo
+`create-user jnovak --update --password`, rola `create-user jnovak --update --role veduci`, zrušený účet znova
+povolí `create-user jnovak --update --activate`. Zmena sa zapíše do auditu (`user_update`, heslo bez hodnoty).
+Prihlás sa na `https://agent.dopravca.example` a ďalších používateľov vytváraj podľa potreby (aj vo webe, Používatelia).
 
 ### 4.9 Skúšobná správa
 
 ```bash
-docker compose exec agent python -m vlaky test-notify
+docker compose exec agent python -m vlaky test-notify              # všetky kanály
+docker compose exec agent python -m vlaky test-notify --kanal sms  # len vybraný kanál (dá sa zopakovať)
 ```
 
-Vypíše pre každý kanál príjemcu a stav. V tieňovej prevádzke ide správa **len** na
-`VLAKY_SHADOW_EMAILS` (SMS a Teams sú vypnuté); ostatní príjemcovia sa vôbec neskúšajú.
-Kópia každej správy je aj vo zväzku `odoslane` (audit). Ak správa nepríde: kapitola 6 a
+Pošle skúšobnú správu na každý kanál interného zoznamu, ktorý má príjemcov – e-mail (`VLAKY_NOTIFY_EMAILS`),
+Teams (`VLAKY_TEAMS_WEBHOOK_URL`) aj SMS (`VLAKY_NOTIFY_PHONES`) – a pre každého príjemcu vypíše kanál, príjemcu
+a stav. Vypíše aj kanály bez príjemcov, kanál bez servera správ (`POZOR: …`) a neznáme premenné `VLAKY_*`
+(preklep v názve, napr. `VLAKY_SMTP_SERVER` namiesto `VLAKY_SMTP_HOST`). Návratový kód 0 = všetko odišlo
+(„VÝSLEDOK: OK“ – over, že správa naozaj prišla na každý kanál), 1 = chyba (stav `chyba` alebo `zablokovana`,
+prázdny interný zoznam, v ostrej prevádzke správa len v outboxe); dôvod je v riadku „VÝSLEDOK: CHYBA – …“.
+V tieňovej prevádzke ide správa **len** na `VLAKY_SHADOW_EMAILS` (SMS a Teams sú vypnuté); ostatní príjemcovia
+sa vôbec neskúšajú. Stav `outbox` (server správ nie je nastavený, správa je len v adresári outbox – zväzok
+`odoslane`) stačí len vo vývoji a v ukážke (`VLAKY_ENV` dev, test, demo); v ostrej prevádzke je to chyba
+doručenia (kapitola 6.5). Kópia každej správy je vo zväzku `odoslane` (audit). Ak správa nepríde: kapitola 6 a
 `docker compose logs --tail 100 agent`.
 
 ### 4.10 Zálohy, kontrola servera a monitoring
@@ -274,6 +294,14 @@ Prevádzkové e-maily musia **naďalej chodiť aj ľuďom** – agent dostáva k
   Google Workspace – smerovanie „Also deliver to“ (Admin console → Gmail → Routing),
 - **nepoužívaj** preposielanie pravidlom v Outlooku/Gmaile používateľa – mení odosielateľa a overenie
   odosielateľa by zlyhalo (správy by skončili v karanténe).
+
+**Kópie vlastných správ agenta** (odosielateľ `VLAKY_SMTP_FROM`, pri odosielaní cez Microsoft Graph aj
+`VLAKY_GRAPH_MAILBOX`, alebo hlavička `X-Agent-Dispecer`, ktorá ostane aj po prepísaní odosielateľa distribučným
+zoznamom) sa neukladajú ani nespracúvajú – v audite je len záznam `email_vlastny_preskoceny` s výsledkom overenia
+odosielateľa (kapitola 13). Dispečerská schránka, ktorú pravidlo toku pošty kopíruje agentovi, preto môže byť aj
+medzi príjemcami notifikácií (`VLAKY_NOTIFY_EMAILS`). Ani tu nepoužívaj preposielanie pravidlom používateľa –
+preposlaná notifikácia už nie je správa agenta. Automatické odpovede dispečerov (neprítomnosť, potvrdenie
+o prečítaní) agent nespracúva a neodpovedá na ne (audit `reply_automatic`).
 
 ### 5.1 Microsoft 365 (Microsoft Graph) – odporúčané pre M365
 
@@ -366,9 +394,14 @@ docker compose exec -T agent sh -c 'cat > /app/data/schranka/skuska.eml' < data/
   do `forwarded_from` a všetko z neho ide na potvrdenie dispečerom. Textová príloha sa považuje za priložený
   e-mail, len keď začína skutočným blokom hlavičiek (From s adresou a aspoň jedna z hlavičiek Date, Subject,
   Message-ID, Received, MIME-Version).
-- **Rovnaké Message-ID od iného odosielateľa** sa uloží ako samostatný e-mail (Message-ID s dodatkom `#<sha>`)
-  a zapíše sa do auditu (`email_message_id_kolizia`, kapitola 13); potichu sa preskočí len opakované doručenie
-  od toho istého odosielateľa. Microsoft Graph preto číta aj adresu odosielateľa (pole `from`, stačí oprávnenie
+- **Rovnaké Message-ID:** potichu sa preskočí len opakované doručenie tej istej správy (rovnaké Message-ID,
+  odosielateľ aj obsah – predmet, text, prílohy –, aj s inou hlavičkou Received). E-mail s rovnakým Message-ID,
+  ale iným obsahom – od iného aj od toho istého odosielateľa (KIS či poštový server Message-ID zopakoval) – sa
+  uloží ako samostatný e-mail (Message-ID s dodatkom `#<sha>`) a zapíše sa do auditu (`email_message_id_kolizia`,
+  kapitola 13); neoverená kópia s iným obsahom od toho istého odosielateľa sa neuloží (len záznam v audite).
+  Microsoft Graph bez stiahnutia preskočí len opätovné doručenie tej istej správy (rovnaký odosielateľ a čas
+  prijatia, aj kópia uložená pri kolízii Message-ID); inú správu s rovnakým Message-ID stiahne a o kópii rozhodne
+  obsah. Preto číta aj adresu odosielateľa a čas prijatia (polia `from` a `receivedDateTime`, stačí oprávnenie
   `Mail.Read`).
 - Obsah e-mailov je pre agenta len dáta – pokyny v e-mailoch nevykonáva a odkazy neotvára.
 
@@ -389,6 +422,10 @@ Agent posiela e-maily cez `VLAKY_SMTP_HOST`/`PORT` (587 + STARTTLS) s menom a he
 - **Google Workspace:** `smtp.gmail.com`, port 587, účet agenta a heslo aplikácie (kapitola 5.2),
   alebo služba SMTP relay v Admin console.
 - **Iný poskytovateľ:** podľa jeho návodu (port 587, STARTTLS).
+
+Každý e-mail agenta nesie značku `X-Agent-Dispecer` (aj pri odosielaní cez Microsoft Graph – podľa nej agent
+spozná kópie vlastných správ, kapitola 5) a hlavičku `X-Auto-Response-Suppress: All`, pri SMTP aj
+`Auto-Submitted: auto-generated`, aby na upozornenia neodpovedali automatické odpovede (neprítomnosť).
 
 Overenie: `docker compose exec agent python -m vlaky test-notify`.
 
@@ -419,9 +456,18 @@ na poštovom serveri (PROMPT.md 2.2 – „SMTP relé odmietne iné adresy“):
 ### 6.4 Microsoft Teams a SMS
 
 - **Teams** (`VLAKY_TEAMS_WEBHOOK_URL`): v kanáli dispečingu vytvor webhook cez **Workflows**
-  (Power Automate, šablóna typu „Post to a channel when a webhook request is received“). Agent posiela
-  JSON `{"text": "…"}`; tok nastav tak, aby text z požiadavky zverejnil v kanáli. Staré konektory
-  „Incoming Webhook“ Microsoft postupne ruší – over aktuálny stav. URL webhooku je tajomstvo.
+  (Power Automate) zo šablóny **„Post to a channel when a webhook request is received“** a šablónu nemeň.
+  Agent posiela správu Teams s kartou Adaptive Card (pole `text` na najvyššej úrovni nemá):
+  ```json
+  {"type": "message", "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive",
+    "content": {"type": "AdaptiveCard", "version": "1.4", "body": [
+      {"type": "TextBlock", "text": "<predmet>", "weight": "Bolder", "wrap": true},
+      {"type": "TextBlock", "text": "<text správy>", "wrap": true, "fontType": "Monospace"}]}}]}
+  ```
+  Šablóna zverejní v kanáli kartu z `attachments`. Tok, ktorý zverejňuje `text` z požiadavky (`triggerBody()?['text']`),
+  by zverejňoval prázdne správy – a agent by ich aj tak považoval za odoslané (webhook odpovie 2xx). Po nastavení
+  spusti `python -m vlaky test-notify` a over, že karta prišla do kanála. Staré konektory „Incoming Webhook“
+  Microsoft postupne ruší – over aktuálny stav. URL webhooku je tajomstvo.
 - **SMS** (`VLAKY_SMS_GATEWAY_URL`, `VLAKY_SMS_GATEWAY_TOKEN`): HTTP brána, ktorá prijme
   `POST` JSON `{"to": "+421…", "text": "…"}` s hlavičkou `Authorization: Bearer <token>`.
   Vyber poskytovateľa v EÚ s DPA. SMS chodia len pri priorite KRITICKÉ a len na `VLAKY_NOTIFY_PHONES`.
@@ -447,6 +493,21 @@ na poštovom serveri (PROMPT.md 2.2 – „SMTP relé odmietne iné adresy“):
   prišli každému dispečerovi zo zoznamu. Aktuálne odporúčanie sa skúša doručiť najviac 48 h (nie pre ukončený
   vlak); nahradené alebo rozhodnuté odporúčanie sa už neposiela. Upozornenia na rušňovodiča a státie vlaku sa
   skúšajú v každom cykle, kým platia (pri výpadku najviac jeden pokus o spojenie na kanál za cyklus).
+- **Jednorazové upozornenia:** hlásenie rušňovodiča o probléme (z aplikácie pre rušňovodiča) a pripomienka výluky
+  do odvolania sa pri výpadku opakujú rovnako – tá istá správa, len tým, ktorým neprišla, najviac 48 h od prvého
+  pokusu; pripomienka len kým výluka stále platí do odvolania (zrušená, odvolaná alebo znova posunutá výluka sa
+  už nepripomína). Kým neprídu, zdravie ich počíta ako nedoručené – iná doručená správa ich nevybaví. Hlásenie
+  rušňovodiča uvádza čas nahlásenia („Nahlásené: …“) a aplikácia rušňovodičovi ukáže, že upozornenie sa zatiaľ
+  nepodarilo odoslať. Nedoručené odporúčanie sa sleduje podľa odporúčania a príjemcu: po obnovení servera ho vybaví
+  doručenie toho istého odporúčania, aj keď sa medzitým posunul odchod.
+- **Server správ nie je nastavený:** v ostrej prevádzke (`VLAKY_ENV` iné ako dev, test, demo) je kanál
+  s príjemcami bez servera správ (chýba `VLAKY_SMTP_HOST`, pri `VLAKY_NOTIFY_TRANSPORT=graph` úplné nastavenie
+  `VLAKY_GRAPH_*`, pri číslach vo `VLAKY_NOTIFY_PHONES` brána `VLAKY_SMS_GATEWAY_URL` – prípadne preklep v názve
+  premennej) chybou doručenia „Chyba kanála: … server správ nie je nastavený (…) – správa je len v outboxe“, nie
+  odoslanou správou. Opakuje sa ako pri výpadku. Agent to vypíše pri štarte, hlási v každom cykle („nastavenie
+  odosielania: …“, heartbeat `/fail`), aj keď práve nič neodchádza, a v zdraví (detail `konfiguracia`). Vo vývoji,
+  v testoch a v ukážke stačí kópia v adresári outbox (stav `outbox`). Neznáme premenné `VLAKY_*` sa len uvedú
+  v detaile `konfiguracia` (chybu nespôsobia).
 
 Sledovanie nedoručených správ: kapitola 12; postup: kapitola 13 („Upozornenia sa nedoručujú“).
 
@@ -467,7 +528,7 @@ ani zákazníkov; koncepty správ pre nich posiela dispečer sám.
    ```bash
    nano .env                     # VLAKY_SHADOW_MODE=false, skontroluj VLAKY_NOTIFY_*
    docker compose up -d
-   docker compose exec agent python -m vlaky test-notify    # musia prísť e-mail, Teams, SMS
+   docker compose exec agent python -m vlaky test-notify    # skúsi e-mail, Teams aj SMS; kód 0 = odišlo – over, že prišli
    ```
 4. Návrat do tieňového režimu kedykoľvek rovnako (`true` + `docker compose up -d`).
 
@@ -595,9 +656,11 @@ Podrobný návod: [deploy/monitoring/README.md](../deploy/monitoring/README.md).
 |---|---|---|
 | Agent žije | `VLAKY_HEARTBEAT_URL` – agent pinguje každých 5 min | ping chýba > 15 min |
 | Web a databáza | externá kontrola `https://agent.dopravca.example/health` | 2 zlyhania po sebe |
-| Server | `check.sh` každých 15 min (disk, vek zálohy, kontajnery, HTTPS, certifikát) → `CHECK_HEARTBEAT_URL` | `/fail` s dôvodom |
+| Server | `check.sh` každých 15 min (disk, vek zálohy, kontajnery alebo služby, HTTPS, certifikát; bez Dockera aj zdravie agenta `python -m vlaky health`; čo sa skontrolovať nedá, je CHYBA) → `CHECK_HEARTBEAT_URL` | `/fail` s dôvodom |
 | Záloha | `backup.sh` → `BACKUP_HEARTBEAT_URL` | `/fail` alebo chýba > 26 h |
-| Doručovanie upozornení | kým ostáva niečo nedoručené, agent v každom cykle hlási chybu „doručenie: N správ(a) sa nepodarilo doručiť (kanály)“ (heartbeat `/fail`, bez adries príjemcov); `python -m vlaky health` vráti chybu (kontajner agenta je „unhealthy“, `update.sh` a `check.sh` to ohlásia) s detailom `dorucenie` – rovnako stránka `/zdravie` a denná správa | `/fail` alebo kontajner agenta „unhealthy“ |
+| Doručovanie upozornení | kým ostáva niečo nedoručené, agent v každom cykle hlási chybu „doručenie: N správ sa nepodarilo doručiť (kanály)“ (1 správu, 2 – 4 správy) (heartbeat `/fail`, bez adries príjemcov); `python -m vlaky health` vráti chybu (kontajner agenta je „unhealthy“, `update.sh` a `check.sh` to ohlásia) s detailom `dorucenie` – rovnako stránka `/zdravie` a denná správa. Nedoručené sa počítajú po správe a príjemcovi (odporúčanie podľa odporúčania – po obnovení servera zmiznú, hneď ako odporúčanie príde); denná správa uvádza „nedoručené správy: N (neúspešné pokusy o doručenie za 24 h: M)“ | `/fail` alebo kontajner agenta „unhealthy“ |
+| Schránka | `python -m vlaky health` (detail `schranka`) a `/zdravie`: čas poslednej úplnej kontroly („pred N min“). Nahromadená pošta sa dočítava po dávkach 50 e-mailov (ďalšia dávka o 5 s); „dočítava sa (…), posledná úplná kontrola pred N min“ je v poriadku, kým od poslednej úplnej kontroly neuplynulo 30 min, potom je to chyba zdravia aj cyklu „schránka: dočítava sa … (viac ako 30 min!)“ | `/fail` alebo kontajner agenta „unhealthy“ |
+| Nastavenie odosielania | detail `konfiguracia`: kanál s príjemcami bez servera správ (v ostrej prevádzke chyba zdravia aj cyklu „nastavenie odosielania: …“), neznáme premenné `VLAKY_*` (len upozornenie); agent ho vypíše aj pri štarte | `/fail` |
 | Chybné odporúčanie | odporúčanie, ktorého správu sa nedá pripraviť (chyba programu alebo neočakávané údaje), hlási každý cyklus ako „odporúčanie #N: …“ (heartbeat `/fail`, detail so stopou v `/zdravie`, komponent planovanie); ostatné odporúčania sa doručujú normálne | `/fail` |
 
 Externý monitoring musí bežať **mimo tohto servera** a upozorňovať aspoň dvoch ľudí.
@@ -610,8 +673,13 @@ Pri každom incidente: (1) informuj dispečing, či má pracovať ručne, (2) za
 
 ### Agent nebeží (upozornenie heartbeat)
 
-1. **Dispečing:** pracuje ako doteraz podľa e-mailov vo svojej schránke – nič sa nestratí,
-   agent po spustení schránku dočíta.
+1. **Dispečing:** pracuje ako doteraz podľa e-mailov vo svojej schránke – nič sa nestratí. Agent po spustení
+   schránku dočíta po dávkach 50 e-mailov (ďalšia dávka o pár sekúnd). Kým ju nedočíta, nedá ZELENÚ (kontrola
+   schránky nie je úplná – odporúčanie uvedie „Agent ešte dočítava nahromadenú poštu (posledná úplná kontrola
+   schránky pred X min)“, web „schránka agenta sa dočítava …“) a zmenu ZELENÁ → ORANŽOVÁ, ktorá vznikla len pre
+   dočítavanie, dispečerom neposiela; po dočítaní vlaky hneď prepočíta. Nová výluka z nahromadenej pošty sa
+   oznámi hneď. Dočítavanie dlhšie ako 30 min od poslednej úplnej kontroly hlási zdravie aj heartbeat
+   („schránka: dočítava sa …“) – častou príčinou je pomalý jazykový model (pozri „LLM nedostupné“).
 2. `docker compose ps` – stav kontajnera `agent`.
 3. `docker compose logs --tail 200 agent` a `docker compose exec agent python -m vlaky health`
    (DB, posledný cyklus, posledná kontrola schránky).
@@ -627,8 +695,19 @@ Caddy pri nedostupnom webe zobrazí dispečerom správu „webová aplikácia je
 
 ### Vypršal alebo zlyhal prístup do schránky
 
-Príznaky: v stave agenta chyba schránky, `health` hlási starú kontrolu schránky, v logu
-`AADSTS7000222` (vypršané tajomstvo Graph), `invalid_client`, `AUTHENTICATIONFAILED` (IMAP).
+Príznaky: chyba cyklu a zdravia „schránka sa nedá čítať: …“ (v logu agenta `docker compose logs agent`, v heartbeate
+aj na `/zdravie`, komponent schranka), `health` hlási starú kontrolu schránky. Text chyby ukáže príčinu so stručným
+kódom od servera – kód je v zátvorke, len ak ho server pošle; celý popis servera sa nezapisuje (obsahuje
+identifikátory):
+
+- **Microsoft Graph:** „Získanie tokenu Microsoft Graph zlyhalo (HTTP 401, invalid_client, AADSTS7000222)“ –
+  `AADSTS7000222` = vypršané tajomstvo aplikácie; `invalid_client` s iným kódom AADSTS (napr. AADSTS7000215) =
+  nesprávne tajomstvo alebo ID aplikácie. „Čítanie schránky cez Microsoft Graph zlyhalo (HTTP 403, ErrorAccessDenied)“
+  = aplikácia nemá prístup ku schránke (politika prístupu, oprávnenie `Mail.Read`).
+- **IMAP:** „Prihlásenie do IMAP zlyhalo (AUTHENTICATIONFAILED – skontrolujte používateľa a heslo)“ = nesprávne
+  meno alebo heslo aplikácie; „IMAP server … nie je dostupný (…)“ = sieť, DNS alebo port.
+
+Postup:
 
 - **Graph:** v Entra ID → App registrations → Certificates & secrets vytvor nové tajomstvo,
   vlož do `VLAKY_GRAPH_CLIENT_SECRET`, `docker compose up -d`, staré tajomstvo zmaž.
@@ -640,28 +719,49 @@ Príznaky: v stave agenta chyba schránky, `health` hlási starú kontrolu schr�
 ### Upozornenia sa nedoručujú (zdravie: `dorucenie`)
 
 1. **Dispečing:** odporúčania sú stále na webe (Odporúčania, nástenka) – nech ich dispečeri sledujú tam.
-2. `docker compose exec agent python -m vlaky health` – detail `dorucenie` ukáže kanál a poslednú chybu
-   („Chyba kanála: …“ = server alebo spojenie, inak odmietnutie konkrétnej správy alebo príjemcu).
+2. `docker compose exec agent python -m vlaky health` – detail `dorucenie` ukáže počet nedoručených správ (správa
+   a príjemca, nie počet pokusov), kanály a poslednú skutočnú chybu (správa odložená ističom „Neodoslané – kanál …
+   je teraz nedostupný“ patrí k tomu istému výpadku a zdravie ju neukazuje namiesto príčiny): „Chyba kanála: …“ =
+   výpadok servera alebo spojenia (krok 3); „Chyba kanála: … server správ nie je nastavený (…) – správa je len
+   v outboxe“ = v ostrej prevádzke chýba nastavenie servera správ (detail `konfiguracia`, kapitola 6.5); iný text
+   (napr. `SMTPRecipientsRefused`/550, HTTP 403 alebo 404 SMS brány) = odmietnutie konkrétnej správy alebo
+   príjemcu (krok 4).
 3. **E-mail:** dostupnosť SMTP servera alebo relé, heslo alebo konektor (kapitola 6.1), pri Microsoft Graph
    platnosť tajomstva aplikácie; **Teams:** či webhook (Workflow) ešte existuje; **SMS:** stav brány a token.
 4. **Odmietnutý príjemca** (napr. 550 user unknown, SMS brána odmieta číslo): oprav adresu vo
    `VLAKY_NOTIFY_EMAILS` alebo číslo vo `VLAKY_NOTIFY_PHONES` a reštartuj agenta (`docker compose up -d`).
 5. Po oprave servera agent nedoručené správy pošle sám (KRITICKÉ do 5 min, ostatné najneskôr do 60 min, hneď
-   po prvej úspešnej správe tomu istému príjemcovi). Odosielanie over:
-   `docker compose exec agent python -m vlaky test-notify`.
+   po prvej úspešnej správe tomu istému príjemcovi) – aj hlásenia rušňovodičov o probléme a pripomienky výluk do
+   odvolania (kapitola 6.5). Odosielanie over:
+   `docker compose exec agent python -m vlaky test-notify` (kód 0 = odišlo; over, že správa prišla).
 
 ### Neobvyklé záznamy auditu pošty
 
-- `email_message_id_kolizia` – e-mail s rovnakým Message-ID od iného odosielateľa sa uložil samostatne
-  (Message-ID s dodatkom „#…“, kapitola 5.5); over pravosť oboch e-mailov.
+- `email_message_id_kolizia` – prišiel e-mail s Message-ID, ktoré už má uložený e-mail, ale s iným obsahom (aj od
+  toho istého odosielateľa – `rovnaky_odosielatel`, napr. KIS Message-ID zopakoval): uložil sa samostatne
+  s dodatkom „#…“ k Message-ID (kapitola 5.5) – skontroluj oba a over ich pravosť; neoverená kópia od toho istého
+  odosielateľa sa neuložila (`ulozeny: false`).
+- `email_vlastny_preskoceny` – kópia vlastnej správy agenta (kapitola 5); neúspešné overenie odosielateľa
+  (`overenie: karantena`) znamená možný podvrh s adresou agenta.
 - `vyluka_navrh_zlyhal` – záznam „navrh“ pre plánovač sa nepodarilo zapísať (napr. chyba databázy); udalosť
-  ostáva vo fronte s upozornením a plánovač s ňou do potvrdenia nepočíta.
+  ostáva vo fronte s upozornením a plánovač s ňou do potvrdenia nepočíta – vlaky, ktorých sa môže týkať, preto
+  nedostanú ZELENÚ.
+- `zmeny_zrusenej_vyluky_odstranene` – potvrdené zrušenie výluky odstránilo dočasné záznamy starších čakajúcich
+  zmien tej istej výluky; ich potvrdenie už nič nezapíše.
+- `closure_update_conflict` – dispečer ukladal zastaraný formulár výluky (uloženie odmietnuté, výluka sa nezmenila).
+- `reply_rejected` – odpoveď dispečera e-mailom (`PRIJAŤ` / `ZAMIETNUŤ`) sa nezapísala; dôvod je v zázname
+  (dispečerovi, ktorý prešiel overením odosielateľa, agent krátko odpísal prečo).
+- `reply_automatic` – automatická odpoveď dispečera (neprítomnosť, potvrdenie o prečítaní) sa nespracovala a agent
+  na ňu neodpovedal.
 
 ### LLM nedostupné
 
 Extrakcia pokračuje **len s pravidlami** (agent to uvedie pri udalosti); viac udalostí ide na potvrdenie
-dispečerovi. Over stav služby poskytovateľa, platnosť kľúča a limit výdavkov. Pri dlhšom výpadku
-môžeš dočasne nastaviť `VLAKY_LLM_PROVIDER=none` (`docker compose up -d`) – zmizne čakanie na časový limit.
+dispečerovi. Po chybe spojenia s API (časový limit, nedostupný server, HTTP 429/5xx) agent jazykový model
+10 min nepoužije a zvyšok e-mailov spracuje pravidlami (istič) – nahromadená pošta tak nečaká na časový limit
+pri každom e-maile. Over stav služby poskytovateľa, platnosť kľúča a limit výdavkov. Pri dlhšom výpadku
+môžeš dočasne nastaviť `VLAKY_LLM_PROVIDER=none` (`docker compose up -d`) – zmizne aj čakanie na časový limit
+pri pokuse po uplynutí ističa.
 
 ### Plný disk
 
@@ -800,7 +900,20 @@ Environment=VLAKY_UPSTREAM=127.0.0.1:8000
 potom `sudo systemctl restart caddy`. **Zálohy a kontrola:** v `/etc/vlaky/ops.env` nastav
 `DEPLOY_MODE=systemd`, `BACKUP_DATABASE_URL` (rovnaké ako `VLAKY_DATABASE_URL`) a
 `BACKUP_FILES_ROOT=/var/lib/vlaky`; ostrú obnovu spúšťaj cez `sudo`.
-Ďalšie príkazy cez funkciu: `vlaky-cli create-user …`, `vlaky-cli test-notify`, `vlaky-cli health`.
+
+**Kontrola servera bez Dockera:** `check.sh` (`vlaky-check.timer`, beží ako `vlaky`) pri `DEPLOY_MODE=systemd`
+kontroluje služby systemd, spustí aj zdravie agenta `python -m vlaky health` s konfiguráciou služieb
+(`CHECK_ENV_FILE`, predvolene `/etc/vlaky/vlaky.env`; Python `CHECK_PYTHON`, predvolene `/opt/vlaky/venv/bin/python`
+– oboje v `/etc/vlaky/ops.env`) a HTTPS s certifikátom overí pre doménu z `CHECK_URL`, `VLAKY_DOMAIN` alebo
+z `VLAKY_PUBLIC_URL` (`https://…`) v `/etc/vlaky/vlaky.env`. Neznáma doména, chýbajúci Python či nečitateľná
+konfigurácia sú CHYBA, nie potichu OK – `/etc/vlaky/vlaky.env` preto musí byť čitateľný pre skupinu `vlaky`
+(0640 root:vlaky, ako vyššie). Ďalší krok v riadkoch CHYBA je pre systemd (`systemctl status caddy vlaky-web`,
+`journalctl -u caddy -u vlaky-web`). Podrobnosti zdravia (môžu obsahovať interné adresy) idú len do výpisu, na
+`CHECK_HEARTBEAT_URL` len riadok CHYBA.
+
+Ďalšie príkazy cez funkciu: `vlaky-cli create-user …`, `vlaky-cli test-notify`, `vlaky-cli health`. Heslo nového
+(bez `--update`) alebo meneného používateľa bez histórie príkazov:
+`read -rsp "Heslo: " PW; echo; printf '%s\n' "$PW" | vlaky-cli create-user jnovak --update --password; unset PW`.
 Aktualizácia: záloha, `git pull`, `pip install -r requirements.txt`, `vlaky-cli init-db`,
 `sudo systemctl restart vlaky-web vlaky-agent` (skript `update.sh` je len pre Docker).
 
@@ -864,8 +977,10 @@ Súkromné kľúče nikdy neposielaj e-mailom; každý správca má vlastný kľ
 | Reštart po zmene `.env` | `docker compose up -d` |
 | Reštart jednej služby | `docker compose restart agent` |
 | Zastavenie / spustenie všetkého | `docker compose down` / `docker compose up -d` (dáta zostávajú vo zväzkoch; **nikdy** `down -v`) |
-| Nový používateľ | `docker compose exec web python -m vlaky create-user MENO --role dispecer --password "$PW"` |
-| Skúšobná správa | `docker compose exec agent python -m vlaky test-notify` |
+| Nový používateľ | `docker compose exec web python -m vlaky create-user MENO --role dispecer --password` (heslo sa vypýta; existujúci účet sa nezmení) |
+| Zmena účtu | `docker compose exec web python -m vlaky create-user MENO --update --password` (nové heslo), `--role …`, `--activate` (zmenia sa len zadané údaje) |
+| Jeden cyklus agenta (test, cron) | `docker compose exec agent python -m vlaky agent --once` (kód 1 = chyba v cykle, napr. schránka sa nedá prečítať) |
+| Skúšobná správa | `docker compose exec agent python -m vlaky test-notify` (všetky kanály; `--kanal email`, `--kanal teams` alebo `--kanal sms` len jeden), kód 0 = odišlo – over doručenie |
 | Aktualizácia / návrat | `deploy/scripts/update.sh` / `deploy/scripts/update.sh --rollback` |
 | Záloha / zoznam / test obnovy | `deploy/backup/backup.sh` / `deploy/backup/restore.sh --list` / `--test` |
 | Kontrola servera | `deploy/monitoring/check.sh` |
