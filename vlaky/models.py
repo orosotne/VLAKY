@@ -249,6 +249,10 @@ class Train(Base):
     # planovany|na_ceste_k_hranici|prevzaty|v_jazde|odstaveny|odovzdany|ukonceny|zruseny
     ready_utc: Mapped[Optional[datetime]] = _ts()                      # kedy bude (je) pripravený
     planned_departure_utc: Mapped[Optional[datetime]] = _ts()
+    # od kedy vlak stojí na koľajach ŽSR (príchod na hranicu, prevzatie, odstavenie) – kotva limitu 18 h (PPŽS);
+    # pri odchode sa vymaže. Zapisuje ho len vlaky.planovanie.stav (hlásenie „pripravený“ ho nemení).
+    standing_since_utc: Mapped[Optional[datetime]] = _ts()
+    departed_utc: Mapped[Optional[datetime]] = _ts()                   # posledný skutočný odchod (stav „v jazde“)
     deadline_utc: Mapped[Optional[datetime]] = _ts()
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

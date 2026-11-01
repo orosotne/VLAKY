@@ -183,7 +183,9 @@ def _sim_position(session, train: Train, now: datetime) -> bool:
                                snapped_lon=m["lon"] if m else None, off_track_m=m["dist_m"] if m else None,
                                nearest_station=st.name if st else ""))
     if frac >= 1.0:
-        train.status = "ukonceny"
+        from ..planovanie.stav import set_status
+
+        set_status(session, train, "ukonceny", now)
     return True
 
 

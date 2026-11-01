@@ -17,6 +17,25 @@ def _t(iso: str | None) -> str:
         return iso
 
 
+def _duty_h(crew: dict) -> str:
+    try:
+        return f"{float(crew.get('max_duty_h') or 13):g}"
+    except (TypeError, ValueError):
+        return "13"
+
+
+def crew_relief_text(crew: dict | None) -> str:
+    """Kedy vystriedať rušňovodiča. Pri neznámom nástupe (``unknown_start``) len ako odhad – nikdy ako fakt."""
+    crew = crew or {}
+    if crew.get("unknown_start"):
+        if crew.get("relieve_by"):
+            return f"odhad: vystriedať najneskôr o {_t(crew['relieve_by'])} (nástup rušňovodiča nie je zadaný)"
+        return f"limit {_duty_h(crew)} h sa nedá overiť – zadajte nástup rušňovodiča"
+    if crew.get("relieve_by"):
+        return f"vystriedať najneskôr o {_t(crew['relieve_by'])}"
+    return ""
+
+
 def recommendation_subject(rec: Recommendation) -> str:
     train = rec.train
     rel = f"{train.origin} → {train.destination}" if train else ""
@@ -60,11 +79,18 @@ def recommendation_body(rec: Recommendation) -> str:
             txt = ", ".join(f"{_t(a)} – {_t(b)}" for a, b in wins) or "žiadne"
             lines.append(f"  {route}: {txt}")
     crew = rec.crew or {}
-    if crew:
+    if crew.get("unknown_start"):
+        # nástup rušňovodiča nie je zadaný – časy sú len odhad, nie fakt
+        lines += ["", f"Rušňovodič: {crew.get('driver') or '—'} – nástup nie je zadaný, pracovný čas sa nedá "
+                      f"overiť – {crew.get('status', '')}", f"  → {crew_relief_text(crew)}."]
+        if crew.get("start"):
+            lines.append(f"  (odhad predpokladá nástup o {_t(crew.get('start'))} – odchod vlaku mínus príprava; "
+                         f"zadajte skutočný nástup rušňovodiča)")
+    elif crew:
         lines += ["", f"Rušňovodič: {crew.get('driver') or '—'}; nástup {_t(crew.get('start'))}, limit "
                       f"{crew.get('max_duty_h', 13)} h do {_t(crew.get('limit'))}; koniec {_t(crew.get('end_p50'))} "
                       f"(90 % do {_t(crew.get('end_p90'))}) – {crew.get('status', '')}"]
-        if crew.get("status") in ("ORANŽOVÁ", "ČERVENÁ"):
+        if crew.get("status") in ("ORANŽOVÁ", "ČERVENÁ") and crew.get("relieve_by"):
             lines.append(f"  → Vystriedať najneskôr o {_t(crew.get('relieve_by'))}.")
     if rec.variants:
         lines += ["", "Porovnanie variantov:"]
@@ -104,8 +130,12 @@ def sms_text(rec: Recommendation) -> str:
     txt = f"AGENT {rec.priority}: vlak {train.number if train else '?'} {rec.decision}"
     if ch.get("depart") and rec.decision not in ("ESKALOVAŤ", "POKRAČOVAŤ"):
         txt += f" {_t(ch['depart'])}"
-    if (rec.crew or {}).get("status") in ("ORANŽOVÁ", "ČERVENÁ"):
-        txt += f"; vystriedať rušňovodiča do {_t(rec.crew.get('relieve_by'))}"
+    crew = rec.crew or {}
+    if crew.get("status") in ("ORANŽOVÁ", "ČERVENÁ"):
+        if crew.get("unknown_start"):
+            txt += f"; rušňovodič: {crew_relief_text(crew)}"
+        elif crew.get("relieve_by"):
+            txt += f"; vystriedať rušňovodiča do {_t(crew.get('relieve_by'))}"
     return (txt + f". Detail: {settings().public_url.rstrip('/')}/odporucania/{rec.id}")[:300]
 
 

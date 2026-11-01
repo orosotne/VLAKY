@@ -270,14 +270,23 @@ def driver_report(body: ReportIn, request: Request, background: BackgroundTasks)
         elif body.typ == "pripraveny":
             if train.status == "v_jazde":
                 return JSONResponse({"ok": False, "detail": "Vlak je už v jazde."}, status_code=409)
+            from ..planovanie import stav
+
             detail["previous_ready"] = train.ready_utc
-            train.ready_utc = now
+            if stav.keep_ready_on_report(s, train, now):
+                # vlak už stojí na koľajach ŽSR (odstavený, prevzatý, čaká pripravený od zmeškanej trasy): doterajší
+                # čas pripravenosti sa nemení – hlásenie nesmie posunúť limit 18 h státia (PPŽS); ostáva v audite
+                detail["ready_unchanged"] = True
+            else:
+                train.ready_utc = now
             message = f"Vlak pripravený o {fmt(now, False)}."
         elif body.typ == "odchod":
             if train.status == "v_jazde":
                 return JSONResponse({"ok": False, "detail": "Odchod už bol zaznamenaný."}, status_code=409)
+            from ..planovanie import stav
+
             detail["previous_status"] = train.status
-            train.status = "v_jazde"
+            stav.set_status(s, train, "v_jazde", now)  # státie končí, zapíše sa skutočný čas odchodu
             message = f"Odchod zaznamenaný o {fmt(now, False)}."
         else:
             message = "Problém odoslaný dispečerovi."

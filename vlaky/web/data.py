@@ -293,6 +293,9 @@ def _rec_dict(r: Optional[Recommendation]) -> Optional[dict]:
 def _driver_dict(sh: Optional[DriverShift], rec: Optional[Recommendation], params: dict,
                  now: datetime) -> Optional[dict]:
     crew = (rec.crew if rec is not None else None) or {}
+    if sh is not None and sh.status == "planovana" and ensure_utc(sh.start_utc) > now and crew.get("start") and \
+            not crew.get("unknown_start") and (parse_iso(crew["start"]) or ensure_utc(sh.start_utc)) <= now:
+        sh = None  # naplánované vystriedanie: kým nenastúpi, platí pracovný čas rušňovodiča v službe (odporúčanie)
     if sh is None and not crew:
         return None
     out: dict = {"name": "", "shift_id": None, "start": None, "limit": None, "left_min": None,
@@ -304,6 +307,17 @@ def _driver_dict(sh: Optional[DriverShift], rec: Optional[Recommendation], param
         out.update(name=sh.driver.name if sh.driver else "", shift_id=sh.id, start=iso(start), limit=iso(limit),
                    left_min=round(left), relieve_by=iso(limit - timedelta(minutes=params["crew_post_min"])),
                    color=crew_color(left, params["crew_buffer_min"]), shift_status=sh.status)
+    unknown = bool(crew.get("unknown_start")) and not (
+        sh is not None and sh.status == "prebieha" and ensure_utc(sh.start_utc) <= now)
+    if unknown:
+        # nástup rušňovodiča nie je zadaný: časy z odporúčania sú len odhad – nezobrazujú sa ako fakt
+        from ..notifikacie.texty import crew_relief_text
+
+        out.update(name=crew.get("driver") or out["name"], start=None, limit=None, left_min=None, relieve_by=None,
+                   end_p90=None, status=crew.get("status"), unknown_start=True, estimated=True,
+                   relieve_by_estimate=crew.get("relieve_by"), relieve_note=crew_relief_text(crew),
+                   color={"ČERVENÁ": "cervena"}.get(crew.get("status"), "oranzova"))
+        return out
     if crew:
         out["name"] = out["name"] or crew.get("driver") or ""
         out["status"] = crew.get("status")
@@ -336,6 +350,8 @@ def _next_station(rec: Optional[Recommendation], now: datetime) -> Optional[dict
 
 def _risk_text(route_closures: list, driver: Optional[dict], rec: Optional[Recommendation], pos: Optional[dict],
                running: bool) -> Optional[str]:
+    if driver and driver.get("unknown_start") and driver.get("relieve_note"):
+        return f"Rušňovodič: {driver['relieve_note']}"
     if driver and driver.get("color") in ("cervena", "oranzova") and driver.get("relieve_by"):
         return f"Rušňovodič: vystriedať najneskôr o {fmt(parse_iso(driver['relieve_by']))}"
     if route_closures:

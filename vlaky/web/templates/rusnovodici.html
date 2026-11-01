@@ -63,8 +63,13 @@
         <td>{% if r.train %}<a href="/vlaky/{{ r.train.id }}">{{ r.train.number }}</a>{% else %}—{% endif %}</td>
         <td class="nowrap">{{ sh.start_utc|t }}</td>
         <td class="nowrap">{{ r.limit|t }}</td>
-        <td>{% if sh.status == "prebieha" %}<span class="crew crew-{{ r.color }}" data-countdown="{{ sh.start_utc|iso }}" data-limit-min="{{ params.crew_max_duty_min }}" data-buffer-min="{{ params.crew_buffer_min }}">{{ r.left|minutes }}</span>{% if r.crew.get("end_p90") %}<div class="small muted">koniec P90 {{ r.crew.get("end_p90")|t }}</div>{% endif %}{% elif sh.status == "planovana" %}<span class="muted">plánovaná</span>{% else %}<span class="muted">ukončená {{ sh.actual_end_utc|t }}</span>{% endif %}</td>
+        <td>{% if sh.status == "prebieha" %}<span class="crew crew-{{ r.color }}" data-countdown="{{ sh.start_utc|iso }}" data-limit-min="{{ params.crew_max_duty_min }}" data-buffer-min="{{ params.crew_buffer_min }}">{{ r.left|minutes }}</span>{% if r.crew.get("end_p90") and not r.crew.get("unknown_start") %}<div class="small muted">koniec P90 {{ r.crew.get("end_p90")|t }}</div>{% endif %}{% elif sh.status == "planovana" %}<span class="muted">plánovaná</span>{% else %}<span class="muted">ukončená {{ sh.actual_end_utc|t }}</span>{% endif %}</td>
+        {% if sh.status == "planovana" and r.crew.get("unknown_start") %}
+        {# vlak ide, nástup rušňovodiča nie je zadaný (zmena len plánovaná): len odhad, nie fakt #}
+        <td class="small">{% if r.crew.get("relieve_by") %}odhad: vystriedať najneskôr o {{ r.crew.get("relieve_by")|t }} (nástup rušňovodiča nie je zadaný){% else %}limit {{ "%g"|format((r.crew.get("max_duty_h") or 13)|float) }} h sa nedá overiť – zadajte nástup rušňovodiča{% endif %}</td>
+        {% else %}
         <td class="nowrap">{% if sh.status != "ukoncena" %}<strong>{{ (r.crew.get("relieve_by") or r.relieve_by)|t }}</strong>{% else %}—{% endif %}</td>
+        {% endif %}
         <td>{{ SHIFT_STATUS.get(sh.status, sh.status) }}</td>
         {% if user.can("crew") %}
         <td class="actions-cell">

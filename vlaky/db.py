@@ -83,6 +83,23 @@ def _add_missing_columns(eng: Engine) -> None:
                 conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}{default}'))
 
 
+def prepare_savepoints(session: Session) -> None:
+    """Pripraví reláciu na vnorené transakcie (``session.begin_nested()`` = SAVEPOINT).
+
+    PostgreSQL ich podporuje priamo. pysqlite (predvolené správanie) pred SAVEPOINT nevydá BEGIN – SAVEPOINT by
+    sa stal vonkajšou transakciou (RELEASE by všetko potvrdil, ROLLBACK TO by nevrátil len časť). Preto sa na
+    SQLite transakcia otvorí hneď, a to so zámkom zápisu (BEGIN IMMEDIATE): odložený BEGIN by po dlhom čítaní
+    pri súbežnom zápise iného procesu (WAL) skončil chybou „database is locked“ na zastaranom snímku. Ak relácia
+    už transakciu má (napr. po zápise), nič sa nemení.
+    """
+    conn = session.connection()
+    if conn.dialect.name != "sqlite":
+        return
+    raw = conn.connection.dbapi_connection
+    if raw is not None and not raw.in_transaction:
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
+
+
 @contextmanager
 def session_scope(url: str | None = None) -> Iterator[Session]:
     engine(url)

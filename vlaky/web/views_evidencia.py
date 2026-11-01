@@ -171,9 +171,12 @@ def train_create(request: Request, background: BackgroundTasks, user=Depends(ope
             return render(request, "vlak_form.html", {"train": None, "values": reader.values(),
                                                       "errors": reader.errors, **_train_choices(s)},
                           user=user, status_code=422)
+        from ..planovanie import stav
+
         train = Train(**values)
         s.add(train)
         s.flush()
+        stav.pin_standing(s, train)  # zadaný ako stojaci alebo už čaká od minulej trasy → začiatok státia (18 h)
         audit(s, user.username, "train_create", "train", train.id,
               **{k: (iso(v) if hasattr(v, "tzinfo") else v) for k, v in values.items()})
         train_id, number = train.id, train.number
@@ -252,9 +255,18 @@ def train_update(train_id: int, request: Request, background: BackgroundTasks, u
         if not reader.ok:
             return render(request, "vlak_form.html", {"train": t, "values": reader.values(), "errors": reader.errors,
                                                       **_train_choices(s)}, user=user, status_code=422)
+        from ..planovanie import stav
+
         changes = _diff(t, values)
+        if changes:
+            # pred zápisom: začiatok státia z doterajších kotiev (zmeškaná trasa, minulá pripravenosť) – úprava
+            # pripravenosti ani stavu limit 18 h neposunie
+            stav.pin_standing(s, t)
         for k, v in values.items():
-            setattr(t, k, v)
+            if k != "status":
+                setattr(t, k, v)
+        # stav cez spoločné pravidlo: začiatok státia (limit 18 h) a odchod; čas úpravy nie je skutočný odchod
+        stav.set_status(s, t, values["status"], actual=False)
         if changes:
             audit(s, user.username, "train_update", "train", t.id, changes=changes)
         number = t.number
@@ -581,6 +593,11 @@ def handover_arrived(handover_id: int, request: Request, background: BackgroundT
         if h.status not in ("ocakavany", "prisiel"):
             return "Vlak už bol prevzatý."
         h.arrived_utc, h.status = ts, "prisiel"
+        t = s.get(Train, h.train_id)
+        if t is not None:
+            from ..planovanie import stav
+
+            stav.record_arrival(t, h, ts)  # od príchodu vlak stojí na koľajach ŽSR (limit 18 h)
         audit(s, user.username, "handover_arrived", "handover", h.id, train_id=h.train_id, ts=ts)
         return ""
 
@@ -607,7 +624,10 @@ def handover_taken(handover_id: int, request: Request, background: BackgroundTas
             h.findings = findings
         t = s.get(Train, h.train_id)
         if t is not None and t.status not in ("ukonceny", "zruseny"):
-            t.status = "prevzaty" if h.direction == "vstup" else "odovzdany"
+            from ..planovanie import stav
+
+            # vlak stojí ďalej – limit 18 h beží od príchodu na hranicu, nie od prevzatia
+            stav.record_takeover(s, t, h, ts)
         audit(s, user.username, "handover_taken_over", "handover", h.id, train_id=h.train_id, ts=ts,
               findings=findings, direction=h.direction)
         return ""
@@ -649,6 +669,8 @@ def _assignment_proposal(s) -> tuple:
 
 @router.get("/rusnovodici", response_class=HTMLResponse)
 def drivers_page(request: Request, navrh: int = 0, user=Depends(view)):
+    from .common import parse_iso
+
     now = now_utc()
     with session_scope() as s:
         proposal, proposal_error = _assignment_proposal(s) if navrh and user.can("crew") else (None, "")
@@ -671,6 +693,11 @@ def drivers_page(request: Request, navrh: int = 0, user=Depends(view)):
             color = crew_color(left, params["crew_buffer_min"]) if sh.status == "prebieha" else "seda"
             rec = recs.get(sh.train_id)
             crew_info = (rec.crew or {}) if rec is not None else {}
+            if sh.status == "prebieha" and crew_info.get("unknown_start"):
+                crew_info = {}  # odhad z času, keď nástup nebol zadaný – pre zaznamenanú zmenu neplatí
+            elif sh.status == "planovana" and crew_info.get("start") and not crew_info.get("unknown_start") and \
+                    (parse_iso(crew_info["start"]) or start) <= now < start:
+                crew_info = {}  # pracovný čas rušňovodiča v službe – nie tohto naplánovaného vystriedania
             if sh.status == "prebieha" and crew_info.get("status") == "ČERVENÁ":
                 color = "cervena"
             elif sh.status == "prebieha" and crew_info.get("status") == "ORANŽOVÁ" and color == "zelena":

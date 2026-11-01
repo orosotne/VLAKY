@@ -58,6 +58,17 @@
 {% if crew %}
 <section class="card crew-block crew-block-{{ crew.get('status')|color_class }}" aria-labelledby="h-crew">
   <h2 id="h-crew">Rušňovodič – pracovný čas (limit {{ crew.get("max_duty_h", 13) }} h)</h2>
+  {% if crew.get("unknown_start") %}
+  {# nástup nie je zadaný: časy sú len konzervatívny odhad, nikdy nie fakt #}
+  {% set duty_h = "%g"|format((crew.get("max_duty_h") or 13)|float) %}
+  <dl class="meta meta-wide">
+    <dt>Rušňovodič</dt><dd>{{ crew.get("driver") or "neznámy" }}</dd>
+    <dt>Nástup</dt><dd><span class="badge badge-warn">nie je zadaný</span>{% if crew.get("start") %} <span class="muted small">odhad {{ crew.get("start")|t }} (odchod vlaku mínus príprava)</span>{% endif %}</dd>
+    <dt>Stav</dt><dd>{{ m.semafor(crew.get("status")) }}</dd>
+  </dl>
+  {% if crew.get("relieve_by") %}<p class="relieve"><strong>odhad: vystriedať najneskôr o {{ crew.get("relieve_by")|t }} (nástup rušňovodiča nie je zadaný)</strong></p>
+  {% else %}<p class="relieve"><strong>limit {{ duty_h }} h sa nedá overiť – zadajte nástup rušňovodiča</strong></p>{% endif %}
+  {% else %}
   <dl class="meta meta-wide">
     <dt>Rušňovodič</dt><dd>{{ crew.get("driver") or "nepriradený" }}</dd>
     <dt>Nástup</dt><dd>{{ crew.get("start")|t }}</dd>
@@ -67,6 +78,7 @@
     <dt>Stav</dt><dd>{{ m.semafor(crew.get("status")) }}</dd>
   </dl>
   {% if crew.get("relieve_by") %}<p class="relieve">Vystriedať najneskôr o <strong>{{ crew.get("relieve_by")|t }}</strong></p>{% endif %}
+  {% endif %}
 </section>
 {% endif %}
 
