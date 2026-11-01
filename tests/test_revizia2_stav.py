@@ -141,7 +141,9 @@ def test_uprava_pripravenosti_stojaceho_vlaku_neposunie_kotvu(client, session, f
                                                           notes="pokračuje po výluke")}).status_code == 303
     session.expire_all()
     rec = evaluate_train(session, t.id, fixed_now, "po úprave")
-    assert any(f"Vlak stojí od {fmt(since)} dlhšie ako 18 h" in r for r in rec.reasons)
+    # stojí 16 h – limit ešte neuplynul, ale uplynie skôr, ako bude vlak pripravený (3. revízia, OD3)
+    assert any(f"Vlak stojí od {fmt(since)} – limit 18 h státia (PPŽS) uplynie {fmt(since + timedelta(hours=18))}"
+               in r for r in rec.reasons)
     # aj odchod hneď po novej pripravenosti by bol po limite – žiadny odchod sa neponúka, len eskalácia
     assert rec.decision == "ESKALOVAŤ" and rec.color == "ČERVENÁ"
     assert ensure_utc(session.get(Train, t.id).standing_since_utc) == since
