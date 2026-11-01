@@ -81,6 +81,8 @@ class ExtractedItem:
     field_confidence: dict = field(default_factory=dict)
     evidence: dict = field(default_factory=dict)     # pole → citácia z e-mailu
     extractor: str = "pravidla"
+    field_source: dict = field(default_factory=dict)  # pole → pravidla | llm | pravidla+llm (kto hodnotu našiel)
+    unverified: list = field(default_factory=list)    # kľúčové polia, ktoré pravidlá neoverili (len z LLM)
 
     def __iter__(self) -> Iterator[Any]:
         return iter((self.kind, self.data, self.confidence, self.notes))

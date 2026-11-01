@@ -30,6 +30,12 @@ _ISO_RE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?:[t ](\d{1,2}):(\d{2})(?:
 _DAYRANGE_RE = re.compile(
     r"(?<![\d.,/:])(\d{1,2})\.?\s?-\s?(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
 _DATE_RE = re.compile(r"(?<![\d.,/:])(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
+# noc z jedného dňa na druhý: „z 12. na 13.11.2026“, „12./13.11.2026“ – obdobie začína prvým dňom
+_NIGHT_RE = re.compile(r"(?<![\d.,/:])(\d{1,2})\s?\.\s?(?:na\s+|/\s?)(\d{1,2})\s?\.\s?(\d{1,2})\s?\."
+                       r"(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
+_NIGHT_GAP = re.compile(r"^\s*(?:na|/)\s*$")
+# ďalšie časové okno v tej istej vete: „8:00 – 12:00 a 13:00 – 16:00“, „8–12, 13–16 hod.“
+_AND_GAP = re.compile(r"^\s*(?:hod\.?\s*)?(?:,|;|\+|&|a|aj|a\s+tiez|a\s+aj)?\s*(?:od\s+|v\s+case\s+|v\s+)?$")
 # „obsahuje čas“ – 08:00, 8.00 hod.; nie dátum 23.11.2026
 HAS_TIME = re.compile(r"(?<![\d.])\d{1,2}\s?:\s?\d{2}(?!\d)|(?<![\d.])\d{1,2}\.\d{2}(?![\d.])")
 _DATE_NAME_RE = re.compile(rf"(?<![\d.])(\d{{1,2}})\s?\.\s?({_MONTH_ALT})(?:\s+(\d{{4}}))?\b")
@@ -129,6 +135,19 @@ def scan(folded: str, ref: date) -> list[Temporal]:
         toks.append(t)
         taken.append((m.start(), m.end()))
 
+    for m in _NIGHT_RE.finditer(folded):
+        if _overlaps(taken, m.start(), m.end()):
+            continue
+        d1, d2, mon = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        y = _year(m.group(4))
+        if not (1 <= mon <= 12):
+            continue
+        b = _mkdate(y, mon, d2) if y else _infer_year(mon, d2, ref)
+        if b is None or (b - timedelta(days=1)).day != d1:
+            continue                      # nie sú to dva po sebe idúce dni – nie je to noc
+        toks.append(Temporal("date", m.start(), m.end(), b - timedelta(days=1), year_given=bool(y)))
+        taken.append((m.start(), m.end()))
+
     for m in _DAYRANGE_RE.finditer(folded):
         if _overlaps(taken, m.start(), m.end()):
             continue
@@ -199,7 +218,28 @@ def scan(folded: str, ref: date) -> list[Temporal]:
 
     toks.sort(key=lambda t: t.start)
     _fix_years(folded, toks)
-    return _merge(folded, toks)
+    return _merge(folded, _night_pairs(folded, toks))
+
+
+def _night_pairs(folded: str, toks: list[Temporal]) -> list[Temporal]:
+    """„z 12.11. na 13.11.2026“, „12.11./13.11.2026“ – noc: jeden dátum (prvý deň), čas „od 22:00 do 6:00“ k nemu."""
+    out: list[Temporal] = []
+    i = 0
+    while i < len(toks):
+        t = toks[i]
+        u = toks[i + 1] if i + 1 < len(toks) else None
+        if t.kind == "date" and u is not None and u.kind == "date" and _NIGHT_GAP.match(folded[t.end:u.start]):
+            first = t.day
+            if not t.year_given and u.year_given and t.month_day:
+                dd, mon = t.month_day
+                first = _mkdate(u.day.year - (1 if mon > u.day.month else 0), mon, dd) or first
+            if first is not None and (u.day - first).days == 1:
+                out.append(Temporal("date", t.start, u.end, first, year_given=t.year_given or u.year_given))
+                i += 2
+                continue
+        out.append(t)
+        i += 1
+    return out
 
 
 def _fix_years(folded: str, toks: list[Temporal]) -> None:
@@ -257,6 +297,7 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
     used: set[int] = set()
     date_ranges: list[tuple[Temporal, Temporal]] = []
     windows: list[tuple[Temporal, Temporal]] = []
+    chains: list[list] = []        # [deň, koniec posledného okna, rok doplnený] – ďalšie okno „a 13:00 – 16:00“
     i = 0
     while i < len(toks):
         a = toks[i]
@@ -280,6 +321,7 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
                 if not a.year_given:
                     p.flags.add("rok_doplneny")
                 out.append(p)
+                chains.append([a.day, b.end, not a.year_given])
                 used.update((i, i + 1))
                 i += 2
                 continue
@@ -317,16 +359,23 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
             if dist <= 160 and dist < best_dist:
                 best, best_dist = k, dist
         if best is not None:
-            wa, wb = windows[best]
-            used_windows.add(best)
-            start = datetime.combine(a.day, wa.tm)
-            end = datetime.combine(b.day, wb.tm)
-            flags = {"denne"}
-            if wb.tm <= wa.tm:
-                end += timedelta(days=1)
-                flags.add("cez_polnoc")
-            out.append(Period(start, end, min(a.start, wa.start), max(b.end, wb.end),
-                              _hhmm(wa.tm), _hhmm(wb.tm), flags))
+            picked = [best]
+            # ďalšie denné okná hneď za ním („v čase 8:00 – 12:00 a 13:00 – 16:00“)
+            for k in range(best + 1, len(windows)):
+                if k in used_windows or not _AND_GAP.match(folded[windows[picked[-1]][1].end:windows[k][0].start]):
+                    break
+                picked.append(k)
+            for k in picked:
+                wa, wb = windows[k]
+                used_windows.add(k)
+                start = datetime.combine(a.day, wa.tm)
+                end = datetime.combine(b.day, wb.tm)
+                flags = {"denne"}
+                if wb.tm <= wa.tm:
+                    end += timedelta(days=1)
+                    flags.add("cez_polnoc")
+                out.append(Period(start, end, min(a.start, wa.start), max(b.end, wb.end),
+                                  _hhmm(wa.tm), _hhmm(wb.tm), flags))
         else:
             out.append(Period(datetime.combine(a.day, time(0, 0)),
                               datetime.combine(b.day, time(0, 0)) + timedelta(days=1),
@@ -334,6 +383,19 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
     # okno s jedným dátumom (napr. „12.11.2026, denne 08:00 – 14:00“ alebo dátum za oknom)
     for k, (wa, wb) in enumerate(windows):
         if k in used_windows:
+            continue
+        chain = next((c for c in chains if _AND_GAP.match(folded[c[1]:wa.start])), None)
+        if chain is not None:      # ďalšie okno toho istého dňa: „12.11.2026 v čase 8:00 – 12:00 a 13:00 – 16:00“
+            start = datetime.combine(chain[0], wa.tm)
+            end = datetime.combine(chain[0], wb.tm) + timedelta(days=1 if wb.plus_day else 0)
+            p = Period(start, end, wa.start, wb.end)
+            if end <= start:
+                p.end = end + timedelta(days=1)
+                p.flags.add("cez_polnoc")
+            if chain[2]:
+                p.flags.add("rok_doplneny")
+            chain[1] = wb.end
+            out.append(p)
             continue
         near = [t for t in toks if t.kind == "date" and t not in [x for r in date_ranges for x in r]
                 and (0 <= wa.start - t.end <= 40 or 0 <= t.start - wb.end <= 40)]

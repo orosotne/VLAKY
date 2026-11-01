@@ -25,6 +25,7 @@ class AuthResult:
     results: dict = field(default_factory=dict)    # metóda → výsledok (spf/dkim/dmarc → pass/fail/…)
     props: dict = field(default_factory=dict)      # metóda → {vlastnosť: hodnota}
     raw: str = ""
+    dkim_pass_domains: list = field(default_factory=list)   # domény (d=) všetkých platných podpisov DKIM
 
 
 @dataclass
@@ -35,6 +36,7 @@ class Verification:
     auth_ok: Optional[bool] = None
     auth: Optional[AuthResult] = None
     injection: list = field(default_factory=list)
+    forwarded_from: list = field(default_factory=list)  # pôvodní odosielatelia preposlaného obsahu („?“ = neznámy)
 
     @property
     def reason_text(self) -> str:
@@ -45,6 +47,21 @@ class Verification:
 def _allowed_entries() -> list[str]:
     s = settings()
     return [e.strip().lower().lstrip("@").removeprefix("*.") for e in s.csv(s.allowed_senders)]
+
+
+def zsr_entries() -> list[str]:
+    """Povolení odosielatelia, ktorí sú ŽSR (správca infraštruktúry): organizačná doména „zsr.<tld>“.
+
+    Odvodené zo zoznamu povolených odosielateľov (napr. ``zsr.sk``, ``or.zsr.sk``) – iné povolené domény
+    (partneri, zákazníci, vlastní dispečeri) výluky ani trasy ŽSR automaticky meniť nesmú.
+    """
+    return [e for e in _allowed_entries() if e and _org(e.split("@")[-1]).split(".")[0] == "zsr"]
+
+
+def zsr_sender(address: str) -> bool:
+    """Odosielateľ je ŽSR (výluky, pomalé jazdy, mimoriadnosti a trasy od neho možno zapísať automaticky)."""
+    entries = zsr_entries()
+    return bool(entries) and sender_allowed(address, entries)
 
 
 def sender_allowed(address: str, entries: Optional[list[str]] = None) -> bool:
@@ -118,6 +135,10 @@ def parse_authentication_results(header: str) -> Optional[AuthResult]:
         method, result, rest = m.group(1).lower(), m.group(2).lower(), m.group(3)
         props = {k.lower(): v.strip('"').lower() for k, v in re.findall(r"([a-z0-9_.-]+)\s*=\s*(\"[^\"]*\"|\S+)",
                                                                            rest, re.I)}
+        if method == "dkim" and result == "pass":
+            d = props.get("header.d") or props.get("header.i", "").split("@")[-1]
+            if d:
+                res.dkim_pass_domains.append(d)
         # pri viacerých podpisoch DKIM stačí jeden platný
         if method in res.results and method == "dkim" and res.results[method] == "pass":
             continue
@@ -126,9 +147,21 @@ def parse_authentication_results(header: str) -> Optional[AuthResult]:
     return res
 
 
+# druhá úroveň domény, pod ktorou sa registrujú domény organizácií (co.uk, com.pl, co.hu, gv.at …) –
+# zjednodušená náhrada zoznamu verejných prípon (Public Suffix List) pre národné domény
+_PUBLIC_SLD = {"ac", "co", "com", "edu", "gov", "gv", "go", "or", "org", "net", "nom", "mil", "sch", "ltd", "plc",
+               "info", "biz", "priv", "firm", "gen", "int", "web", "me", "tm", "in", "kiev", "waw"}
+
+
 def _org(domain: str) -> str:
-    """Zjednodušená organizačná doména (posledné dve časti) na kontrolu zarovnania DMARC."""
+    """Organizačná doména na kontrolu zarovnania (DMARC „relaxed“).
+
+    Posledné dve časti; pri národnej doméne s verejnou druhou úrovňou (``evil.co.hu``, ``firma.com.pl``)
+    posledné tri – inak by ``evil.co.hu`` bola „tá istá organizácia“ ako ``partner.co.hu``.
+    """
     parts = [p for p in (domain or "").lower().strip(".").split(".") if p]
+    if len(parts) >= 3 and len(parts[-1]) == 2 and parts[-2] in _PUBLIC_SLD:
+        return ".".join(parts[-3:])
     return ".".join(parts[-2:]) if len(parts) >= 2 else ".".join(parts)
 
 
@@ -163,12 +196,16 @@ def check_auth(auth_headers: list[str], from_domain: str,
         return True, "DMARC=pass", ar
     spf, dkim = ar.results.get("spf"), ar.results.get("dkim")
     if spf == "pass" and dkim == "pass":
-        dkim_d = ar.props.get("dkim", {}).get("header.d") or ar.props.get("dkim", {}).get("header.i", "").lstrip("@")
+        # ako DMARC: aspoň jedna overená identita musí patriť organizácii odosielateľa; chýbajúca identita
+        # (napr. SPF len na HELO pri prázdnom MAIL FROM) zarovnaná nie je
         mailfrom = ar.props.get("spf", {}).get("smtp.mailfrom", "")
         spf_d = mailfrom.split("@")[-1] if mailfrom else ""
-        if dkim_d and _org(dkim_d) != from_org and spf_d and _org(spf_d) != from_org:
+        aligned = [f"DKIM ({d})" for d in ar.dkim_pass_domains if from_org and _org(d) == from_org]
+        if spf_d and from_org and _org(spf_d) == from_org:
+            aligned.append(f"SPF ({spf_d})")
+        if not aligned:
             return False, "SPF/DKIM nie sú zarovnané s doménou odosielateľa", ar
-        return True, "SPF=pass a DKIM=pass (bez DMARC)", ar
+        return True, "SPF=pass a DKIM=pass (bez DMARC, zarovnané: " + ", ".join(aligned) + ")", ar
     return False, f"SPF={spf or 'chýba'}, DKIM={dkim or 'chýba'}, DMARC chýba", ar
 
 
@@ -252,6 +289,11 @@ def verify(pm: ParsedMail, attachment_texts: Optional[list[str]] = None) -> Veri
             v.reasons.append(f"neúspešné overenie odosielateľa: {why}")
             return v
         v.reasons.append(f"overenie odosielateľa: {why}")
+    problem = _check_forwarded(pm, v, s.require_dmarc_pass)
+    if problem:
+        v.verdict = KARANTENA
+        v.reasons.append(problem)
+        return v
     texts = [pm.subject, pm.body_text] + list(attachment_texts or [a.text for a in pm.attachments])
     v.injection = detect_injection(*texts)
     if v.injection:
@@ -259,3 +301,37 @@ def verify(pm: ParsedMail, attachment_texts: Optional[list[str]] = None) -> Veri
         v.reasons.append("e-mail obsahuje pokyny pre systém (možný pokus o prompt injection) – spracuje sa len "
                          "ako dáta a všetko vyžaduje potvrdenie dispečerom: " + "; ".join(v.injection[:5]))
     return v
+
+
+def _check_forwarded(pm: ParsedMail, v: Verification, require_auth: bool) -> str:
+    """Preposlaný obsah: pôvodný odosielateľ musí byť povolený a (ak sa vyžaduje) overený ako pri priamom e-maile.
+
+    Overenie preposielateľa (napr. pravidla dispečerskej schránky) nestačí – podvrh ŽSR by inak prešiel
+    len vďaka DMARC vlastnej domény. Vráti dôvod karantény; prázdny reťazec = v poriadku. Aj overený
+    preposlaný obsah sa nikdy nezapisuje automaticky (rozhoduje spracovanie podľa ``forwarded_from``).
+    """
+    senders: list[str] = []
+    for fw in pm.forwarded:
+        if fw.from_count > 1:
+            return f"preposlaná správa ({fw.how}) má v hlavičke From viac adries"
+        if not fw.sender:
+            if fw.inline:
+                senders.append("?")          # vložené preposlanie bez adresy – nedá sa overiť, len potvrdenie
+                continue
+            return f"preposlaná správa ({fw.how}) nemá adresu pôvodného odosielateľa"
+        if not sender_allowed(fw.sender):
+            return f"preposlaná správa ({fw.how}) je od odosielateľa {fw.sender}, ktorý nie je na zozname povolených"
+        if require_auth and not fw.inline:
+            ok, why, _ar = check_auth(fw.auth_results, fw.sender.split("@")[-1])
+            if not ok:
+                return f"preposlaná správa ({fw.how}) od {fw.sender} neprešla overením odosielateľa: {why}"
+        senders.append(fw.sender)
+    uniq = list(dict.fromkeys(senders))
+    if "?" in uniq and len(uniq) > 1:
+        uniq.remove("?")
+    v.forwarded_from = uniq
+    if uniq:
+        who = ", ".join(x if x != "?" else "neznámy odosielateľ" for x in uniq)
+        v.reasons.append(f"obsahuje preposlanú správu (pôvodne od: {who}) – nič z nej sa nezapíše bez potvrdenia "
+                         "dispečerom")
+    return ""

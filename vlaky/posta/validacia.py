@@ -456,6 +456,9 @@ def confirmation_needed(kind: str, data: dict, confidence: float, verdict: str, 
         reasons.append("validácia našla chyby")
     if any("približne" in w for w in res.warnings):
         reasons.append("dopravňa určená len približne")
+    if res.section_km is not None and res.section_km > MAX_SECTION_KM:
+        # výluka či pomalá jazda na stovkách km je skôr zle určená dopravňa (napr. iná obec s podobným menom)
+        reasons.append(f"úsek je neobvykle dlhý ({res.section_km:.0f} km) – skontrolujte dopravne")
     if verdict == "podozrivy":
         reasons.append("podozrivý e-mail (možný pokus o prompt injection) – nikdy sa neaplikuje automaticky")
     elif verdict != "ok":

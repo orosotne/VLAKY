@@ -85,6 +85,7 @@ class Stations:
             self._norm = lambda s: " ".join(fold(s).split())
         self._stems: Optional[list] = None
         self._flat: Optional[dict] = None
+        self._name_prefixes: Optional[set] = None
 
     # ------------------------------------------------------------------ základné vyhľadávanie
     @staticmethod
@@ -124,16 +125,36 @@ class Stations:
                         self._stems.append((toks, st))
         return self._stems
 
+    def _longer_name_starts_with(self, words: list[str]) -> bool:
+        """Text je presne začiatkom dlhšieho názvu dopravne („Skalica“ → „Skalica na Slovensku“)."""
+        if self._name_prefixes is None:
+            self._name_prefixes = set()
+            if self.net:
+                for key in self.net.by_norm:
+                    toks = tuple(key.replace(" - ", " ").split())
+                    for i in range(1, len(toks)):
+                        self._name_prefixes.add(toks[:i])
+        return tuple(words) in self._name_prefixes
+
     def stem(self, text: str):
-        """Zhoda so skloňovaným tvarom („Čadce“ → Čadca, „Dunajskej Stredy“ → Dunajská Streda)."""
+        """Zhoda so skloňovaným tvarom („Čadce“ → Čadca, „Dunajskej Stredy“ → Dunajská Streda).
+
+        Uznáva sa len rozdiel v pádovej koncovke (vrátane vypadávajúcej samohlásky: Ružomberok → Ružomberka).
+        Iné slovo s podobným začiatkom („Skalica“ ≠ Skalité, „Kremnička“ ≠ Kremnica) zhodou nie je; ak je text
+        začiatkom dlhšieho názvu („Skalica na Slovensku“), skloňovanie sa nepoužije – rozhodne približné
+        hľadanie, ktoré vždy vyžaduje potvrdenie dispečerom.
+        """
         words = self._norm(text).replace(" - ", " ").split()
         if not words or len(words) > 4 or words[0] in _STOP_WORDS:
             return None
         found = [st for toks, st in self._stem_index()
-                 if len(toks) == len(words) and all(_stem_eq(a, b) for a, b in zip(toks, words))]
-        if not found:
+                 if len(toks) == len(words) and all(_stem_eq(a, b) and _inflection_eq(a, b)
+                                                    for a, b in zip(toks, words))]
+        if not found or len({s.name for s in found}) != 1:
             return None
-        return self._best(found) if len({s.name for s in found}) == 1 else None
+        if self._longer_name_starts_with(words):
+            return None
+        return self._best(found)
 
     def prefix_unique(self, text: str):
         """„Zvolen“ → „Zvolen osobná stanica“: len ak je doplnenie jednoznačné."""
@@ -237,6 +258,30 @@ def _stem_eq(station_tok: str, text_tok: str) -> bool:
         k += 1
     need = len(station_tok) - 1 if len(station_tok) <= 6 else len(station_tok) - 2
     return k >= max(3, need) and len(text_tok) - k <= 4
+
+
+# pádové koncovky (bez diakritiky): „Čadc-e“, „Žilin-ou“, „Dunajsk-ej“, „Nov-ých Zámk-ov“, „Košic-iach“
+_ENDINGS = ("", "a", "e", "i", "o", "u", "y", "ou", "om", "ov", "ej", "ho", "mu", "am", "ach", "och", "ech", "iam",
+            "iach", "ami", "mi", "ym", "ych", "ymi", "eho", "emu", "ie", "ia", "iu", "ich", "imi", "ovi", "em")
+_FLEETING = re.compile(r"^(.*[^aeiouy])(?:ie|e|o)([kcnlr])$")      # Ružomberok → Ružomberk-a, Michaloviec → Michalovc-e
+
+
+def _stems(tok: str) -> set:
+    out: set = set()
+    for e in _ENDINGS:
+        if not tok.endswith(e) or len(tok) - len(e) < 3:
+            continue
+        base = tok[:len(tok) - len(e)] if e else tok
+        out.add(base)
+        m = _FLEETING.match(base)
+        if m:
+            out.add(m.group(1) + m.group(2))
+    return out
+
+
+def _inflection_eq(station_tok: str, text_tok: str) -> bool:
+    """Slová sa líšia len pádovou koncovkou (rovnaký kmeň)."""
+    return station_tok == text_tok or bool(_stems(station_tok) & _stems(text_tok))
 
 
 @lru_cache
