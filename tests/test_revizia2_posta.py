@@ -672,7 +672,7 @@ def test_r17_skorsie_okno_kontaktu_nevytvori_dalsiu_vyluku(cfg):
                    "12.11.2026 v čase 8:00 – 14:00.")
     assert _terms(items) == [("2026-11-12T07:00:00+00:00", "2026-11-12T13:00:00+00:00")]
     # druhé okno za prvým ostáva podporované
-    assert len(_rules(f"Výluka 1. TK v úseku Poprad-Tatry – Liptovský Mikuláš 12.11.2026 v čase 8:00 – 12:00 "
+    assert len(_rules("Výluka 1. TK v úseku Poprad-Tatry – Liptovský Mikuláš 12.11.2026 v čase 8:00 – 12:00 "
                       "a 13:00 – 16:00.")) == 2
 
 

@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from vlaky import config as config_mod
 from vlaky.hranice import seed_borders
-from vlaky.models import AuditLog, Notification, Path, Train
+from vlaky.models import AuditLog, Train
 from vlaky.notifikacie import odosielanie
 from vlaky.notifikacie.odosielanie import (_deliver, allowed_recipients, notify_recommendation,
                                            send_internal)

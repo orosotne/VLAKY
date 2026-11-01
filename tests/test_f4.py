@@ -1,7 +1,6 @@
 """Fáza F4: kalibrácia z histórie a návrh nasadenia rušňovodičov (CP-SAT)."""
 from datetime import timedelta
 
-from sqlalchemy import select
 
 from vlaky.hranice import find_border, seed_borders
 from vlaky.models import Driver, DriverShift, Handover, ParameterSet, Train

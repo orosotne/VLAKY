@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from vlaky.agent.beh import acquire_lock, propose_new_orders, run_cycle
 from vlaky.agent.odovzdavka import create_report
-from vlaky.agent.zdravie import health_status, set_kv
+from vlaky.agent.zdravie import set_kv
 from vlaky.db import session_scope
 from vlaky.hranice import seed_borders
 from vlaky.models import AgentHealth, Notification, Order, Train

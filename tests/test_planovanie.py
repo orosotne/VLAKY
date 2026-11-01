@@ -1,7 +1,6 @@
 """Testy plánovača na reálnej sieti SR (OSM) s fiktívnymi vlakmi a výlukami."""
 from datetime import timedelta
 
-import pytest
 
 from vlaky.hranice import find_border, seed_borders
 from vlaky.models import Closure, Driver, DriverShift, Handover, ParameterSet, Path, PositionReport, Train

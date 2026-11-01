@@ -1,5 +1,4 @@
 """Odpovede dispečerov na odporúčania (PRIJAŤ / ZAMIETNUŤ)."""
-from datetime import timedelta
 from email.message import EmailMessage
 
 from sqlalchemy import select

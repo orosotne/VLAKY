@@ -7,7 +7,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from ..cas import ensure_utc, fmt, local, now_utc, tz
@@ -230,18 +230,25 @@ def latest_recommendations(s: Session, train_ids: list) -> dict:
     return {r.train_id: r for r in s.scalars(select(Recommendation).where(Recommendation.id.in_(sub)))}
 
 
-def current_shifts(s: Session, train_ids: list) -> dict:
+def current_shifts(s: Session, train_ids: list, now: Optional[datetime] = None) -> dict:
+    """Zmena rušňovodiča pre každý vlak tak, ako ju vyberá plánovač (planovac.active_shift): prebiehajúca
+    (najneskorší nástup), inak naplánovaná s najneskorším nástupom do teraz (je na rade), inak najskoršia
+    naplánovaná. Neskoršie naplánované vystriedanie tak nezakryje rušňovodiča v službe ani prvého rušňovodiča."""
     if not train_ids:
         return {}
-    out: dict = {}
-    # prebiehajúca zmena má prednosť pred naplánovaným vystriedaním (rovnako ako planovac.active_shift) – inak by
-    # mapa a nástenka ukázali neskoršiu naplánovanú zmenu a nie rušňovodiča, ktorý je v službe
-    rows = s.scalars(select(DriverShift).options(selectinload(DriverShift.driver))
-                     .where(DriverShift.train_id.in_(train_ids), DriverShift.status != "ukoncena")
-                     .order_by(case((DriverShift.status == "prebieha", 0), else_=1),
-                               DriverShift.start_utc.desc(), DriverShift.id.desc()))
+    now = now or now_utc()
+    rows = list(s.scalars(select(DriverShift).options(selectinload(DriverShift.driver))
+                          .where(DriverShift.train_id.in_(train_ids), DriverShift.status.in_(("planovana", "prebieha")))
+                          .order_by(DriverShift.start_utc, DriverShift.id)))
+    by_train: dict = {}
     for sh in rows:
-        out.setdefault(sh.train_id, sh)
+        by_train.setdefault(sh.train_id, []).append(sh)
+    out: dict = {}
+    for tid, shifts in by_train.items():
+        running = [sh for sh in shifts if sh.status == "prebieha"]
+        due = [sh for sh in shifts if sh.status == "planovana" and ensure_utc(sh.start_utc) <= now]
+        planned = [sh for sh in shifts if sh.status == "planovana"]
+        out[tid] = running[-1] if running else due[-1] if due else planned[0]
     return out
 
 
@@ -426,7 +433,19 @@ def data_freshness(s: Session, now: Optional[datetime] = None) -> dict:
         reasons.append("agent zatiaľ neprebehol")
     elif cycle > cycle_limit:
         reasons.append(f"posledný cyklus agenta pred {cycle:.0f} min")
-    if mailbox is None:
+    from ..models import KeyValue
+
+    kv_mail = s.scalar(select(KeyValue).where(KeyValue.key == "mail_last_ok"))
+    mail_val = kv_mail.value if kv_mail is not None and isinstance(kv_mail.value, dict) else {}
+    if mail_val.get("partial"):
+        # agent dočítava nahromadenú poštu – kontrola nie je úplná (žiadna ZELENÁ), text to povie pravdivo
+        last_full = parse_iso(mail_val.get("last_full"))
+        if last_full is not None:
+            mailbox = (now - last_full).total_seconds() / 60.0
+            reasons.append(f"schránka agenta sa dočítava (posledná úplná kontrola pred {mailbox:.0f} min)")
+        else:
+            reasons.append("schránka agenta sa dočítava (úplná kontrola zatiaľ neprebehla)")
+    elif mailbox is None:
         reasons.append("schránka agenta ešte nebola úspešne skontrolovaná")
     elif mailbox > MAILBOX_MAX_AGE_MIN:
         reasons.append(f"schránka agenta sa nekontrolovala {mailbox:.0f} min")
@@ -568,7 +587,7 @@ def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = 
     ids = [t.id for t in trains]
     positions = latest_positions(s, ids)
     recs = latest_recommendations(s, ids)
-    shifts = current_shifts(s, ids)
+    shifts = current_shifts(s, ids, now)
     handovers = entry_handovers(s, ids)
     window = closures_between(s, now - timedelta(hours=1), now + timedelta(hours=48))
     closure_sets = [(c, spans, closure_edges(c)) for c, spans in window]
@@ -673,21 +692,15 @@ def auto_applied_unconfirmed(s: Session, limit: int = 100) -> list:
 
 
 def pending_queue_count(s: Session) -> int:
-    waiting = s.scalar(select(func.count(ExtractedEvent.id)).where(
-        ExtractedEvent.needs_confirmation.is_(True), ExtractedEvent.status == "navrh")) or 0
-    auto = s.scalar(select(func.count(func.distinct(ExtractedEvent.id)))
-                    .select_from(ExtractedEvent).join(Closure, Closure.source_event_id == ExtractedEvent.id)
-                    .where(ExtractedEvent.status == "aplikovane", ExtractedEvent.confirmed_at.is_(None),
-                           Closure.status == "navrh")) or 0
-    # potvrdené udalosti, ktorých zápis zlyhal (napr. avízo pre vlak, ktorý ešte nie je v systéme), sú vo fronte tiež
+    """Počet položiek vo fronte na potvrdenie – jedno počítanie pre web, súhrn, odovzdávku, dennú správu aj /zdravie
+    (vlaky.agent.zdravie.queue_counts: čakajúce udalosti, automaticky zapísané neoverené výluky, zlyhané zápisy)."""
     try:
-        from ..posta.spracovanie import failed_confirmations
+        from ..agent.zdravie import queue_counts
 
-        failed = len(failed_confirmations(s))
+        return queue_counts(s)["total"]
     except Exception:  # noqa: BLE001 – počítadlo v hlavičke stránky nesmie zhodiť stránku
-        log.exception("Počet zlyhaných potvrdení sa nepodarilo zistiť")
-        failed = 0
-    return waiting + auto + failed
+        log.exception("Počet položiek vo fronte sa nepodarilo zistiť")
+        return 0
 
 
 # ---------------------------------------------------------------- upozornenia (pre dashboard)

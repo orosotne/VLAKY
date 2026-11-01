@@ -1,7 +1,6 @@
 """Regresné testy k nálezom revízie agenta, upozornení a prevádzky."""
 from __future__ import annotations
 
-import os
 from datetime import timedelta
 from email.message import EmailMessage
 

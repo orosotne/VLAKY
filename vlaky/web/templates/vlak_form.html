@@ -21,6 +21,11 @@
       {{ m.field("customer", "Zákazník", values, errors, attrs={"maxlength": 200}) }}
       {{ m.select("status", "Stav", statuses.items(), values, errors, required=True) }}
     </div>
+    {% if train and train.status == "v_jazde" %}
+    <div class="grid-3">
+      {{ m.select("navrat_z_jazdy", "Ak meníte stav z „v jazde“: išiel vlak naozaj?", [("omyl", "odchod bol omyl – vlak nevyšiel (limit 18 h beží ďalej od začiatku státia)"), ("jazda", "vlak išiel – státie a limit 18 h od teraz")], values, errors, empty="— rozhodnúť podľa polôh a času od odchodu —") }}
+    </div>
+    {% endif %}
   </fieldset>
   <fieldset>
     <legend>Relácia</legend>

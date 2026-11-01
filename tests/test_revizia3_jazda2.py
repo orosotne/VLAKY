@@ -3,7 +3,7 @@ platnú výluku, stará poloha pri východisku (vlak podľa plánu v cieli), hl�
 pred vjazdom do cieľa, dodatočný nástup z mobilu po odchode a rozhodnutie dispečera pri návrate z jazdy."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import select
 

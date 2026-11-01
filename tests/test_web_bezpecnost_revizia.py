@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from sqlalchemy import func, select
 
-from test_web_spolocne import HESLO, csrf, login, make_train, make_user
+from test_web_spolocne import csrf, login, make_train, make_user
 
 pytest_plugins = ["test_web_spolocne"]
 

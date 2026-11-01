@@ -13,7 +13,7 @@ from ..audit import audit
 from ..cas import ensure_utc, now_utc
 from ..config import settings
 from ..db import session_scope
-from ..models import AgentHealth, AuditLog, Email, ExtractedEvent, ParameterSet, PositionReport, User
+from ..models import AgentHealth, AuditLog, Email, ParameterSet, PositionReport, User
 from .auth import csrf_form, require
 from .common import (INT_PARAMS, PARAM_META, PROB_PARAMS, FormReader, ago, current_param_set, current_params,
                      fmt_full, iso, log, param_defaults, redirect, render)
@@ -265,11 +265,10 @@ def health_page(request: Request, user=Depends(view)):
         rows.sort(key=lambda r: ({"error": 0, "warn": 1}.get(r["c"].status, 2), r["c"].component))
         last_pos = s.scalar(select(func.max(PositionReport.received_utc)))
         last_mail = s.scalar(select(func.max(Email.received_at)))
-        from ..posta.spracovanie import failed_confirmations  # potvrdené, ale zápis zlyhal – čakajú vo fronte
+        from ..agent.zdravie import queue_counts  # rovnaké počítanie ako /fronta, hlavička a súhrn
 
-        queue = (s.scalar(select(func.count(ExtractedEvent.id)).where(ExtractedEvent.needs_confirmation.is_(True),
-                                                                       ExtractedEvent.status == "navrh")) or 0) + \
-            len(failed_confirmations(s))
+        qc = queue_counts(s)
+        queue = qc["total"]
         quarantined = s.scalar(select(func.count(Email.id)).where(Email.verdict == "karantena",
                                                                   Email.received_at >= now - timedelta(hours=24))) or 0
         checks.append(("Databáza", "ok", "dostupná"))
@@ -285,6 +284,9 @@ def health_page(request: Request, user=Depends(view)):
                    f"{fmt_full(last_pos)} ({ago(last_pos)})" if last_pos else "zatiaľ žiadna"))
     checks.append(("Posledný e-mail v schránke agenta", "ok" if last_mail else "warn",
                    f"{fmt_full(last_mail)} ({ago(last_mail)})" if last_mail else "zatiaľ žiadny"))
-    checks.append(("Fronta na potvrdenie", "warn" if queue else "ok", f"{queue} udalostí"))
+    queue_text = f"{queue} {'udalosť' if queue == 1 else 'udalosti' if 1 < queue < 5 else 'udalostí'}"
+    if queue and qc.get("auto"):
+        queue_text += f" (z toho zapísané automaticky – overte: {qc['auto']})"
+    checks.append(("Fronta na potvrdenie", "warn" if queue else "ok", queue_text))
     checks.append(("E-maily v karanténe (24 h)", "warn" if quarantined else "ok", str(quarantined)))
     return render(request, "zdravie.html", {"rows": rows, "checks": checks, "agent": agent_status}, user=user)
