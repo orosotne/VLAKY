@@ -20,7 +20,7 @@ from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, LOCO_SYSTE
                      NetworkUnavailable,
                      crew_color, current_params, input_dt, iso, log, redirect, render, resolve_station,
                      safe_next, station_or_error)
-from .data import closure_edges, closure_spans, latest_recommendations
+from .data import closure_edges, closure_spans, data_freshness, latest_recommendations
 from .prepocet import evaluate_all_bg, evaluate_train_bg, evaluate_train_now
 from .rusnovodic import driver_link, revoke_driver_links, token_version
 
@@ -127,7 +127,9 @@ def trains_page(request: Request, filter: str = "aktivne", q: str = "", user=Dep
         trains = list(s.scalars(query.order_by(Train.run_date.desc(), Train.number).limit(300)))
         ids = [t.id for t in trains]
         recs = latest_recommendations(s, ids) if ids else {}
-        return render(request, "vlaky.html", {"trains": trains, "recs": recs, "filter": filter, "q": q}, user=user)
+        # bez čerstvých dát agenta sa posledná ZELENÁ ukáže ako ORANŽOVÁ (rovnako ako mapa a /api/vlaky)
+        return render(request, "vlaky.html", {"trains": trains, "recs": recs, "filter": filter, "q": q,
+                                              "fresh": data_freshness(s)}, user=user)
 
 
 @router.get("/vlaky/novy", response_class=HTMLResponse)
@@ -224,7 +226,8 @@ def _train_detail(request: Request, train_id: int, user, link: str = "") -> HTML
         params = current_params(s)
         return render(request, "vlak.html", {"t": t, "rec": rec, "positions": positions, "shifts": shifts,
                                              "handovers": handovers, "paths": paths, "history": history,
-                                             "driver_link": link, "params": params}, user=user)
+                                             "driver_link": link, "params": params,
+                                             "fresh": data_freshness(s)}, user=user)
 
 
 @router.get("/vlaky/{train_id}/upravit", response_class=HTMLResponse)

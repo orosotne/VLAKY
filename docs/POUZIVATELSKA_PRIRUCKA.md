@@ -15,7 +15,9 @@ Pre dispečerov, vedúceho dispečingu a plánovačov. Inštalácia a prevádzka
 
 ## 2. Prihlásenie a roly
 
-Prihlasujete sa menom a heslom (prihlásenie platí 12 h). Po 5 neúspešných pokusoch z jedného počítača (alebo 10 pokusoch na jeden účet) sa prihlásenie na 15 min zablokuje. **Odhlásiť** ukončí všetky vaše prihlásenia (aj na iných zariadeniach).
+Prihlasujete sa menom a heslom (prihlásenie platí 12 h). Po 5 neúspešných pokusoch z jedného počítača (alebo 10 pokusoch na jeden účet) sa prihlásenie na 15 min zablokuje; pri IPv6 sa pokusy počítajú pre celú sieť /64. **Odhlásiť** ukončí všetky vaše prihlásenia (aj na iných zariadeniach).
+
+Server overuje najviac 3 heslá naraz. Pri návale prihlásení môže ukázať „Server je zaneprázdnený, skúste to o chvíľu.“ – stačí to o pár sekúnd skúsiť znova. Prihlásenie s prázdnym menom alebo heslom sa odmietne hláškou „Zadajte meno aj heslo.“
 
 | Rola | Čo môže |
 |---|---|
@@ -33,6 +35,7 @@ Prihlasujete sa menom a heslom (prihlásenie platí 12 h). Po 5 neúspešných p
 - **Sledovať vlak:** mapa ide s vlakom. **Stopa 24 h:** kade vlak išiel.
 - **Tabuľka vpravo** je zoradená podľa naliehavosti, navrchu ČERVENÉ. Pod ňou sú upozornenia a časová os (vlaky a výluky na 24 h).
 - **Na veľký monitor:** celá obrazovka, nočný režim.
+- **Bez čerstvých údajov agenta** (schránka sa 30 min úspešne neskontrolovala alebo agent neprebehol 2 × `VLAKY_REEVALUATE_MINUTES`) mapa, tabuľka, zoznam vlakov, detail vlaku ani `/api/vlaky` neukážu ZELENÚ: posledné zelené odporúčanie sa zobrazí ako ORANŽOVÁ s poznámkou „bez čerstvých údajov agenta – pôvodne ZELENÁ“ a s vekom údajov (v API polia `downgraded`, `data_age`, `data_note`). Uložené odporúčanie sa nemení.
 
 ## 4. Fronta na potvrdenie
 
@@ -82,7 +85,11 @@ Každé odporúčanie obsahuje:
 - **Objednávky** zákazníkov prichádzajú e-mailom. Agent k nim pošle **návrh prepravy**: trasy, časy, okno na objednanie trasy.
 - **Vlak z objednávky** vytvoríte jedným tlačidlom, alebo vlak zadáte ručne: odkiaľ, kam, vstupný hraničný priechod, dĺžka, hmotnosť, trakcia, termín, pripravenosť (miestny čas).
 - **Prepočítať** spustí okamžité vyhodnotenie vlaku.
-- **Odkaz pre rušňovodiča** vytvorí odkaz do mobilu, cez ktorý rušňovodič hlási nástup, pripravenosť, odchod a problém a posiela polohu. Odkazy sa dajú zrušiť. Nástup sa dá z odkazu zaznamenať len raz (začiatok bežiacej zmeny môže zmeniť iba dispečer), z jedného vlaku prejde najviac 6 hlásení za 10 min a upozornenie na problém príde najviac raz za 10 min (ďalšie hlásenia sú v detaile vlaku a v audite).
+- **Odkaz pre rušňovodiča** vytvorí odkaz do mobilu, cez ktorý rušňovodič hlási nástup, pripravenosť, odchod a problém a posiela polohu. Odkazy sa dajú zrušiť. Nástup sa dá z odkazu zaznamenať len raz (začiatok bežiacej zmeny môže zmeniť iba dispečer). Hlásenia stavu (nástup, pripravený, odchod) a hlásenia o probléme majú každé vlastný limit 6 za 10 min – opakované ani odmietnuté hlásenia stavu limit pre problém neminú. Upozornenie na problém príde najviac raz za 10 min (ďalšie hlásenia sú v detaile vlaku a v audite).
+  - Po každom hlásení stavu sa vlak hneď prepočíta (po hlásení o probléme najviac raz za 30 s). Už zaznamenaný stav aplikácia ukáže ako „Už zaznamenané: …“, nie ako chybu.
+  - Hlásenie „pripravený“ od stojaceho vlaku nezmení, odkedy vlak stojí – 18 h limit státia beží ďalej od skutočného začiatku státia.
+  - Odmietnuté požiadavky z odkazu (prekročený limit, nereálny skok polohy, opakovaný nástup) sa do auditu zapíšu najviac raz za 10 min na vlak a druh, s počtom nezapísaných („nezapisane“). Detail vlaku vždy ukáže posledných 10 hlásení o probléme a posledné odmietnutie každého druhu z posledných 7 dní, aj keď ich z 30 posledných záznamov vytlačili iné.
+  - **Poloha z mobilu:** ak hodiny mobilu nesedia s časom servera o viac ako 30 s, aplikácia čas polohy prepočíta podľa servera a ukáže „Hodiny mobilu sa líšia od servera o N min – čas polohy sa opravuje.“ (odporučte zapnúť automatický dátum a čas). Keď GPS nedáva novú polohu (tunel, slabý signál), aplikácia starú polohu znova neposiela a ukáže „Čakám na novú polohu z GPS (posledná zistená o …)“. Polohu s časom v budúcnosti server uloží s časom prijatia; polohu staršiu ako posledná uložená neuloží („Poloha je staršia ako posledná uložená.“) – stopa sa spätne neprepisuje.
 
 ## 8. Hraničné priechody a preberanie
 
@@ -122,5 +129,6 @@ Doplňte otvorené úlohy a potvrďte.
 ## 12. Keď agent nebeží
 
 - **Upozorní vás nezávislý monitoring** (ak agent prestane posielať „heartbeat“) a denná správa o stave chýba.
+- **Web neukáže ZELENÚ bez čerstvých údajov** – posledné zelené odporúčania sa zobrazia ako ORANŽOVÉ s poznámkou „bez čerstvých údajov agenta – pôvodne ZELENÁ“ (pozri kapitolu 3).
 - **Pracujete ako doteraz** – prevádzkové e-maily máte vo svojej schránke.
 - **Nahláste to správcovi servera.** Postup obnovy je v `docs/PREVADZKA.md`.

@@ -7,8 +7,8 @@
   „príliš skoro“,
 - prázdne meno alebo heslo pri prihlásení: bez overenia hesla a bez zápisu do auditu (inak stovky záznamov za sekundu
   z meniacich sa adries),
-- [44] zvyšok: stránky /vlaky a /vlaky/{id} zatiaľ vek dát agenta nedostanú (pohľady nie sú v tejto oprave) –
-  očakávané zlyhanie, kým ich vlastník neupraví.
+- [44] zvyšok: zoznam vlakov /vlaky a detail vlaku /vlaky/{id} bez čerstvých dát agenta neukážu ZELENÚ
+  (rovnako ako mapa a /api/vlaky).
 """
 from __future__ import annotations
 
@@ -312,7 +312,7 @@ def test_prazdne_heslo_bez_overenia_hesla_a_bez_zaznamu_v_audite(web_app, monkey
     assert checked == ["veduci51"]
 
 
-# ------------------------------------------------------------------ [44] zvyšok mimo tejto opravy
+# ------------------------------------------------------------------ [44] zoznam a detail vlaku bez čerstvých dát
 def _stale_agent(now) -> None:
     from vlaky.agent.zdravie import set_kv
     from vlaky.db import session_scope
@@ -322,9 +322,6 @@ def _stale_agent(now) -> None:
             set_kv(s, key, {"ts": (now - timedelta(minutes=120)).isoformat()})
 
 
-@pytest.mark.xfail(raises=AssertionError, strict=False,
-                   reason="[44] zvyšok: views_evidencia.trains_page neodovzdá šablóne vlaky.html vek dát (fresh) – "
-                          "šablóna je pripravená, úprava pohľadu je u vlastníka (needs_from_others)")
 def test_stranka_zoznamu_vlakov_bez_cerstvych_dat_neukaze_zelenu(client, fixed_now):
     train_id = make_train(number="44310", status="planovany")
     make_recommendation(train_id, color="ZELENÁ", decision="VYPRAVIŤ", priority="INFO")
@@ -335,9 +332,6 @@ def test_stranka_zoznamu_vlakov_bez_cerstvych_dat_neukaze_zelenu(client, fixed_n
     assert "semafor-zelena" not in page and "bez čerstvých údajov agenta" in page
 
 
-@pytest.mark.xfail(raises=AssertionError, strict=False,
-                   reason="[44] zvyšok: _train_detail neodovzdá vlak.html vek dát a vlak.html ukáže rec.color – "
-                          "úprava pohľadu a šablóny je u vlastníka (needs_from_others)")
 def test_detail_vlaku_bez_cerstvych_dat_neukaze_zelenu(client, fixed_now):
     train_id = make_train(number="44311", status="planovany")
     make_recommendation(train_id, color="ZELENÁ", decision="VYPRAVIŤ", priority="INFO")

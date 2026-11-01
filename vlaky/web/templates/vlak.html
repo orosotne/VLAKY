@@ -50,7 +50,9 @@
   <section class="card">
     <h2>Aktuálne odporúčanie</h2>
     {% if rec %}
-    <p><a href="/odporucania/{{ rec.id }}" class="decision-link"><strong>{{ rec.decision }}</strong></a> {{ m.semafor(rec.color) }} {{ m.priority(rec.priority) }}</p>
+    {% set rec_stale = fresh and fresh.stale and rec.color == "ZELENÁ" %}
+    <p><a href="/odporucania/{{ rec.id }}" class="decision-link"><strong>{{ rec.decision }}</strong></a> {% if rec_stale %}{{ m.semafor("ORANŽOVÁ") }} <span class="small muted" title="{{ fresh.text }}">bez čerstvých údajov agenta – pôvodne ZELENÁ</span>{% else %}{{ m.semafor(rec.color) }}{% endif %} {{ m.priority(rec.priority) }}</p>
+    {% if rec_stale %}<p class="small muted">{{ fresh.text }} Semafor platí len k času prepočtu – overte stav pred rozhodnutím.</p>{% endif %}
     <p>{{ rec.summary }}</p>
     <p class="muted small">{{ rec.created_at|tfull }} · {{ REC_STATE.get(rec.state, rec.state) }}</p>
     {% else %}

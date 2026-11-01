@@ -646,6 +646,12 @@ Porušenie ochrany osobných údajov sa hlási Úradu na ochranu osobných údaj
 - **Prístup:** do aplikácie len osobné účty s rolami; na server len správcovia cez SSH kľúč a VPN/povolenú IP;
   skupina `docker` = práva root-a. Odchod zamestnanca → zrušiť účet v aplikácii, jeho SSH kľúč, vymeniť
   tajomstvá, ktoré poznal.
+- **Ochrana prihlásenia:** najviac 3 súbežné overenia hesla (bcrypt); na voľné miesto sa čaká najviac 2 s, potom
+  odpoveď 503 s `Retry-After: 5`. Limit neúspešných pokusov podľa IP adresy (IPv6 podľa siete /64, adresy IPv4
+  v tvare IPv6 ako IPv4) a podľa účtu. Zablokovaný pokus sa do auditu zapíše najviac raz za 15 min pre kľúč, ktorý
+  blokuje (`login_blocked`, `blokovane` = `ip` alebo `ucet`); pokusy s prázdnym menom alebo heslom sa do auditu
+  nezapisujú. Audit sa nečistí – detail vlaku z neho číta 30 posledných záznamov vlaku a doplnenie (hlásenia
+  o probléme, odmietnutia z odkazu rušňovodiča) len za posledných 7 dní.
 - **Šifrovanie:** HTTPS (Caddy), zálohy mimo servera šifrované (restic / rclone crypt), disk VPS
   šifrovaný, ak to poskytovateľ umožňuje.
 - **Žiadosti dotknutých osôb** (prístup, výmaz) rieši vedúci dispečingu s DPO; údaje sú v databáze
