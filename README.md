@@ -74,6 +74,12 @@ Potom otvor http://127.0.0.1:8000 a prihlás sa ako `dispecer` s heslom `ukazka-
 python -m pytest -q
 ```
 
+Rovnaké testy proti PostgreSQL (ako na serveri) – do prázdnej testovacej databázy, ktorej tabuľky sa pred každým testom zmažú a vytvoria znova:
+
+```bash
+VLAKY_TEST_DATABASE_URL=postgresql+psycopg://postgres@127.0.0.1:5432/vlaky_test python -m pytest -q
+```
+
 ## Spustenie referenčnej implementácie
 
 Fiktívny príklad (vlak Košice → Žilina s výlukou):

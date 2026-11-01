@@ -75,6 +75,8 @@ def test_detail_vlaku_doplni_historiu_jednym_dotazom_obmedzenym_casom(client, fi
     assert len(statements) == 2, [st for st, _ in statements]  # 30 posledných + jedno doplnenie
     bounded = [(st, p) for st, p in statements if "audit_log.ts >=" in st]
     assert len(bounded) == 1, [st for st, _ in statements]
+    if eng.dialect.name != "sqlite":
+        return  # plán dotazu sa overuje na SQLite (PostgreSQL pri malej tabuľke index zámerne nepoužije)
     with eng.connect() as conn:
         plan = " ".join(str(row[-1]) for row in conn.exec_driver_sql("EXPLAIN QUERY PLAN " + bounded[0][0],
                                                                       bounded[0][1]))
