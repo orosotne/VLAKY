@@ -11,6 +11,10 @@ Spoločné rozhranie: ``fetch_new() -> list[RawMail]`` a ``mark_done(raw)``. Sch
 
 Stav (posledné UID, deltaLink) sa posúva až po ``mark_done`` – e-mail, ktorý sa nepodarilo uložiť,
 sa pri ďalšom behu načíta znova (idempotencia podľa Message-ID zabráni duplicitám).
+
+Jedno načítanie vráti najviac ``BATCH`` e-mailov; ``more`` po ``fetch_new`` hovorí, či v schránke ostali ďalšie
+(napr. nahromadená pošta po výpadku agenta). Kým ostávajú, schránka nie je dočítaná – kontrola schránky sa
+nepočíta ako úspešná (``mailbox_check``) a plánovač nedá ZELENÚ.
 """
 from __future__ import annotations
 
@@ -59,6 +63,7 @@ class RawMail:
 class MailSource(Protocol):
     name: str
     sequential: bool              # True = stav sa posúva v poradí (pri chybe treba zastaviť dávku)
+    more: bool                    # po fetch_new: v schránke ostali ďalšie e-maily nad dávku (BATCH)
 
     def fetch_new(self) -> list[RawMail]: ...
 
@@ -67,6 +72,52 @@ class MailSource(Protocol):
 
 def max_raw_bytes() -> int:
     return (4 * int(settings().max_attachment_mb) + 5) * 1024 * 1024
+
+
+def mailbox_check(previous: Any, now: datetime, fetched: int, drained: bool) -> dict:
+    """Záznam ``mail_last_ok`` po prečítaní schránky.
+
+    Dočítaná schránka: ``{"ts": čas kontroly, "fetched": n}`` – plánovač podľa ``ts`` posudzuje čerstvosť výluk.
+    Čiastočné čítanie (v schránke ostali ďalšie e-maily) nie je úspešná kontrola: záznam nemá ``ts`` (plánovač ani
+    web ho neberú ako čerstvý – žiadna ZELENÁ, kým sa schránka nedočíta) a pamätá si poslednú úplnú kontrolu
+    (``last_full``) a začiatok dočítavania (``since``) pre zdravie agenta."""
+    if drained:
+        return {"ts": now.isoformat(), "fetched": fetched}
+    prev = previous if isinstance(previous, dict) else {}
+    return {"partial": True, "since": prev.get("since") if prev.get("partial") else now.isoformat(),
+            "checked": now.isoformat(), "last_full": prev.get("ts") or prev.get("last_full"), "fetched": fetched}
+
+
+_CODE = re.compile(r"^[A-Za-z0-9_.-]{1,60}$")
+
+
+def _graph_error(r: httpx.Response) -> str:
+    """Kód chyby z odpovede Microsoft Graph / Entra ID na diagnostiku (napr. „invalid_client, AADSTS7000222“ pri
+    vypršanom tajomstve, „ErrorAccessDenied“) – len kódy, nikdy celý popis (môže obsahovať identifikátory)."""
+    try:
+        j = r.json()
+    except ValueError:
+        return ""
+    if not isinstance(j, dict):
+        return ""
+    parts: list[str] = []
+    err = j.get("error")
+    if isinstance(err, dict):           # Graph: {"error": {"code": "ErrorAccessDenied", "message": …}}
+        err = err.get("code")
+    if isinstance(err, str) and _CODE.match(err):
+        parts.append(err)
+    aadsts = re.search(r"\bAADSTS\d{4,8}\b", str(j.get("error_description") or ""))
+    if aadsts:
+        parts.append(aadsts.group(0))
+    return ", ".join(parts)
+
+
+def _imap_error(exc: BaseException) -> str:
+    """Kód odpovede IMAP servera (napr. AUTHENTICATIONFAILED) – len kód v hranatých zátvorkách, nie celý text."""
+    text = " ".join(x.decode("utf-8", "replace") if isinstance(x, bytes) else str(x) for x in exc.args)
+    m = re.search(r"\[([A-Z][A-Z0-9-]{2,40})\]", text) or re.search(r"\b(AUTHENTICATIONFAILED|AUTHORIZATIONFAILED)\b",
+                                                                   text)
+    return m.group(1) if m else ""
 
 
 # ---------------------------------------------------------------------- stav v KeyValue
@@ -110,6 +161,7 @@ class DirectorySource:
 
     def __init__(self, directory: Optional[Path] = None) -> None:
         self.dir = Path(directory or settings().mail_dir)
+        self.more = False
 
     @property
     def done_dir(self) -> Path:
@@ -117,7 +169,9 @@ class DirectorySource:
 
     def fetch_new(self) -> list[RawMail]:
         self.dir.mkdir(parents=True, exist_ok=True)
-        files = sorted((p for p in self.dir.glob("*.eml") if p.is_file()), key=lambda p: p.name)[:BATCH]
+        found = sorted((p for p in self.dir.glob("*.eml") if p.is_file()), key=lambda p: p.name)
+        self.more = len(found) > BATCH
+        files = found[:BATCH]
         out: list[RawMail] = []
         limit = max_raw_bytes()
         for p in files:
@@ -180,6 +234,7 @@ class ImapSource:
         self.session = session
         self.factory = factory or imaplib.IMAP4_SSL
         self._uidvalidity: Optional[str] = None
+        self.more = False
 
     def _state(self) -> dict:
         val = kv_get(self.session, self.STATE_KEY, {}) or {}
@@ -199,7 +254,9 @@ class ImapSource:
             try:
                 conn.login(s.imap_user, s.imap_password)
             except imaplib.IMAP4.error as exc:
-                raise MailSourceError("Prihlásenie do IMAP zlyhalo (skontrolujte používateľa a heslo).") from exc
+                code = _imap_error(exc)
+                raise MailSourceError(f"Prihlásenie do IMAP zlyhalo ({code + ' – ' if code else ''}skontrolujte "
+                                      f"používateľa a heslo).") from exc
             folder = s.imap_folder or "INBOX"
             if " " in folder and not folder.startswith('"'):
                 folder = f'"{folder}"'
@@ -220,7 +277,9 @@ class ImapSource:
             typ, data = conn.uid("SEARCH", None, f"UID {last + 1}:*")
             if typ != "OK":
                 raise MailSourceError("Vyhľadávanie v IMAP schránke zlyhalo.")
-            uids = sorted(int(x) for x in (data[0] or b"").split() if x.isdigit() and int(x) > last)[:BATCH]
+            found = sorted(int(x) for x in (data[0] or b"").split() if x.isdigit() and int(x) > last)
+            self.more = len(found) > BATCH
+            uids = found[:BATCH]
             out: list[RawMail] = []
             limit = max_raw_bytes()
             for uid in uids:
@@ -273,6 +332,7 @@ class GraphSource:
         self._token_exp = 0.0
         self._pending_link: Optional[str] = None
         self._outstanding: set[str] = set()
+        self.more = False
 
     def _auth(self) -> str:
         s = settings()
@@ -286,7 +346,9 @@ class GraphSource:
                                    "scope": "https://graph.microsoft.com/.default",
                                    "grant_type": "client_credentials"})
         if r.status_code != 200:
-            raise MailSourceError(f"Získanie tokenu Microsoft Graph zlyhalo (HTTP {r.status_code}).")
+            code = _graph_error(r)
+            raise MailSourceError(f"Získanie tokenu Microsoft Graph zlyhalo (HTTP {r.status_code}"
+                                  f"{', ' + code if code else ''}).")
         j = r.json()
         self._token = j.get("access_token")
         if not self._token:
@@ -324,13 +386,16 @@ class GraphSource:
                       "$filter": f"receivedDateTime ge {since}"}
         messages: list[dict] = []
         next_state: Optional[str] = None
+        more = False                          # ďalšia stránka ostala nenačítaná (dávka BATCH je plná)
         for _ in range(GRAPH_MAX_PAGES):
             r = self._get(url, params=params, headers={"Prefer": "odata.maxpagesize=50"})
             if r.status_code == 410 and link:     # deltaLink vypršal – začneme odznova
                 kv_set(self.session, self.STATE_KEY, None)
                 raise MailSourceError("Delta odkaz Microsoft Graph vypršal – pri ďalšom behu sa schránka načíta znova.")
             if r.status_code != 200:
-                raise MailSourceError(f"Čítanie schránky cez Microsoft Graph zlyhalo (HTTP {r.status_code}).")
+                code = _graph_error(r)
+                raise MailSourceError(f"Čítanie schránky cez Microsoft Graph zlyhalo (HTTP {r.status_code}"
+                                      f"{', ' + code if code else ''}).")
             j = r.json()
             for m in j.get("value") or []:
                 if "@removed" in m or not m.get("id"):
@@ -340,11 +405,14 @@ class GraphSource:
             if j.get("@odata.nextLink"):
                 url = j["@odata.nextLink"]
                 next_state = url
+                more = True
                 if len(messages) >= BATCH:
                     break
                 continue
             next_state = j.get("@odata.deltaLink") or next_state
+            more = False
             break
+        self.more = more
         out: list[RawMail] = []
         limit = max_raw_bytes()
         for m in messages:

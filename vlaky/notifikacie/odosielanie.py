@@ -9,15 +9,22 @@ do adresára outbox (kópia na audit).
 Doručovanie: nedostupný server (SMTP, Teams, SMS brána) sa v jednom cykle agenta skúsi len raz (istič, delivery_scope)
 s limitom spojenia 10 s, zlyhané správy sa opakujú s rastúcim odstupom (5, 10, 20, 40, potom 60 min – retry_due,
 retry_pairs, retry_targets; KRITICKÉ pri výpadku kanála každých 5 min) a len tým príjemcom, ktorým sa ich
-nepodarilo doručiť.
+nepodarilo doručiť. Jednorazové upozornenia bez vlastného opakovania (hlásenie rušňovodiča o probléme, pripomienka
+výluky do odvolania) opakuje agent cez retry_one_shot.
+
+Server správ nie je nastavený (napr. chýba VLAKY_SMTP_HOST alebo je v názve preklep): vo vývoji, v testoch a v ukážke
+ostane správa len v adresári outbox (stav „outbox“), v ostrej prevádzke je to chyba doručenia (stav „chyba“) – inak
+by sa KRITICKÉ upozornenie tvárilo ako doručené (transport_problems, zdravie agenta „konfiguracia“).
 
 Verejné funkcie:
     notify_recommendation(session, rec, only=None) -> list[Notification]
     send_internal(session, kind, subject, body, priority="INFO", dedup_key="", only=None) -> list[Notification]
     send_digest(session, since, only=None) -> list[Notification]
+    send_test(session, channels=None) -> (list[Notification], list[str])
     allowed_recipients() -> dict[str, set[str]]
+    transport_problems() -> list[str], unknown_env_vars() -> list[str], outbox_counts_as_sent() -> bool
     delivery_scope(), retry_due(session, dedup_key), retry_pairs(session, rec_id, rows=None),
-    retry_targets(session, dedup_key), delivered_to_all(session, dedup_key),
+    retry_targets(session, dedup_key), delivered_to_all(session, dedup_key), retry_one_shot(session, now=None),
     recommendation_attempts(session, rec_ids), retry_delay_minutes(n)
 """
 from __future__ import annotations
@@ -32,13 +39,13 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..cas import ensure_utc, fmt, now_utc
 from ..config import settings
-from ..models import Email, ExtractedEvent, Notification, Recommendation
+from ..models import Email, Notification, Recommendation
 from .texty import recommendation_body, recommendation_subject, sms_text
 
 SENT_STATES = ("odoslana", "outbox")
@@ -51,6 +58,13 @@ RETRY_HOURS = 48        # aktuálne odporúčanie sa skúša doručiť najviac 4
 RETRY_GRACE_S = 90
 DEFERRED = "Neodoslané – kanál"  # začiatok chyby správy odloženej ističom (bez pokusu o spojenie)
 CHANNEL_ERROR = "Chyba kanála: "  # začiatok chyby spojenia alebo servera (nie odmietnutia tejto správy)
+# jednorazové upozornenia bez vlastného opakovania (hlásenie rušňovodiča, pripomienka výluky do odvolania): zlyhané
+# doručenie opakuje agent (retry_one_shot) a kým neprídu, zdravie ich počíta ako nedoručené
+ONE_SHOT_PREFIXES = ("problem:", "do_odvolania:")
+OUTBOX_ENVS = ("dev", "test", "demo")  # len tu stačí kópia v adresári outbox (bez servera správ)
+# premenné VLAKY_* mimo nastavení aplikácie (nasadenie, testy) – nie sú preklepom
+KNOWN_ENV_EXTRA = ("VLAKY_DOMAIN", "VLAKY_UPSTREAM", "VLAKY_APP_DIR", "VLAKY_USER", "VLAKY_UID", "VLAKY_STATE_DIR",
+                   "VLAKY_TEST_DATABASE_URL", "VLAKY_SCREENSHOT_DIR", "VLAKY_SKIP_BROWSER")
 
 # istič odosielania: {kanál: prvá chyba spojenia} – platí len v rámci delivery_scope (cyklus agenta, jedno volanie)
 _ISTIC: ContextVar = ContextVar("vlaky_istic_odosielania", default=None)
@@ -110,6 +124,56 @@ def allowed_recipients() -> dict:
     return {"email": {a.lower() for a in s.csv(s.notify_emails)},
             "sms": {p.replace(" ", "") for p in s.csv(s.notify_phones)},
             "teams": {"webhook"} if s.teams_webhook_url else set()}
+
+
+def outbox_counts_as_sent() -> bool:
+    """Správa len v adresári outbox (server správ nie je nastavený) sa počíta ako odoslaná len vo vývoji, v testoch
+    a v ukážke (VLAKY_ENV dev | test | demo) – v ostrej prevádzke je to chyba doručenia."""
+    return (settings().env or "").strip().lower() in OUTBOX_ENVS
+
+
+def _graph_missing(s) -> list:
+    return [name for name, value in (("VLAKY_GRAPH_TENANT_ID", s.graph_tenant_id),
+                                     ("VLAKY_GRAPH_CLIENT_ID", s.graph_client_id),
+                                     ("VLAKY_GRAPH_CLIENT_SECRET", s.graph_client_secret),
+                                     ("VLAKY_GRAPH_MAILBOX", s.graph_mailbox)) if not value]
+
+
+def _email_transport(s) -> str:
+    """Ako sa e-mail naozaj pošle (rovnaké pravidlo ako _send_email): graph | smtp | outbox."""
+    if s.notify_transport == "graph" and s.graph_mailbox and s.graph_client_id:
+        return "graph"
+    return "smtp" if s.smtp_host else "outbox"
+
+
+def transport_problems() -> list:
+    """Kanály, ktoré majú príjemcov, ale nemajú nastavený server správ (prípadne s preklepom v nastavení) –
+    správy by ostali len v outboxe. Prázdny zoznam = v poriadku. Kontroluje sa bez ohľadu na prostredie; v ostrej
+    prevádzke ich zdravie agenta hlási ako chybu (vo vývoji a ukážke stačí outbox)."""
+    s = settings()
+    allowed = allowed_recipients()
+    out = []
+    transport = (s.notify_transport or "smtp").strip()
+    if allowed["email"]:
+        if transport not in ("smtp", "graph"):
+            out.append(f"e-mail: neznámy spôsob odosielania VLAKY_NOTIFY_TRANSPORT={transport!r} (smtp | graph)")
+        elif transport == "graph" and _graph_missing(s):
+            out.append("e-mail: VLAKY_NOTIFY_TRANSPORT=graph, ale chýba " + ", ".join(_graph_missing(s)))
+        if _email_transport(s) == "outbox":
+            out.append("e-mail: nie je nastavený server správ (VLAKY_SMTP_HOST, alebo VLAKY_NOTIFY_TRANSPORT=graph "
+                       "s VLAKY_GRAPH_*) – e-maily sa len ukladajú do outboxu")
+    if allowed["sms"] and not s.sms_gateway_url:
+        out.append("SMS: čísla sú nastavené (VLAKY_NOTIFY_PHONES), ale chýba SMS brána (VLAKY_SMS_GATEWAY_URL)")
+    return out
+
+
+def unknown_env_vars() -> list:
+    """Premenné prostredia VLAKY_*, ktoré aplikácia nepozná (napr. preklep VLAKY_SMTP_SERVER namiesto
+    VLAKY_SMTP_HOST) – nastavenia ich potichu ignorujú."""
+    from ..config import Settings
+
+    known = {f"VLAKY_{name}".upper() for name in Settings.model_fields} | set(KNOWN_ENV_EXTRA)
+    return sorted(k for k in os.environ if k.upper().startswith("VLAKY_") and k.upper() not in known)
 
 
 def _guard(session: Session, channel: str, recipient: str) -> bool:
@@ -418,6 +482,13 @@ def _deliver(session: Session, channel: str, recipient: str, subject: str, body:
         else:
             n.status, n.error = "chyba", f"Neznámy kanál {channel}"
         n.sent_at = now_utc()
+        if n.status == "outbox" and not outbox_counts_as_sent():
+            # ostrá prevádzka bez servera správ (chýbajúce nastavenie alebo preklep v názve): nič neodišlo –
+            # chyba doručenia (opakuje sa, zdravie a heartbeat ju hlásia), nie „odoslané“
+            n.status, n.sent_at = "chyba", None
+            hint = {"sms": "VLAKY_SMS_GATEWAY_URL", "teams": "VLAKY_TEAMS_WEBHOOK_URL"}.get(
+                channel, "VLAKY_SMTP_HOST alebo VLAKY_GRAPH_*")
+            n.error = f"{CHANNEL_ERROR}{channel}: server správ nie je nastavený ({hint}) – správa je len v outboxe"
     except Exception as exc:  # výpadok SMTP/brány nesmie zastaviť agenta
         outage = _connection_error(exc)
         n.status, n.error = "chyba", f"{CHANNEL_ERROR if outage else ''}{exc!r}"[:500]
@@ -526,28 +597,84 @@ def send_digest(session: Session, since: datetime, only: set | None = None) -> l
     recs = list(session.scalars(select(Recommendation).where(Recommendation.created_at >= since,
                                                              Recommendation.priority == "INFO",
                                                              Recommendation.state == "nove")))
-    waiting = list(session.scalars(select(ExtractedEvent).where(ExtractedEvent.status == "navrh",
-                                                                ExtractedEvent.needs_confirmation.is_(True))))
-    # potvrdené udalosti, ktoré sa nepodarilo zapísať (napr. avízo pre vlak, ktorý ešte nie je v systéme), čakajú
-    # vo fronte rovnako – súhrn ich nesmie vynechať
-    from ..posta.spracovanie import failed_confirmations
+    # fronta na potvrdenie rovnako ako na webe (/fronta, počítadlo v hlavičke): čakajúce udalosti, automaticky
+    # zapísané výluky, ktoré dispečer ešte neoveril, aj potvrdené udalosti so zlyhaným zápisom. Samotné neoverené
+    # automatické zápisy súhrn nevyvolajú (plánovač s nimi už počíta; pripomína ich odovzdávka a denná správa).
+    from ..agent.zdravie import queue_counts
 
-    waiting += failed_confirmations(session)
+    queue = queue_counts(session)
     quarantined = list(session.scalars(select(Email).where(Email.received_at >= since,
                                                            Email.verdict == "karantena")))
-    if not recs and not waiting and not quarantined:
+    if not recs and not (queue["waiting"] or queue["failed"]) and not quarantined:
         return []
     lines = [f"Súhrn Agenta dispečera od {fmt(since)}", ""]
     if recs:
         lines.append("Odporúčania (INFO):")
         lines += [f"  - {r.summary}" for r in recs]
         lines.append("")
-    if waiting:
-        lines.append(f"Čaká na potvrdenie dispečerom: {len(waiting)} udalostí z e-mailov "
+    if queue["total"]:
+        lines.append(f"Čaká na potvrdenie dispečerom: {queue['total']} udalostí z e-mailov "
                      f"({settings().public_url.rstrip('/')}/fronta)")
+        if queue["auto"]:
+            lines.append(f"  - z toho zapísané automaticky – overte: {queue['auto']}")
     if quarantined:
         lines.append(f"V karanténe (nepovolený alebo neoverený odosielateľ): {len(quarantined)} e-mailov")
         lines += [f"  - {e.sender}: {e.subject}" for e in quarantined[:10]]
     body = "\n".join(lines)
     return send_internal(session, "suhrn", "[AGENT][INFO] Súhrn", body, "INFO",
                          dedup_key=f"digest:{since.isoformat()}", channels=["email"], only=only)
+
+
+def is_one_shot(dedup_key: str) -> bool:
+    """Jednorazové upozornenie, ktorého zlyhané doručenie opakuje agent (retry_one_shot)."""
+    return bool(dedup_key) and dedup_key.startswith(ONE_SHOT_PREFIXES)
+
+
+def retry_one_shot(session: Session, now: datetime | None = None) -> list:
+    """Zopakuje jednorazové upozornenia, ktoré sa nepodarilo doručiť (hlásenie rušňovodiča o probléme odoslané
+    z webu, pripomienka výluky do odvolania): tú istú správu (rovnaký kľúč, predmet aj text) len tým príjemcom,
+    ktorým neprišla, s odstupom 5, 10, 20, 40, 60 min (pri výpadku kanála hneď, ako tomu istému príjemcovi prišla
+    iná správa), najviac RETRY_HOURS od prvého pokusu."""
+    now = now or now_utc()
+    since = now - timedelta(hours=RETRY_HOURS)
+    keys = [k for (k,) in session.execute(
+        select(Notification.dedup_key).where(Notification.status == "chyba", Notification.created_at >= since,
+                                             or_(*(Notification.dedup_key.startswith(p) for p in ONE_SHOT_PREFIXES)))
+        .distinct())]
+    out: list = []
+    for key in sorted(keys):
+        first = session.scalar(select(func.min(Notification.created_at)).where(Notification.dedup_key == key))
+        if first is None or ensure_utc(first) < since:
+            continue  # opakuje sa najviac RETRY_HOURS od prvého pokusu
+        targets = retry_targets(session, key)
+        if not targets:
+            continue
+        rows = list(session.scalars(select(Notification).where(Notification.dedup_key == key)
+                                    .order_by(Notification.id.desc())))
+        src = next((n for n in rows if n.channel != "sms"), rows[0])  # SMS má len predmet
+        channels = [ch for ch in ("email", "teams", "sms") if any(c == ch for c, _r in targets)]
+        out += send_internal(session, src.kind, src.subject, src.body, src.priority, dedup_key=key,
+                             channels=channels, only=targets)
+    return out
+
+
+def send_test(session: Session, channels: list | None = None) -> tuple:
+    """Skúšobná správa (`python -m vlaky test-notify`) na KAŽDÝ kanál interného zoznamu (e-mail, Teams, SMS) – nielen
+    na e-mail, ako by ju poslala priorita INFO. Vráti (záznamy správ, poznámky ku kanálom bez príjemcov)."""
+    s = settings()
+    allowed = allowed_recipients()
+    notes = []
+    wanted = []
+    for ch in dict.fromkeys(channels or ["email", "teams", "sms"]):
+        if allowed.get(ch):
+            wanted.append(ch)
+        elif s.shadow_mode and ch != "email":
+            notes.append(f"{ch}: v tieňovej prevádzke vypnuté (VLAKY_SHADOW_MODE=true)")
+        else:
+            setting = {"email": "VLAKY_SHADOW_EMAILS" if s.shadow_mode else "VLAKY_NOTIFY_EMAILS",
+                       "teams": "VLAKY_TEAMS_WEBHOOK_URL", "sms": "VLAKY_NOTIFY_PHONES"}[ch]
+            notes.append(f"{ch}: bez príjemcov – nenastavené ({setting})")
+    out = send_internal(session, "test", "[AGENT] Skúšobná správa",
+                        "Toto je skúšobná správa Agenta dispečera (test-notify). Ak ste ju dostali, kanál funguje.",
+                        "INFO", dedup_key="", channels=wanted) if wanted else []
+    return out, notes

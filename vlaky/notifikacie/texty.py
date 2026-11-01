@@ -17,6 +17,16 @@ def _t(iso: str | None) -> str:
         return str(iso)
 
 
+def eur(value, digits: int = 0) -> str:
+    """Suma v eurách po slovensky: tisíce oddelené medzerou, desatinná čiarka („1 593 €“, „12,50 €“) – ako na
+    webe. Formát Pythonu „1,593 €“ by dispečer čítal ako 1,59 €."""
+    try:
+        text = f"{float(value or 0):,.{digits}f}"
+    except (TypeError, ValueError):
+        return "—"
+    return text.replace(",", " ").replace(".", ",") + " €"
+
+
 def _duty_h(crew: dict) -> str:
     try:
         return f"{float(crew.get('max_duty_h') or 13):g}"
@@ -58,7 +68,7 @@ def recommendation_body(rec: Recommendation) -> str:
             f"Trasa: {ch.get('route', '')}",
             f"Odchod: {_t(ch.get('depart'))}   Príchod: {_t(ch.get('arrival_p50'))} (90 % do {_t(ch.get('arrival_p90'))})",
             f"P(včas): {ch.get('p_on_time', 0):.0%}   P(zadržania pred výlukou): {ch.get('p_hold', 0):.0%}",
-            f"Očakávaný náklad: {ch.get('expected_cost', 0):,.0f} € (vzorové sadzby, ak nie sú nastavené vlastné)",
+            f"Očakávaný náklad: {eur(ch.get('expected_cost', 0))} (vzorové sadzby, ak nie sú nastavené vlastné)",
         ]
     pp = rec.path_proposal or {}
     if pp.get("stations"):
@@ -96,7 +106,7 @@ def recommendation_body(rec: Recommendation) -> str:
         lines += ["", "Porovnanie variantov:"]
         for v in rec.variants:
             lines.append(f"  {v.get('route', '')[:30]:<30} {_t(v.get('depart')):>13} {v.get('kind', ''):<12} "
-                         f"{v.get('status', ''):<9} P(včas) {v.get('p_on_time', 0):.0%}  {v.get('expected_cost', 0):,.0f} €")
+                         f"{v.get('status', ''):<9} P(včas) {v.get('p_on_time', 0):.0%}  {eur(v.get('expected_cost', 0))}")
     if rec.reasons:
         lines += ["", "Dôvody a upozornenia:"] + [f"  - {r}" for r in rec.reasons]
     age = rec.data_age or {}

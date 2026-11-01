@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..cas import fmt, now_utc
-from ..models import (Closure, Email, ExtractedEvent, Handover, Recommendation, ShiftHandoverReport, Train)
+from ..models import (Closure, Email, Handover, Recommendation, ShiftHandoverReport, Train)
 from ..planovanie.planovac import DONE_STATES
 
 
@@ -74,16 +74,18 @@ def build_report(session: Session, now: datetime | None = None, hours: int = 12)
     lines += ["", f"Nové alebo zmenené výluky za {hours} h:"]
     lines += [f"  - {c.from_station} – {c.to_station} {fmt(c.start_utc)} – {fmt(c.end_utc)} ({_state(c)})"
               for c in new_closures] or ["  (žiadne)"]
-    waiting = list(session.scalars(select(ExtractedEvent).where(ExtractedEvent.status == "navrh",
-                                                                ExtractedEvent.needs_confirmation.is_(True))))
-    from ..posta.spracovanie import failed_confirmations  # potvrdené, ale zápis zlyhal – čakajú vo fronte
+    # fronta rovnako ako na webe (/fronta, počítadlo v hlavičke): čakajúce udalosti, automaticky zapísané výluky,
+    # ktoré dispečer ešte neoveril, aj potvrdené udalosti so zlyhaným zápisom
+    from .zdravie import queue_counts
 
-    waiting += failed_confirmations(session)
+    queue = queue_counts(session)
     quarantined = session.scalars(select(Email).where(Email.verdict == "karantena",
                                                       Email.received_at >= since)).all()
-    data["waiting"], data["quarantined"] = len(waiting), len(quarantined)
-    lines += ["", f"Nepotvrdené udalosti z e-mailov: {len(waiting)}",
-              f"E-maily v karanténe za {hours} h: {len(quarantined)}",
+    data["waiting"], data["quarantined"], data["auto_applied"] = queue["total"], len(quarantined), queue["auto"]
+    lines += ["", f"Nepotvrdené udalosti z e-mailov: {queue['total']}"]
+    if queue["auto"]:
+        lines.append(f"  - z toho zapísané automaticky – overte: {queue['auto']}")
+    lines += [f"E-maily v karanténe za {hours} h: {len(quarantined)}",
               "", "Otvorené úlohy: doplní odovzdávajúci dispečer."]
     return "\n".join(lines), data
 
