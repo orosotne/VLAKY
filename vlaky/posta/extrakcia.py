@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Protocol
 
+from ..config import settings
 from .llm import PROMPT_VERSION, LLMError, LLMExtractor
 from .pravidla import RULES_VERSION, RuleExtractor
 from .stanice import stations
@@ -47,6 +48,18 @@ _FAMILY = {"vyluka_nova": "vyluka", "vyluka_zmena": "vyluka", "vyluka_zrusenie":
            "ine": "ine"}
 _STATION_FIELDS = {"from_station", "to_station", "origin", "destination", "border"}
 _TIME_FIELDS = {"start", "end", "eta", "earliest_departure", "deadline", "accept_by"}
+_EMPTY = (None, "", [])
+# polia, podľa ktorých sa udalosť priraďuje k záznamu v registri (zmena/zrušenie) – tiež musia byť overené
+_MATCH_FIELDS = {"vyluka_zmena": ["external_ref"], "trasa_zmena": ["external_ref"], "trasa_zrusena": ["external_ref"]}
+
+
+def _checked_fields(kind: str) -> list[str]:
+    return list(dict.fromkeys(KEY_FIELDS.get(kind, []) + _MATCH_FIELDS.get(kind, [])))
+
+
+def _unverified_cap() -> float:
+    """Istota udalosti, v ktorej sú kľúčové polia len z LLM – vždy pod prahom potvrdenia (sekcia 9.6)."""
+    return round(max(0.3, settings().confirm_threshold - 0.05), 2)
 
 
 def _station_key(value) -> str:  # noqa: ANN001
@@ -118,6 +131,8 @@ def combine(rule_items: list[ExtractedItem], llm_items: Optional[list[ExtractedI
             llm_error: str = "") -> list[ExtractedItem]:
     """Spojí výsledok pravidiel a LLM. ``llm_items=None`` znamená, že LLM sa nepoužil alebo zlyhal."""
     rules = [copy.deepcopy(i) for i in rule_items]
+    for it in rules:
+        it.field_source = {k: "pravidla" for k, v in it.data.items() if v not in _EMPTY}
     if llm_items is None:
         for it in rules:
             it.extractor = "pravidla"
@@ -150,7 +165,7 @@ def combine(rule_items: list[ExtractedItem], llm_items: Optional[list[ExtractedI
             fields.append("kind")
         for f in fields:
             a, b = r.data.get(f), lm.data.get(f)
-            if a in (None, "", []) or b in (None, "", []):
+            if a in _EMPTY or b in _EMPTY:
                 continue
             compared += 1
             if not _same(f, a, b):
@@ -158,9 +173,15 @@ def combine(rule_items: list[ExtractedItem], llm_items: Optional[list[ExtractedI
         if lm.kind != r.kind:
             diffs.insert(0, "druh udalosti")
         merged = dict(r.data)
-        for k, v in lm.data.items():
-            if merged.get(k) in (None, "", []) and v not in (None, "", []):
-                merged[k] = v
+        source: dict = {}
+        for k in list(dict.fromkeys([*r.data, *lm.data])):
+            has_r, has_l = r.data.get(k) not in _EMPTY, lm.data.get(k) not in _EMPTY
+            if has_r or has_l:
+                source[k] = "pravidla+llm" if has_r and has_l else ("pravidla" if has_r else "llm")
+            if not has_r and has_l:
+                merged[k] = lm.data[k]
+        # kľúčové pole, ktoré našiel len LLM, pravidlá neoverili: nijaké zvýšenie istoty, vždy potvrdenie
+        unverified = [f for f in _checked_fields(r.kind) if source.get(f) == "llm"]
         notes = r.notes + [n for n in lm.notes if n not in r.notes]
         evidence = {**lm.evidence, **r.evidence}
         if diffs:
@@ -170,19 +191,24 @@ def combine(rule_items: list[ExtractedItem], llm_items: Optional[list[ExtractedI
             for f in diffs:
                 rv = r.kind if f == "druh udalosti" else r.data.get(f)
                 notes.append(f"Nezhoda pravidiel a LLM v poli {f}: pravidlá = {rv!r}, LLM = {alt[f]!r} – overte.")
-        elif compared >= 2:
+        elif compared >= 2 and not unverified:
             conf = min(0.97, max(r.confidence, lm.confidence) + 0.1)
             notes.append("Pravidlá aj LLM sa zhodujú v kľúčových poliach.")
         else:
             conf = max(r.confidence, lm.confidence)
+        if unverified:
+            conf = min(conf, _unverified_cap())
+            notes.append("Kľúčové polia " + ", ".join(unverified) + " našiel len LLM, pravidlá ich neoverili – overte.")
         out.append(ExtractedItem(r.kind, merged, round(conf, 2), notes, {**lm.field_confidence, **r.field_confidence},
-                                 evidence, extractor="pravidla+llm"))
+                                 evidence, extractor="pravidla+llm", field_source=source, unverified=unverified))
     for j, lm in enumerate(llm):
         if j in used:
             continue
         if lm.kind == "ine" and (out or rules):
             continue
-        lm.confidence = round(min(lm.confidence, 0.8), 2)
+        lm.field_source = {k: "llm" for k, v in lm.data.items() if v not in _EMPTY}
+        lm.unverified = [f for f in _checked_fields(lm.kind) if lm.data.get(f) not in _EMPTY]
+        lm.confidence = round(min(lm.confidence, 0.8, _unverified_cap() if lm.unverified else 0.8), 2)
         lm.notes.append("Udalosť našiel len LLM (pravidlá nie) – overte.")
         lm.extractor = "llm"
         out.append(lm)

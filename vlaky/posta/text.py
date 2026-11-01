@@ -41,11 +41,31 @@ def fold_char(c: str) -> str:
 
 
 def clean_text(text: str | None) -> str:
-    """Odstráni neviditeľné znaky a znaky NUL, zjednotí konce riadkov."""
+    """Odstráni neviditeľné znaky a znaky NUL, zjednotí konce riadkov.
+
+    Osamelé znaky „surrogate“ (nedekódovateľné bajty) nahradí „?“ – databáza (PostgreSQL) by text odmietla.
+    """
     if not text:
         return ""
     t = text.translate(_INVISIBLE)
-    return t.replace("\r\n", "\n").replace("\r", "\n")
+    t = t.replace("\r\n", "\n").replace("\r", "\n")
+    try:
+        t.encode("utf-8")
+    except UnicodeEncodeError:
+        t = t.encode("utf-8", "replace").decode("utf-8")
+    return t
+
+
+_CONTROL = {c: " " for c in [*range(32), 127]}
+
+
+def header_text(value: object) -> str:
+    """Hodnota hlavičky bezpečná na uloženie: bez NUL, riadiacich a neviditeľných znakov, v jednom riadku.
+
+    Hlavičky sú nedôveryhodný vstup – znak NUL (aj zakódovaný podľa RFC 2047) by PostgreSQL odmietol a jeden
+    taký e-mail by zastavil príjem celej schránky.
+    """
+    return " ".join(clean_text(str(value or "")).translate(_CONTROL).split())
 
 
 def fold(text: str) -> str:

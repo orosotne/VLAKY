@@ -106,17 +106,27 @@ def test_closure_auto_apply_confirm_change_and_reject(env, session):
     # dispečer neskôr potvrdí → výluka je overená
     confirm_event(session, ev.id, "dispecer1")
     assert c.status == "overene" and c.version == 1 and ev.confirmed_by == "dispecer1"
-    # zmena výluky (preposlaný e-mail) – nájde sa podľa čísla ROV
+    # zmena výluky (preposlaný e-mail) – nájde sa podľa čísla ROV; preposlaný obsah a zmena overenej výluky
+    # sa nezapíšu bez dispečera: pôvodná výluka ostane, nový termín je dočasný záznam „navrh“
     drop(env, "04_zmena_vyluky_preposlana.eml")
     s2 = process_mailbox(session)
-    assert s2["auto_applied"] == 1, s2
+    assert s2["auto_applied"] == 0 and s2["waiting_confirmation"] == 1, s2
+    session.refresh(c)
+    assert c.version == 1 and c.status == "overene"
+    assert c.end_utc.replace(tzinfo=timezone.utc) == datetime(2026, 11, 12, 13, 0, tzinfo=timezone.utc)
+    change = session.scalars(select(ExtractedEvent).where(ExtractedEvent.kind == "vyluka_zmena")).one()
+    reasons = " ".join(change.validation["confirmation_reasons"])
+    assert change.needs_confirmation and "preposlaný" in reasons and "overená dispečerom" in reasons
+    tmp = session.scalars(select(Closure).where(Closure.source_event_id == change.id)).one()
+    assert tmp.proposed_change_of == c.id and tmp.status == "navrh"
+    # dispečer zmenu potvrdí → zapíše sa do pôvodnej výluky, dočasný záznam zmizne
+    confirm_event(session, change.id, "dispecer1")
     session.refresh(c)
     assert session.query(Closure).count() == 1
-    assert c.version == 2 and c.status == "navrh"
+    assert c.version == 2 and c.status == "overene" and c.source_event_id == change.id
     assert c.start_utc.replace(tzinfo=timezone.utc) == datetime(2026, 11, 12, 8, 30, tzinfo=timezone.utc)
     assert c.end_utc.replace(tzinfo=timezone.utc) == datetime(2026, 11, 12, 15, 0, tzinfo=timezone.utc)
-    # dispečer zmenu zamietne → pôvodný (overený) stav sa obnoví
-    change = session.scalars(select(ExtractedEvent).where(ExtractedEvent.kind == "vyluka_zmena")).one()
+    # dispečer zmenu (dodatočne) zamietne → pôvodný (overený) stav sa obnoví
     reject_event(session, change.id, "dispecer2", "zmena neplatí")
     session.refresh(c)
     assert change.status == "zamietnute" and change.validation["rejection"]["reason"] == "zmena neplatí"
@@ -250,7 +260,9 @@ def test_prompt_injection_is_never_auto_applied(env, session, monkeypatch):
     assert ev.needs_confirmation and ev.status == "navrh" and ev.confidence <= 0.5
     ev.needs_confirmation = False                                # ani ručne zmenený príznak nepomôže
     assert apply_event(session, ev)["ok"] is False
-    assert session.query(Closure).count() == 0
+    # plánovač s výlukou počíta len ako s nepotvrdenou: záznam „navrh“ udalosti, ktorá sa nezapísala
+    (c,) = session.query(Closure).all()
+    assert c.status == "navrh" and c.source_event_id == ev.id and ev.status == "navrh"
     confirm_event(session, ev.id, "dispecer1")                   # človek to overil a potvrdil
     assert session.query(Closure).one().status == "overene"
 
@@ -286,13 +298,16 @@ def test_process_mailbox_end_to_end_over_samples(env, session, planner):
     s = process_mailbox(session)
     assert s["fetched"] == len(names) == 18 and s["quarantined"] == 1 and s["suspicious"] == 1
     assert s["events"] == 21 and s["auto_applied"] + s["waiting_confirmation"] == 21
-    assert s["auto_applied"] == 13 and s["waiting_confirmation"] == 8, s
-    assert s["errors"] == [] and s["planning"]["ok"] is True
+    assert s["auto_applied"] == 12 and s["waiting_confirmation"] == 9, s
+    assert s["errors"] == [] and s["planning"]["ok"] is True and s["fetch_ok"] is True
     assert len(planner) == 1 and planner[0].startswith("e-mail: ")
     waiting = {session.get(ExtractedEvent, i).kind for i in s["waiting_event_ids"]}
-    assert waiting == {"vyluka_zrusenie", "mimoriadnost", "trasa_zrusena", "avizo", "vyluka_nova", "ine",
-                       "pomala_jazda"}
-    assert session.query(Closure).count() == 8 and session.query(Order).count() == 1
+    assert waiting == {"vyluka_zrusenie", "mimoriadnost", "trasa_zrusena", "avizo", "vyluka_nova", "vyluka_zmena",
+                       "ine", "pomala_jazda"}
+    # 8 zapísaných výluk + 4 záznamy „navrh“ čakajúcich udalostí (mimoriadnosť, POTR do odvolania, výluka
+    # z podozrivého e-mailu, dočasný záznam zmeny z preposlaného e-mailu) – plánovač počíta aj s nimi
+    assert session.query(Closure).count() == 12 and session.query(Order).count() == 1
+    assert session.query(Closure).filter(Closure.proposed_change_of.is_not(None)).count() == 1
     assert {p.status for p in session.query(TrainPath)} == {"zmenena", "ponuka"}
     assert all(e.status in ("spracovany",) for e in session.query(Email))
     assert len(list((Path(env.mail_dir) / "spracovane").glob("*.eml"))) == 18
@@ -300,6 +315,7 @@ def test_process_mailbox_end_to_end_over_samples(env, session, planner):
     s2 = process_mailbox(session)
     assert s2["fetched"] == 0 and s2["events"] == 0 and len(planner) == 1
     assert session.query(Email).count() == 18 and session.query(ExtractedEvent).count() == 21
+    assert session.query(Closure).count() == 12
 
 
 def test_planner_errors_are_reported_not_raised(env, session, monkeypatch):

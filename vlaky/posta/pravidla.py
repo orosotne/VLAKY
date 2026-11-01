@@ -455,6 +455,23 @@ class _Ctx:
             return None
         return one_line(self.text[m.start():stop], 200)
 
+    def block_of(self, pos: int) -> Optional[tuple[int, int]]:
+        for bs, be in self.blocks:
+            if bs <= pos <= be:
+                return bs, be
+        return None
+
+    def unused_times(self, start: int, end: int) -> list[str]:
+        """Časy v časti textu, ktoré nepatria k žiadnemu nájdenému obdobiu (napr. ďalšie okno, ktoré sa nespracovalo)."""
+        spans = [(p.pos, p.end_pos) for p in self.periods]
+        out = []
+        for t in self.toks:
+            if t.kind not in ("time", "datetime") or not (start <= t.start < end):
+                continue
+            if not any(a <= t.start and t.end <= b for a, b in spans):
+                out.append(one_line(self.text[t.start:t.end], 40))
+        return out
+
     def is_old_period(self, p: Period) -> bool:
         """Obdobie označené ako pôvodné („Pôvodný termín: …“) – pri zmene neplatí."""
         ls = self.f.rfind("\n", 0, p.pos) + 1
@@ -640,6 +657,12 @@ class RuleExtractor:
             fc["start"] = 0.85
             fc["end"] = 0.85 if per.end else 0.0
             ev["obdobie"] = c.line_of(per.pos)
+            blk = c.block_of(per.pos)
+            loose = c.unused_times(*blk) if blk else []
+            if loose:          # čas v tom istom odseku, ktorý sa nikam nepriradil – termín nemusí byť úplný
+                penalties += 0.1
+                notes.append("V texte je čas " + ", ".join(f"„{x}“" for x in loose[:3]) +
+                             ", ktorý sa nepodarilo priradiť k obdobiu – overte termín.")
         a, b = (bs, be) if not single else (0, len(c.text))
         ref = c.first_group(_CLOSURE_REF_RES, a, b) or (c.first_group(_CLOSURE_REF_RES, 0, len(c.text))
                                                         if item_kind in ("vyluka_zmena", "vyluka_zrusenie") else None)

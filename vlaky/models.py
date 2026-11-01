@@ -101,6 +101,10 @@ class Email(Base):
     status: Mapped[str] = mapped_column(String(20), default="prijaty")  # prijaty|spracovany|chyba
     error: Mapped[str] = mapped_column(Text, default="")
     raw_path: Mapped[str] = mapped_column(String(500), default="")
+    # preposlaný obsah (príloha message/rfc822 alebo vložené preposlanie): pôvodní odosielatelia, čiarkou;
+    # „?“ = odosielateľa nemožno zistiť; prázdne = e-mail nie je preposlaný. Z takého e-mailu sa nič
+    # nezapisuje automaticky (sekcia M5).
+    forwarded_from: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     attachments: Mapped[list["Attachment"]] = relationship(back_populates="email", cascade="all, delete-orphan")
 
 
@@ -157,6 +161,10 @@ class Closure(Base):
     external_ref: Mapped[str] = mapped_column(String(120), default="")  # číslo rozkazu/výluky, ak je
     note: Mapped[str] = mapped_column(Text, default="")
     version: Mapped[int] = mapped_column(Integer, default=1)
+    # platí do odvolania: end_utc je len technický koniec, agent ho priebežne posúva a pripomína dispečerovi
+    until_revoked: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=False)
+    # dočasný záznam „návrh“: navrhovaná (nepotvrdená) zmena výluky s týmto ID – plánovač počíta s oboma
+    proposed_change_of: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

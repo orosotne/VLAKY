@@ -148,7 +148,8 @@ class DirectorySource:
 
 
 # ---------------------------------------------------------------------- IMAP
-_INTERNALDATE = re.compile(rb'INTERNALDATE "(\d{1,2})-([A-Za-z]{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})"')
+# RFC 3501: date-day-fixed = (SP DIGIT) / 2DIGIT – dni 1 až 9 môžu mať namiesto nuly medzeru („ 2-Nov-2026“)
+_INTERNALDATE = re.compile(rb'INTERNALDATE "[ 0]?(\d{1,2})-([A-Za-z]{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})"')
 _MONTHS = {m: i for i, m in enumerate(
     [b"Jan", b"Feb", b"Mar", b"Apr", b"May", b"Jun", b"Jul", b"Aug", b"Sep", b"Oct", b"Nov", b"Dec"], start=1)}
 
@@ -381,9 +382,11 @@ def get_source(session: Optional[Session] = None) -> MailSource:
         from ..models import Email
 
         def known(mid: str) -> bool:
+            # e-mail v karanténe sa stiahne znova: overená kópia s rovnakým Message-ID ho môže nahradiť
             if session is None:
                 return False
-            return session.scalar(select(Email.id).where(Email.message_id == mid)) is not None
+            return session.scalar(select(Email.id).where(Email.message_id == mid,
+                                                         Email.verdict != "karantena")) is not None
 
         return GraphSource(session, known=known)
     if kind == "directory":
