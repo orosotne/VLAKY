@@ -378,7 +378,51 @@ def _closure_values(c: Closure) -> dict:
             "track": c.track, "start_utc": input_dt(c.start_utc), "end_utc": input_dt(c.end_utc),
             "daily_from": c.daily_from, "daily_to": c.daily_to, "electric_only": "1" if c.electric_only else "",
             "speed_kmh": c.speed_kmh if c.speed_kmh is not None else "", "status": c.status,
-            "external_ref": c.external_ref, "note": c.note, "zobrazeny_koniec": input_dt(c.end_utc)}
+            "external_ref": c.external_ref, "note": c.note, "zobrazeny_koniec": input_dt(c.end_utc),
+            "verzia_zaznamu": _closure_token(c)}
+
+
+def _closure_token(c: Closure) -> str:
+    """Odtlačok stavu výluky, ktorý formulár úpravy zobrazil (optimistická kontrola súbežnej zmeny).
+
+    Zmení ho každá zmena údajov, stavu, vlastníka či verzie záznamu – potvrdená zmena alebo zrušenie z e-mailu,
+    overenie, úprava iným dispečerom. Nepatrí doň poznámka ani technický koniec výluky „do odvolania“ (posúva
+    ho agent): taký zastaraný formulár sa uloží a koniec ošetrí skryté pole so zobrazeným koncom."""
+    import hashlib
+
+    end = "" if c.until_revoked else iso(c.end_utc)
+    parts = (c.version, c.status, c.kind, c.from_station, c.to_station, c.line_ref, c.track, iso(c.start_utc), end,
+             c.daily_from, c.daily_to, bool(c.electric_only), c.speed_kmh, c.external_ref, bool(c.until_revoked),
+             c.proposed_change_of, c.source_event_id)
+    return hashlib.sha256("|".join("" if p is None else str(p) for p in parts).encode("utf-8")).hexdigest()[:24]
+
+
+_CLOSURE_LABELS = {"from_station": "Od dopravne", "to_station": "Po dopravňu", "kind": "Druh",
+                   "line_ref": "Číslo trate", "track": "Koľaj", "external_ref": "Číslo rozkazu / výluky",
+                   "start_utc": "Začiatok", "end_utc": "Koniec", "daily_from": "Denne od", "daily_to": "Denne do",
+                   "speed_kmh": "Rýchlosť pri pomalej jazde", "status": "Stav",
+                   "electric_only": "Len elektrická trakcia", "note": "Poznámka"}
+
+
+def _unsaved_inputs(form, current: dict) -> list:
+    """Polia zastaraného formulára, v ktorých sa zadanie dispečera líši od aktuálneho stavu (aby ich mohol zadať
+    znova – formulár sa zobrazí s aktuálnymi údajmi)."""
+    out = []
+    for key, label in _CLOSURE_LABELS.items():
+        mine, now = str(form.get(key) or "").strip(), str(current.get(key) or "").strip()
+        if key == "speed_kmh":
+            try:
+                same = (float(mine.replace(",", ".")) if mine else None) == (float(now) if now else None)
+            except ValueError:
+                same = False
+        else:
+            same = mine.replace("\r\n", "\n") == now.replace("\r\n", "\n")
+        if not same:
+            shown = {"electric_only": {"1": "áno", "": "nie"}, "kind": CLOSURE_KIND,
+                     "status": CLOSURE_STATUS}.get(key, {})
+            out.append({"label": label, "mine": shown.get(mine, mine[:300] or "—"),
+                        "current": shown.get(now, now[:300] or "—")})
+    return out
 
 
 @router.get("/vyluky/nova", response_class=HTMLResponse)
@@ -421,10 +465,20 @@ def closure_update(closure_id: int, request: Request, background: BackgroundTask
                    form=Depends(csrf_form)):
     reader = FormReader(form)
     values = _read_closure_form(reader)
+    shown_token = str(form.get("verzia_zaznamu") or "").strip()
     with session_scope() as s:
-        c = s.get(Closure, closure_id)
+        c = s.get(Closure, closure_id, with_for_update=True)
         if c is None:
             raise HTTPException(404, "Výluka neexistuje.")
+        if shown_token and shown_token != _closure_token(c):
+            # zastaraný formulár: výluku medzitým zmenil niekto iný (napr. potvrdená zmena z e-mailu) – uloženie by
+            # jeho zmenu potichu vrátilo; formulár sa zobrazí znova s aktuálnymi údajmi a so zadaním dispečera
+            current = _closure_values(c)
+            audit(s, user.username, "closure_update_conflict", "closure", c.id, version=c.version)
+            return render(request, "vyluka_form.html",
+                          {"closure": c, "values": current, "errors": {},
+                           "conflict": {"version": c.version, "unsaved": _unsaved_inputs(form, current)}},
+                          user=user, status_code=409)
         if not reader.ok:
             return render(request, "vyluka_form.html", {"closure": c, "values": reader.values(),
                                                         "errors": reader.errors}, user=user, status_code=422)

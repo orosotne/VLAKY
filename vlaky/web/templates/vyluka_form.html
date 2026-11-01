@@ -8,9 +8,13 @@
   <p class="muted">Úsek sa vyhľadá v modeli siete (všetky koľaje medzi dopravňami). Výluka alebo mimoriadnosť v jednej dopravni: zadajte tú istú dopravňu do oboch polí – platí pre všetky koľaje v jej obvode. Časy v miestnom čase ({{ tz }}).</p>
 </div>
 {% if errors %}<div class="flash flash-chyba" role="alert">Formulár obsahuje chyby – opravte označené polia.</div>{% endif %}
+{% if conflict %}<div class="flash flash-chyba" role="alert">Výluku medzitým zmenil niekto iný (napr. potvrdená zmena z e-mailu alebo iný dispečer) – vaše úpravy sa neuložili, aby sa táto zmena potichu nevrátila. Formulár ukazuje aktuálne údaje (verzia {{ conflict.version }}); ak sú vaše úpravy stále potrebné, zadajte ich znova a uložte.
+  {% if conflict.unsaved %}<ul class="small">{% for u in conflict.unsaved %}<li>{{ u.label }}: vaše zadanie <strong>{{ u.mine }}</strong>, teraz {{ u.current }}</li>{% endfor %}</ul>{% endif %}
+</div>{% endif %}
 <form method="post" action="{{ '/vyluky/' ~ closure.id ~ '/upravit' if closure else '/vyluky/nova' }}" class="card form-grid" novalidate>
   {{ m.csrf() }}
-  {% if closure %}<input type="hidden" name="zobrazeny_koniec" value="{{ values.get('zobrazeny_koniec', '') }}">{% endif %}
+  {% if closure %}<input type="hidden" name="zobrazeny_koniec" value="{{ values.get('zobrazeny_koniec', '') }}">
+  <input type="hidden" name="verzia_zaznamu" value="{{ values.get('verzia_zaznamu', '') }}">{% endif %}
   <fieldset>
     <legend>Úsek</legend>
     <div class="grid-3">

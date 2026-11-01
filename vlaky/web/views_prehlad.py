@@ -274,6 +274,10 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
         return redirect(f"/fronta#udalost-{event_id}", "Udalosť je potvrdená, ale do registra sa nezapísala: "
                         f"{str(result.get('error') or 'neznáma chyba')[:300]} Po odstránení príčiny ju potvrďte znova.",
                         "chyba")
+    if result.get("action") == "nahradene":
+        # staršia udalosť – záznam medzitým zmenila (napr. zrušila) novšia udalosť, ktorá má prednosť
+        return redirect("/fronta", "Udalosť potvrdená, ale nič sa nezapísalo: "
+                        f"{str(result.get('note') or 'záznam medzitým zmenila novšia udalosť.')[:300]}", "varovanie")
     msg = "Udalosť potvrdená" + (f" s úpravami ({', '.join(edits)})" if edits else "")
     if kept:
         msg += f"; ponechané úpravy z registra výluk ({', '.join(kept)})"

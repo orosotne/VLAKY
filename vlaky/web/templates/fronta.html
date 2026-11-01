@@ -20,7 +20,7 @@
     </div>
   </header>
   {% if item.failed %}
-  <p class="flash flash-chyba" role="alert">Udalosť potvrdil {{ ev.confirmed_by or "dispečer" }} {{ ev.confirmed_at|t }}, ale do registra sa nezapísala: {{ (ev.validation or {}).get("apply_result", {}).get("error") or "neznáma chyba" }} Po odstránení príčiny (napr. založení vlaku) ju potvrďte znova, alebo ju zamietnite.</p>
+  <p class="flash flash-chyba" role="alert">Udalosť potvrdil {{ ev.confirmed_by or "dispečer" }} {{ ev.confirmed_at|t }}, ale do registra sa nezapísala: {{ (ev.validation or {}).get("apply_result", {}).get("error") or "neznáma chyba" }} Po odstránení príčiny (napr. založení vlaku) ju potvrďte znova, alebo ju zamietnite.{% if ev.kind == "avizo" and user.can("operate") %} <a href="/vlaky/novy">Založiť vlak</a>{% endif %}</p>
   {% endif %}
   {% if item.register %}
   <div class="flash flash-varovanie">Záznam výluky upravil dispečer v registri výluk – potvrdenie tieto úpravy ponechá (nie údaje z e-mailu):
