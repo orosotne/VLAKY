@@ -10,6 +10,7 @@
 {% if errors %}<div class="flash flash-chyba" role="alert">Formulár obsahuje chyby – opravte označené polia.</div>{% endif %}
 <form method="post" action="{{ '/vyluky/' ~ closure.id ~ '/upravit' if closure else '/vyluky/nova' }}" class="card form-grid" novalidate>
   {{ m.csrf() }}
+  {% if closure %}<input type="hidden" name="zobrazeny_koniec" value="{{ values.get('zobrazeny_koniec', '') }}">{% endif %}
   <fieldset>
     <legend>Úsek</legend>
     <div class="grid-3">
@@ -30,6 +31,7 @@
       {{ m.field("daily_from", "Denne od (HH:MM)", values, errors, type="time", help="Pri opakovanej výluke, napr. denne 08:00–14:00.") }}
       {{ m.field("daily_to", "Denne do (HH:MM)", values, errors, type="time") }}
     </div>
+    {% if closure and closure.until_revoked %}<p class="muted small">Výluka platí do odvolania – koniec je technický, agent ho posúva, kým ŽSR obmedzenie neodvolá. Ak koniec zmeníte, výluka bude platiť len do neho.</p>{% endif %}
   </fieldset>
   <fieldset>
     <legend>Dopad</legend>

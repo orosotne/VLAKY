@@ -13,11 +13,20 @@
   <header class="queue-head">
     <h2 id="udalost-{{ ev.id }}-nadpis">{{ EVENT_KIND.get(ev.kind, ev.kind) }} <span class="muted small">#{{ ev.id }}</span></h2>
     <div class="queue-meta">
+      {% if item.failed %}<span class="badge badge-bad">potvrdené – zápis zlyhal</span>{% endif %}
       <span class="badge {{ 'badge-warn' if ev.confidence < threshold else 'badge-ok' }}" title="Istota extrakcie">istota {{ ev.confidence|pct }}</span>
       <span class="badge">{{ ev.extractor }}</span>
       <span class="muted small">vytvorené {{ ev.created_at|t }}</span>
     </div>
   </header>
+  {% if item.failed %}
+  <p class="flash flash-chyba" role="alert">Udalosť potvrdil {{ ev.confirmed_by or "dispečer" }} {{ ev.confirmed_at|t }}, ale do registra sa nezapísala: {{ (ev.validation or {}).get("apply_result", {}).get("error") or "neznáma chyba" }} Po odstránení príčiny (napr. založení vlaku) ju potvrďte znova, alebo ju zamietnite.</p>
+  {% endif %}
+  {% if item.register %}
+  <div class="flash flash-varovanie">Záznam výluky upravil dispečer v registri výluk – potvrdenie tieto úpravy ponechá (nie údaje z e-mailu):
+    <ul class="small">{% for r in item.register %}<li>{{ r.label }}: {{ r.mail }} → <strong>{{ r.register }}</strong></li>{% endfor %}</ul>
+  </div>
+  {% endif %}
   <div class="split">
     <section class="orig" aria-label="Originál e-mailu">
       <h3>Originál e-mailu</h3>
@@ -131,6 +140,9 @@
       <span class="badge">istota {{ ev.confidence|pct }}</span>
     </div>
     <p><strong>{{ c.from_station }} – {{ c.to_station }}</strong> · {{ CLOSURE_KIND.get(c.kind, c.kind) }} · {{ c.start_utc|t }} – {{ c.end_utc|t }}{% if c.daily_from %} (denne {{ c.daily_from }}–{{ c.daily_to }}){% endif %}</p>
+    {% if item.register %}
+    <p class="small">Upravené v registri výluk – potvrdenie úpravy ponechá: {% for r in item.register %}{{ r.label }} {{ r.mail }} → <strong>{{ r.register }}</strong>{% if not loop.last %}; {% endif %}{% endfor %}</p>
+    {% endif %}
     {% if mail %}
     <details><summary class="small">Originál e-mailu: {{ mail.subject }} ({{ mail.sender }}, {{ mail.received_at|t }})</summary>
       <pre class="email-body">{{ mail.body_text }}</pre>

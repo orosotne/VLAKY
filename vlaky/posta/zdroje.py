@@ -261,10 +261,14 @@ class GraphSource:
     STATE_KEY = "graph_delta_link"
 
     def __init__(self, session: Optional[Session] = None, client: Optional[httpx.Client] = None,
-                 known: Optional[Callable[[str], bool]] = None) -> None:
+                 known: Optional[Callable[[str], bool]] = None,
+                 known_sender: Optional[Callable[[str, str], bool]] = None) -> None:
         self.session = session
         self.client = client or httpx.Client(timeout=60)
         self.known = known                      # vráti True, ak e-mail s daným Message-ID už máme
+        # vráti True, ak e-mail s daným Message-ID od toho istého odosielateľa už máme (iný odosielateľ s rovnakým
+        # Message-ID sa stiahne – môže to byť pravý e-mail, ktorého Message-ID skôr použil niekto iný)
+        self.known_sender = known_sender
         self._token: Optional[str] = None
         self._token_exp = 0.0
         self._pending_link: Optional[str] = None
@@ -316,7 +320,7 @@ class GraphSource:
         else:
             since = (now_utc() - timedelta(days=GRAPH_INITIAL_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
             url = f"{GRAPH_API}/users/{mailbox}/mailFolders/inbox/messages/delta"
-            params = {"$select": "id,internetMessageId,receivedDateTime,subject",
+            params = {"$select": "id,internetMessageId,receivedDateTime,subject,from",
                       "$filter": f"receivedDateTime ge {since}"}
         messages: list[dict] = []
         next_state: Optional[str] = None
@@ -345,7 +349,12 @@ class GraphSource:
         limit = max_raw_bytes()
         for m in messages:
             mid = m.get("internetMessageId") or ""
-            if mid and self.known and self.known(mid):
+            frm = m.get("from") if isinstance(m.get("from"), dict) else {}
+            sender = str((frm.get("emailAddress") or {}).get("address") or "").strip().lower()
+            if mid and sender and self.known_sender is not None:
+                if self.known_sender(mid, sender):
+                    continue
+            elif mid and self.known and self.known(mid):
                 continue
             r = self._get(f"{GRAPH_API}/users/{mailbox}/messages/{quote(m['id'], safe='')}/$value")
             if r.status_code != 200:
@@ -388,7 +397,13 @@ def get_source(session: Optional[Session] = None) -> MailSource:
             return session.scalar(select(Email.id).where(Email.message_id == mid,
                                                          Email.verdict != "karantena")) is not None
 
-        return GraphSource(session, known=known)
+        def known_sender(mid: str, sender: str) -> bool:
+            if session is None:
+                return False
+            rows = session.scalars(select(Email.sender).where(Email.message_id == mid, Email.verdict != "karantena"))
+            return any((s or "").strip().lower() == sender for s in rows)
+
+        return GraphSource(session, known=known, known_sender=known_sender)
     if kind == "directory":
         return DirectorySource()
     raise MailSourceError(f"Neznámy zdroj pošty „{kind}“ (directory | imap | graph).")

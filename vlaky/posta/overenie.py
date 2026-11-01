@@ -314,23 +314,36 @@ def _check_forwarded(pm: ParsedMail, v: Verification, require_auth: bool) -> str
     Overenie preposielateľa (napr. pravidla dispečerskej schránky) nestačí – podvrh ŽSR by inak prešiel
     len vďaka DMARC vlastnej domény. Vráti dôvod karantény; prázdny reťazec = v poriadku. Aj overený
     preposlaný obsah sa nikdy nezapisuje automaticky (rozhoduje spracovanie podľa ``forwarded_from``).
+
+    Výnimka: preposiela overený odosielateľ ŽSR (napr. citovaná správa susednej správy železníc alebo interný
+    ROV generálneho riaditeľstva bez hlavičiek overenia). Taký e-mail nejde do karantény (sekcia 2.5 – karanténa
+    je pre nepovolených alebo neoverených odosielateľov); pôvodný odosielateľ sa zapíše do ``forwarded_from``,
+    takže všetko z e-mailu ide na potvrdenie a nič sa nezapíše automaticky.
     """
+    trusted_outer = zsr_sender(pm.sender) and (v.auth_ok is True or not require_auth)
     senders: list[str] = []
+    unverified: list[str] = []
     for fw in pm.forwarded:
+        problem = ""
         if fw.from_count > 1:
-            return f"preposlaná správa ({fw.how}) má v hlavičke From viac adries"
-        if not fw.sender:
+            problem = f"preposlaná správa ({fw.how}) má v hlavičke From viac adries"
+        elif not fw.sender:
             if fw.inline:
                 senders.append("?")          # vložené preposlanie bez adresy – nedá sa overiť, len potvrdenie
                 continue
-            return f"preposlaná správa ({fw.how}) nemá adresu pôvodného odosielateľa"
-        if not sender_allowed(fw.sender):
-            return f"preposlaná správa ({fw.how}) je od odosielateľa {fw.sender}, ktorý nie je na zozname povolených"
-        if require_auth and not fw.inline:
+            problem = f"preposlaná správa ({fw.how}) nemá adresu pôvodného odosielateľa"
+        elif not sender_allowed(fw.sender):
+            problem = (f"preposlaná správa ({fw.how}) je od odosielateľa {fw.sender}, ktorý nie je na zozname "
+                       "povolených")
+        elif require_auth and not fw.inline:
             ok, why, _ar = check_auth(fw.auth_results, fw.sender.split("@")[-1])
             if not ok:
-                return f"preposlaná správa ({fw.how}) od {fw.sender} neprešla overením odosielateľa: {why}"
-        senders.append(fw.sender)
+                problem = f"preposlaná správa ({fw.how}) od {fw.sender} neprešla overením odosielateľa: {why}"
+        if problem and not trusted_outer:
+            return problem
+        if problem:
+            unverified.append(problem)
+        senders.append(fw.sender if fw.sender and fw.from_count <= 1 else "?")
     uniq = list(dict.fromkeys(senders))
     if "?" in uniq and len(uniq) > 1:
         uniq.remove("?")
@@ -339,4 +352,7 @@ def _check_forwarded(pm: ParsedMail, v: Verification, require_auth: bool) -> str
         who = ", ".join(x if x != "?" else "neznámy odosielateľ" for x in uniq)
         v.reasons.append(f"obsahuje preposlanú správu (pôvodne od: {who}) – nič z nej sa nezapíše bez potvrdenia "
                          "dispečerom")
+    if unverified:
+        v.reasons.append("preposlal ju overený odosielateľ ŽSR, preto nejde do karantény, ale pôvod obsahu nie je "
+                         "overený: " + "; ".join(unverified[:3]))
     return ""
