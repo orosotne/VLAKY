@@ -498,6 +498,7 @@ def run_agent(once: bool = False) -> int:
     signal.signal(signal.SIGINT, _handle_stop)
     cfg = settings()
     failures = 0
+    last_errors: list = []
     try:
         while True:
             started = time.monotonic()
@@ -505,6 +506,7 @@ def run_agent(once: bool = False) -> int:
             try:
                 summary = run_cycle()
                 failures = 0
+                last_errors = list(summary.get("errors") or [])
                 if summary["errors"]:
                     print("Agent – chyby v cykle:", summary["errors"], flush=True)
             except Exception:  # noqa: BLE001 – napr. krátky výpadok databázy: agent nesmie spadnúť
@@ -526,7 +528,8 @@ def run_agent(once: bool = False) -> int:
                 break
     finally:
         _release_lock()
-    return 0
+    # jeden cyklus (cron, test): chyby v cykle (napr. schránka sa nedá prečítať) = návratový kód 1
+    return 1 if once and last_errors else 0
 
 
 def _print_config_warnings() -> None:

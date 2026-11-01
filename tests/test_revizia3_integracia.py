@@ -153,3 +153,15 @@ def test_graph_stiahne_inu_spravu_s_rovnakym_message_id_a_preskoci_opatovne_doru
     session.commit()
     process_mailbox(session, now=fixed_now)
     assert len(downloads) == 1  # opätovné doručenie tej istej správy sa nestiahlo
+
+
+def test_agent_once_vrati_chybovy_kod_pri_chybe_cyklu(cfg, monkeypatch):
+    """`python -m vlaky agent --once` (cron, test): cyklus s chybou (schránka sa nedá prečítať) vráti kód 1,
+    bezchybný cyklus 0."""
+    from vlaky.agent import beh
+
+    monkeypatch.setattr(cfg, "mail_source", "directory")
+    assert beh.run_agent(once=True) == 0
+    monkeypatch.setattr(cfg, "mail_source", "imap")
+    monkeypatch.setattr(cfg, "imap_host", "")  # IMAP nie je nastavené → chyba čítania schránky v cykle
+    assert beh.run_agent(once=True) == 1
