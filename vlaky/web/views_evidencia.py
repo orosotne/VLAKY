@@ -252,11 +252,15 @@ def train_update(train_id: int, request: Request, background: BackgroundTasks, u
         if t is None:
             raise HTTPException(404, "Vlak neexistuje.")
         values = _read_train_form(reader, s, train_id)
+        # návrat z jazdy: rozhodnutie dispečera, či odchod bol omyl (vlak nevyšiel – limit 18 h beží ďalej od
+        # začiatku státia) alebo vlak naozaj išiel (státie od teraz); bez voľby rozhodnú polohy a čas od odchodu
+        navrat = reader.choice("navrat_z_jazdy", "Návrat z jazdy", ("", "omyl", "jazda"), "")
         if not reader.ok:
             return render(request, "vlak_form.html", {"train": t, "values": reader.values(), "errors": reader.errors,
                                                       **_train_choices(s)}, user=user, status_code=422)
         from ..planovanie import stav
 
+        run_since = stav.running_since(s, t)  # od kedy bol vlak v jazde (pre správu pri návrate z jazdy)
         changes = _diff(t, values)
         if changes:
             # pred zápisom: začiatok státia z doterajších kotiev (zmeškaná trasa, minulá pripravenosť) – úprava
@@ -267,19 +271,28 @@ def train_update(train_id: int, request: Request, background: BackgroundTasks, u
                 setattr(t, k, v)
         # stav cez spoločné pravidlo: začiatok státia (limit 18 h) a odchod; čas úpravy nie je skutočný odchod.
         # Návrat z jazdy krátko po odchode (vlak nevyšiel) je oprava – limit 18 h beží ďalej od začiatku státia.
-        corrected = stav.set_status(s, t, values["status"], actual=False)
+        corrected = stav.set_status(s, t, values["status"], actual=False,
+                                    correction={"omyl": True, "jazda": False}.get(navrat))
         if changes:
             extra = {"oprava_odchodu": True, "standing_since": iso(t.standing_since_utc)} if corrected else {}
+            if navrat and run_since is not None:
+                extra["navrat_z_jazdy"] = navrat
             audit(s, user.username, "train_update", "train", t.id, changes=changes, **extra)
         number, since = t.number, t.standing_since_utc
+        restarted = run_since is not None and not corrected and t.status in stav.STANDING
     if changes and request.app.state.auto_evaluate:
         background.add_task(evaluate_train_bg, train_id, f"úprava vlaku ({', '.join(sorted(changes))})")
     message = f"Vlak {number} uložený." if changes else "Bez zmien."
-    if corrected:
+    if corrected or restarted:
         from ..cas import fmt
 
-        message += (" Odchod sa považuje za omyl (vlak nevyšiel) – limit 18 h státia beží ďalej"
-                    + (f" od {fmt(since)}." if since else "."))
+        if corrected:
+            message += (" Odchod sa považuje za omyl (vlak nevyšiel) – limit 18 h státia beží ďalej"
+                        + (f" od {fmt(since)}." if since else "."))
+        else:
+            # vlak sa považuje za odídený: dispečer musí vidieť, že limit 18 h začal znova (a odkedy bol v jazde)
+            message += (f" Vlak sa považuje za odídený (v jazde od {fmt(run_since)}) – státie a limit 18 h začínajú "
+                        f"{fmt(since)}.")
     return redirect(f"/vlaky/{train_id}", message)
 
 

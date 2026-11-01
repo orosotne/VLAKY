@@ -118,6 +118,9 @@
         text = (document.getElementById('problem-text').value || '').trim();
         if (!text) { show('Popíšte problém.', true); return; }
       }
+      // omylom ťuknutý „Odchod“ (vlak nevyšiel) by ukončil státie – limit 18 h by sa počítal znova; preto potvrdenie
+      if (typ === 'odchod' && !window.confirm('Vlak naozaj odchádza? Odchod ukončí státie vlaku (limit 18 h) – ' +
+          'potvrďte len pri skutočnom odchode.')) { return; }
       btn.disabled = true;
       post('/api/hlasenie', { t: token, typ: typ, text: text }).then(function (data) {
         show(data.message || 'Odoslané.', false);

@@ -9,14 +9,14 @@ pravidlo:
     ak nie je, najskoršia platná kotva (príchod na hranicu, zmeškaná trasa), inak čas zmeny – po jazde vždy
     čas zmeny (staré časy spred jazdy neplatia),
   * odchod (stav „v jazde“, aj hlásenie rušňovodiča „odchod“) → vymaže sa a zapíše sa čas odchodu,
-  * oprava omylom zaznamenaného odchodu (späť na stojaci stav do 30 min bez dôkazu pohybu, alebo polohy ukazujú, že
-    vlak stál) → obnoví sa začiatok státia aj čas odchodu spred omylu (``set_status``),
+  * oprava omylom zaznamenaného odchodu (späť na stojaci stav do 30 min bez dôkazu pohybu, polohy ukazujú, že vlak
+    stál, alebo tak rozhodne dispečer) → obnoví sa začiatok státia aj čas odchodu spred omylu (``set_status``),
   * ukončenie, zrušenie, odovzdanie → vymaže sa.
 
 Pri prechode do stavu „v jazde“ sa v ``KeyValue`` („jazda:<id vlaku>“) zapamätá čas zmeny, či je to skutočný čas
 odchodu, a stav, začiatok státia a čas odchodu spred zmeny. Slúži na opravu omylu (vyššie) a ako stála kotva odhadu
-polohy a pracovného času rušňovodiča, keď vlak prešiel do jazdy ručnou zmenou stavu bez skutočného času odchodu
-(``running_since``). Pri odchode z jazdy sa záznam zmaže.
+polohy (vlak išiel najneskôr vtedy) a pracovného času rušňovodiča, keď vlak prešiel do jazdy ručnou zmenou stavu bez
+skutočného času odchodu (``running_since``). Pri odchode z jazdy sa záznam zmaže.
 
 Hlásenie rušňovodiča „pripravený“ začiatok státia nemení a minulý (ani chýbajúci) čas pripravenosti neposunie, ak by
 tým zmizla kotva limitu. Úprava vlaku vo webe pred zápisom zmien zapíše začiatok státia z doterajších kotiev
@@ -289,17 +289,20 @@ def _mistaken_departure(session: Optional[Session], train: Train, run: dict, at:
 
 
 def set_status(session: Optional[Session], train: Train, status: str, at: Optional[datetime] = None,
-               handover: Optional[Handover] = None, actual: bool = True) -> bool:
+               handover: Optional[Handover] = None, actual: bool = True,
+               correction: Optional[bool] = None) -> bool:
     """Zmení stav vlaku a podľa neho začiatok státia (a čas odchodu). Rovnaký stav nič nemení.
 
     ``at`` – čas udalosti (predvolene teraz). ``actual=False`` – čas zmeny nie je skutočný čas odchodu (napr. ručná
-    úprava stavu vo webe): čas odchodu sa potom nezapíše (odhad polohy a pracovného času rušňovodiča použije
-    plánovaný odchod, ak nie je neskorší, inak čas tejto zmeny – ``running_since``). ``session`` slúži na dohľadanie
+    úprava stavu vo webe): čas odchodu sa potom nezapíše (poloha sa odhaduje od času tejto zmeny, pracovný čas
+    rušňovodiča od plánovaného odchodu, ak nie je neskorší – ``running_since``). ``session`` slúži na dohľadanie
     vstupného preberania, trás a polôh; bez nej sa použije len ``handover``.
 
     Návrat z jazdy na stojaci (alebo plánovaný) stav, ktorý je opravou omylom zaznamenaného odchodu (hlásenie
-    „odchod“ či stav „v jazde“, keď vlak nevyšiel – ``_mistaken_departure``), obnoví začiatok státia a čas odchodu
-    spred omylu: limit 18 h beží ďalej od skutočného začiatku státia. Vracia True práve vtedy.
+    „odchod“ či stav „v jazde“, keď vlak nevyšiel), obnoví začiatok státia a čas odchodu spred omylu: limit 18 h beží
+    ďalej od skutočného začiatku státia. Vracia True práve vtedy. Či ide o opravu, rozhodne dispečer
+    (``correction`` True = odchod bol omyl, False = vlak išiel – státie od teraz), inak polohy a čas od odchodu
+    (``_mistaken_departure``).
     """
     old = train.status
     if not status or status == old:
@@ -317,7 +320,9 @@ def set_status(session: Optional[Session], train: Train, status: str, at: Option
         row = _run_row(session, train)
         if row is not None:
             session.delete(row)  # vlak už nejde – zapamätaný odchod pre ďalšiu jazdu neplatí
-    if run is not None and status not in ENDED and _mistaken_departure(session, train, run, at):
+    mistaken = correction if correction is not None else (
+        run is not None and _mistaken_departure(session, train, run, at))
+    if run is not None and status not in ENDED and mistaken:
         # vlak v skutočnosti nevyšiel: stojí ďalej od pôvodného začiatku státia (nie od opravy)
         train.departed_utc = run["departed"]
         train.standing_since_utc = run["standing_since"]
