@@ -483,9 +483,68 @@ def _unsaved_inputs(form, current: dict) -> list:
         if not same:
             shown = {"electric_only": {"1": "áno", "": "nie"}, "kind": CLOSURE_KIND,
                      "status": CLOSURE_STATUS}.get(key, {})
-            out.append({"label": label, "mine": shown.get(mine, mine[:300] or "—"),
+            limit = 2000 if key == "note" else 300      # poznámku dispečera celú – nesmie sa stratiť
+            out.append({"label": label, "mine": shown.get(mine, mine[:limit] or "—"),
                         "current": shown.get(now, now[:300] or "—")})
     return out
+
+
+def _replaced_row(s, closure_id: int) -> Optional[dict]:
+    """Dočasný záznam navrhovanej zmeny výluky (či návrh výluky „navrh“) z e-mailu, ktorý medzitým odstránilo
+    potvrdenie alebo zamietnutie udalosti (iným dispečerom, v inej karte) či novšie zrušenie výluky – kam sa údaje
+    dostali. Záznam sa hľadá podľa auditu jeho zápisu (``vyluka_navrh_na_potvrdenie``: udalosť, výluka, ktorú mení).
+
+    Vráti {"target": číslo výluky, ktorá platí (alebo None), "event": číslo udalosti, "message": vysvetlenie pre
+    dispečera, "short": to isté bez vety o neuloženom zadaní}; None – záznam nebol záznamom udalosti z e-mailu."""
+    row = s.scalar(select(AuditLog).where(AuditLog.action == "vyluka_navrh_na_potvrdenie",
+                                         AuditLog.entity == "Closure", AuditLog.entity_id == str(closure_id))
+                   .order_by(AuditLog.id.desc()).limit(1))
+    detail = row.detail if row is not None and isinstance(row.detail, dict) else {}
+    ev = s.get(ExtractedEvent, detail.get("udalost")) if isinstance(detail.get("udalost"), int) else None
+    if ev is None:
+        # audit už vymazaný (uchovávanie záznamov): udalosť podľa svojho záznamu „navrh“ či zápisu
+        v = ExtractedEvent.validation
+        ev = s.scalar(select(ExtractedEvent).where(or_(
+            v["pending_closure"]["id"].as_integer() == closure_id,
+            v["applied"]["temp_removed"].as_integer() == closure_id,
+            v["applied"]["own_removed"].as_integer() == closure_id)).order_by(ExtractedEvent.id.desc()).limit(1))
+    if ev is None:
+        return None
+    val = ev.validation if isinstance(ev.validation, dict) else {}
+    applied = val.get("applied") if isinstance(val.get("applied"), dict) else {}
+    pending = val.get("pending_closure") if isinstance(val.get("pending_closure"), dict) else {}
+    original = detail.get("zmena_vyluky") or pending.get("proposed_change_of")
+    n, e = closure_id, ev.id
+    if ev.status == "aplikovane" and applied.get("entity") == "Closure" and applied.get("id"):
+        terms = [t for t in applied.get("terms") or [] if isinstance(t, dict) and t.get("id")]
+        target = next((t["id"] for t in terms if t.get("part") == "novy"), None) or applied["id"]
+        if applied.get("action") == "nahradene":
+            short = (f"Dočasný záznam #{n} medzitým zanikol – udalosť #{e} bola potvrdená, ale nič sa nezapísalo "
+                     f"(výluku medzitým zmenila novšia udalosť #{applied.get('superseded_by')}); platné údaje sú vo "
+                     f"výluke #{target}")
+        else:
+            what = "potvrdená zmena" if ev.kind == "vyluka_zmena" else "potvrdená udalosť"
+            parts = (" (výluka je rozdelená: " + ", ".join(f"#{t['id']}" for t in terms) + ")") if terms else ""
+            short = (f"Dočasný záznam #{n} medzitým nahradila {what} (udalosť #{e}) – údaje sú vo výluke "
+                     f"#{target}{parts}")
+    elif ev.status == "zamietnute":
+        target = original
+        rej = val.get("rejection") if isinstance(val.get("rejection"), dict) else {}
+        who = f" ({rej.get('by')})" if rej.get("by") else ""
+        short = (f"Dočasný záznam zmeny #{n} medzitým zanikol – zmenu (udalosť #{e}) dispečer zamietol{who}"
+                 + (f", výluka #{target} ostala bez zmeny" if target else ""))
+    else:
+        # udalosť ešte čaká: dočasný záznam odstránilo novšie zrušenie výluky (alebo vznikol znova s iným číslom)
+        current = s.scalar(select(Closure).where(Closure.source_event_id == ev.id, Closure.status != "zrusene")
+                           .order_by(Closure.id.desc()).limit(1))
+        target = current.id if current is not None else original
+        short = (f"Dočasný záznam zmeny #{n} medzitým zanikol (udalosť #{e} ešte čaká na potvrdenie)"
+                 + (f" – skontrolujte výluku #{target}" if target else ""))
+    if target is not None and s.get(Closure, target) is None:
+        target = None
+    return {"target": target, "event": e, "short": short + ".",
+            "message": short + ("; vaše neuložené zadanie je nižšie." if target else
+                                " – vaše úpravy sa neuložili.")}
 
 
 @router.get("/vyluky/nova", response_class=HTMLResponse)
@@ -518,7 +577,14 @@ def closure_edit(request: Request, closure_id: int, user=Depends(operate)):
     with session_scope() as s:
         c = s.get(Closure, closure_id)
         if c is None:
-            raise HTTPException(404, "Výluka neexistuje.")
+            # starý odkaz na dočasný záznam zmeny, ktorý potvrdenie či zamietnutie zmeny odstránilo: výluka, kde
+            # údaje sú (nie „Stránka neexistuje“)
+            gone = _replaced_row(s, closure_id)
+            if gone is None:
+                raise HTTPException(404, "Výluka neexistuje.")
+            if gone["target"] is None:
+                return redirect("/vyluky", gone["short"], "varovanie")
+            return redirect(f"/vyluky/{gone['target']}/upravit", gone["short"], "info")
         return render(request, "vyluka_form.html", {"closure": c, "values": _closure_values(c), "errors": {}},
                       user=user)
 
@@ -532,7 +598,22 @@ def closure_update(closure_id: int, request: Request, background: BackgroundTask
     with session_scope() as s:
         c = s.get(Closure, closure_id, with_for_update=True)
         if c is None:
-            raise HTTPException(404, "Výluka neexistuje.")
+            gone = _replaced_row(s, closure_id)
+            if gone is None:
+                raise HTTPException(404, "Výluka neexistuje.")
+            target = s.get(Closure, gone["target"]) if gone["target"] is not None else None
+            if target is None:
+                return redirect("/vyluky", gone["message"], "varovanie")
+            # zastaraný formulár dočasného záznamu zmeny, ktorý medzitým odstránilo potvrdenie či zamietnutie zmeny:
+            # formulár výluky, kde údaje sú, s neuloženým zadaním dispečera (ako pri súbežnej zmene) – nič sa neuloží
+            current = _closure_values(target)
+            audit(s, user.username, "closure_update_conflict", "closure", target.id, version=target.version,
+                  nahradeny_zaznam=closure_id, udalost=gone["event"])
+            return render(request, "vyluka_form.html",
+                          {"closure": target, "values": current, "errors": {},
+                           "conflict": {"version": target.version, "unsaved": _unsaved_inputs(form, current),
+                                        "message": gone["message"]}},
+                          user=user, status_code=409)
         if shown_token and shown_token != _closure_token(c):
             # zastaraný formulár: výluku medzitým zmenil niekto iný (napr. potvrdená zmena z e-mailu) – uloženie by
             # jeho zmenu potichu vrátilo; formulár sa zobrazí znova s aktuálnymi údajmi a so zadaním dispečera
