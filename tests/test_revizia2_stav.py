@@ -94,7 +94,7 @@ def test_prevzatie_cez_web_drzi_kotvu_od_prichodu(client, session, fixed_now):
     session.expire_all()
     rec = evaluate_train(session, t.id, fixed_now + timedelta(minutes=1), "po prevzatí")
     assert rec.decision == "ESKALOVAŤ" and rec.color == "ČERVENÁ"
-    assert any(f"Vlak stojí od {fmt(arrival)}" in r and "zostáva 1.0 h" in r for r in rec.reasons)
+    assert any(f"Vlak stojí od {fmt(arrival)}" in r and "zostáva 1,0 h" in r for r in rec.reasons)
     t2 = session.get(Train, t.id)
     assert t2.status == "prevzaty" and ensure_utc(t2.standing_since_utc) == arrival  # prevzatie kotvu nemení
 
@@ -161,7 +161,7 @@ def test_prevzaty_vlak_bez_pripravenosti_kotvi_prichod(session, fixed_now):
     _closure(session, fixed_now, end_h=10)
     rec = evaluate_train(session, t.id, fixed_now, "test")
     assert rec.decision == "ESKALOVAŤ"
-    assert any(f"Vlak stojí od {fmt(arrival)}" in r and "zostáva 5.0 h" in r for r in rec.reasons)
+    assert any(f"Vlak stojí od {fmt(arrival)}" in r and "zostáva 5,0 h" in r for r in rec.reasons)
     assert rec.chosen.get("depart") is None or _depart(rec) <= arrival + timedelta(hours=18)
 
 
@@ -382,7 +382,9 @@ def test_neznamy_nastup_je_odhad_od_odchodu(session, fixed_now):
     assert crew["start"] == start.isoformat() and crew["relieve_by"] == relieve.isoformat()
     assert crew["unknown_start"] and crew.get("estimated") and crew["driver"] == "neznámy (chýba záznam o nástupe)"
     assert crew["status"] == "ČERVENÁ" and rec.color != "ZELENÁ"
-    text = f"odhad: vystriedať najneskôr o {fmt(relieve)} (nástup rušňovodiča nie je zadaný)"
+    # čas vystriedania (04:30) už uplynul – „najneskôr o <minulý čas>“ sa nedá splniť (4. revízia, QP3): „ihneď“
+    limit = start + timedelta(hours=13)
+    text = f"odhad: vystriedať ihneď (limit 13 h uplynul o {fmt(limit)}; nástup rušňovodiča nie je zadaný)"
     body = recommendation_body(rec)
     assert text in sms_text(rec) and text in rec.summary and text in body
     invented = fmt(fixed_now - timedelta(minutes=60))

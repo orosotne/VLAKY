@@ -2056,6 +2056,21 @@ def _day_text(day: Any) -> str:
         return str(day or "?")
 
 
+class PendingNote(str):
+    """Dôvod čakajúcej udalosti z e-mailu pre plánovač (text) s údajmi o udalosti: ``kind`` – druh udalosti
+    (napr. ``trasa_zrusena``, ``trasa_zmena``), ``event_id`` a ``fleet`` – udalosť bez známeho miesta (bez dopravne
+    aj trate) sa môže týkať ktoréhokoľvek vlaku. Je to obyčajný text (str) – kto údaje nepotrebuje, nič nemení."""
+
+    kind: str = ""
+    event_id: Optional[int] = None
+    fleet: bool = False
+
+    def __new__(cls, text: str, kind: str = "", event_id: Optional[int] = None, fleet: bool = False):
+        obj = super().__new__(cls, text)
+        obj.kind, obj.event_id, obj.fleet = kind, event_id, fleet
+        return obj
+
+
 def pending_uncertainty(session: Session, train: Train, route: Any = None, paths: Iterable[Any] = (),
                         window: Optional[tuple] = None) -> list[str]:
     """Dôvody, prečo vlak nesmie byť ZELENÝ pre čakajúce udalosti z e-mailov, s ktorými plánovač nevie počítať.
@@ -2068,19 +2083,56 @@ def pending_uncertainty(session: Session, train: Train, route: Any = None, paths
     * výluka, pomalá jazda či mimoriadnosť z e-mailu čaká na potvrdenie bez záznamu pre plánovač a jej úsek leží
       na trase vlaku (``route`` – trasa vlaku z plánovača, ``vlaky.siet.graf.Route``; úsek sa umiestni na sieť
       rovnako ako výluka z registra, :func:`_route_cover`; None = trasa neznáma, posúdi sa konzervatívne).
+      Bez známej dopravne (miesto sa nepodarilo prečítať, napr. len „trať 180 v km 212,4“) sa s číslom trate týka
+      vlaku, ktorého trasa touto traťou vedie, bez neho každého vlaku.
       Známy začiatok či koniec mimo obdobia ``window`` (od, do – UTC) ju vylúči.
 
-    Prázdny zoznam = žiadna taká udalosť. Chyba pri zisťovaní nesmie dať ZELENÚ – vráti všeobecný dôvod."""
+    Prázdny zoznam = žiadna taká udalosť. Chyba pri zisťovaní nesmie dať ZELENÚ – vráti všeobecný dôvod.
+    Viac trás naraz (obchádzky, trasy objednávky) – :func:`pending_uncertainty_routes`."""
+    path_notes, by_route = pending_uncertainty_routes(session, train, {"": route}, paths, window)
+    return path_notes + by_route[""]
+
+
+def pending_uncertainty_routes(session: Session, train: Any, routes: dict, paths: Iterable[Any] = (),
+                               window: Optional[tuple] = None) -> tuple[list[str], dict]:
+    """Ako :func:`pending_uncertainty` pre viac trás naraz ({názov: trasa} – hlavná trasa a obchádzky vlaku, trasy
+    objednávky), jedným dotazom do databázy. Plánovač posudzuje ZELENÚ pri trase, ktorú odporúča (aj obchádzke).
+
+    Vracia (dôvody k pridelenej trase vlaku – nezávisia od trasy v sieti, {názov trasy: dôvody k úsekom na tejto
+    trase}); dôvody sú :class:`PendingNote` (druh a číslo udalosti, ``fleet`` – udalosť bez známeho miesta, môže sa
+    týkať ktoréhokoľvek vlaku). Chyba pri zisťovaní nesmie dať ZELENÚ – každá trasa dostane všeobecný dôvod."""
     try:
-        return _pending_uncertainty(session, train, route, paths, window)
+        return _pending_uncertainty(session, train, routes, paths, window)
     except Exception as exc:  # noqa: BLE001 – plánovanie nesmie zastaviť, ale ani dať ZELENÚ naslepo
-        logging.getLogger("vlaky.posta").exception("Čakajúce udalosti pre vlak %s sa nepodarilo overiť", train.id)
-        return [f"Čakajúce udalosti z e-mailov sa nepodarilo overiť ({type(exc).__name__}) – kým sa to nevyrieši, "
-                "vlak nemôže byť ZELENÝ."]
+        logging.getLogger("vlaky.posta").exception("Čakajúce udalosti pre vlak %s sa nepodarilo overiť",
+                                                   getattr(train, "id", None))
+        note = (f"Čakajúce udalosti z e-mailov sa nepodarilo overiť ({type(exc).__name__}) – kým sa to nevyrieši, "
+                "vlak nemôže byť ZELENÝ.")
+        return [], {name: [note] for name in routes}
 
 
-def _pending_uncertainty(session: Session, train: Train, route: Any, paths: Iterable[Any],
-                         window: Optional[tuple]) -> list[str]:
+def _route_lines(route: Any) -> set:
+    """Čísla tratí, po ktorých vedie trasa (veľkými písmenami, ako ``norm_line_ref``)."""
+    from ..siet.graf import network
+
+    net = network()
+    out: set = set()
+    for ei in route.edges:
+        out |= net.line_refs(ei)
+    return out
+
+
+def _term_text(start: Optional[datetime], end: Optional[datetime]) -> str:
+    if start is None and end is None:
+        return "termín neznámy"
+    return f"{fmt(start) if start is not None else '?'} – {fmt(end) if end is not None else '?'}"
+
+
+def _pending_uncertainty(session: Session, train: Any, routes: dict, paths: Iterable[Any],
+                         window: Optional[tuple]) -> tuple[list[str], dict]:
+    from ..siet.graf import norm_line_ref
+
+    out: dict = {name: [] for name in routes}
     # len udalosti, ktoré naozaj čakajú na dispečera (vo fronte alebo potvrdené so zlyhaným zápisom) – potvrdených
     # a zapísaných udalostí pribúda bez obmedzenia a plánovač sa volá pre každý vlak v každom cykle
     failed = ExtractedEvent.validation["apply_result"]["ok"].as_boolean().is_(False)
@@ -2089,15 +2141,16 @@ def _pending_uncertainty(session: Session, train: Train, route: Any, paths: Iter
     rows = list(session.scalars(select(ExtractedEvent).where(
         ExtractedEvent.kind.in_(UNCERTAIN_PATH_KINDS + CLOSURE_EVENT_KINDS), waiting).order_by(ExtractedEvent.id)))
     if not rows:
-        return []
+        return [], out
     number = train_digits(train.number)
     path_ids = {p.id for p in paths}
     # poddotaz namiesto zoznamu čísel (bez limitu počtu parametrov databázy)
     waiting_closures = select(ExtractedEvent.id).where(ExtractedEvent.kind.in_(CLOSURE_EVENT_KINDS), waiting)
     with_rows = set(session.scalars(select(Closure.source_event_id).where(
         Closure.source_event_id.in_(waiting_closures), Closure.status != "zrusene")))
-    covers: Optional[Callable[[str, str, Any], bool]] = None
-    out: list[str] = []
+    covers: dict = {}   # názov trasy → funkcia „leží úsek na trase?“ (pripraví sa raz na trasu)
+    lines: dict = {}    # názov trasy → čísla tratí trasy
+    path_notes: list[str] = []
     for ev in rows:
         why = _blind_reason(session, ev, with_rows)
         if not why:
@@ -2111,25 +2164,47 @@ def _pending_uncertainty(session: Session, train: Train, route: Any, paths: Iter
                 continue
             what = ("pridelená trasa ŽSR nemusí platiť" if ev.kind == "trasa_zrusena"
                     else "časy pridelenej trasy sa môžu zmeniť")
-            out.append(f"{label.capitalize()} vlaku {number} na deň {_day_text(d.get('date'))} z e-mailu čaká na "
-                       f"potvrdenie dispečerom (udalosť #{ev.id}) – {what}; kým ju dispečer nepotvrdí alebo "
-                       "nezamietne, vlak nemôže byť ZELENÝ.")
+            path_notes.append(PendingNote(
+                f"{label.capitalize()} vlaku {number} na deň {_day_text(d.get('date'))} z e-mailu čaká na "
+                f"potvrdenie dispečerom (udalosť #{ev.id}) – {what}; kým ju dispečer nepotvrdí alebo nezamietne, "
+                "vlak nemôže byť ZELENÝ.", kind=ev.kind, event_id=ev.id))
             continue
-        a, b = d.get("from_station"), d.get("to_station")
-        if not (a or b):
-            continue
-        if route is not None:
-            covers = covers or _route_cover(route)
-            if not covers(str(a or b), str(b or a), d.get("line_ref")):
-                continue
         start, end = parse_utc(d.get("start")), parse_utc(d.get("end"))
         if window and ((start is not None and start > window[1]) or (end is not None and end < window[0])):
             continue
-        sec = f"{a or b} – {b or a}"
-        out.append(f"{label.capitalize()} {sec} z e-mailu čaká na potvrdenie (udalosť #{ev.id}) a plánovač s ňou "
-                   f"nevie počítať ({why}) – overte ju vo fronte na potvrdenie; kým sa to nevyrieši, vlak nemôže "
-                   "byť ZELENÝ.")
-    return out
+        a, b = d.get("from_station"), d.get("to_station")
+        if a or b:
+            sec = f"{a or b} – {b or a}"
+            note = PendingNote(
+                f"{label.capitalize()} {sec} z e-mailu čaká na potvrdenie (udalosť #{ev.id}) a plánovač s ňou "
+                f"nevie počítať ({why}) – overte ju vo fronte na potvrdenie; kým sa to nevyrieši, vlak nemôže "
+                "byť ZELENÝ.", kind=ev.kind, event_id=ev.id)
+            for name, route in routes.items():
+                if route is not None:
+                    if name not in covers:
+                        covers[name] = _route_cover(route)
+                    if not covers[name](str(a or b), str(b or a), d.get("line_ref")):
+                        continue
+                out[name].append(note)
+            continue
+        # miesto sa nepodarilo prečítať (žiadna dopravňa, napr. len „trať 180 v km 212,4“): s číslom trate sa týka
+        # vlaku, ktorého trasa touto traťou vedie, inak každého vlaku v jej období – nesmie ostať neviditeľná
+        # (bez trate je to poistka pre celý vozový park – ``fleet``: dispečer o udalosti dostane jedno upozornenie)
+        line = norm_line_ref(str(d.get("line_ref") or ""))
+        where = f"trať {line}, " if line else ""
+        who = (f"vlak ide po trati {line} – " if line else "môže sa týkať ktoréhokoľvek vlaku – ")
+        note = PendingNote(
+            f"{label.capitalize()} z e-mailu ({where}{_term_text(start, end)}; udalosť #{ev.id}) čaká na "
+            f"potvrdenie a plánovač s ňou nevie počítať – miesto sa nepodarilo prečítať – overte vo fronte; "
+            f"{who}kým sa to nevyrieši, vlak nemôže byť ZELENÝ.", kind=ev.kind, event_id=ev.id, fleet=not line)
+        for name, route in routes.items():
+            if line and route is not None:
+                if name not in lines:
+                    lines[name] = _route_lines(route)
+                if line not in lines[name]:
+                    continue
+            out[name].append(note)
+    return path_notes, out
 
 
 def _alert_uncertain(session: Session, event_ids: Iterable[int], errors: list[str]) -> None:

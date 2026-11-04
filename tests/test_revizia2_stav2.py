@@ -159,7 +159,7 @@ def test_odstavenie_s_novou_pripravenostou_v_jednom_ulozeni(client, session, fix
     assert t2.status == "odstaveny" and ensure_utc(t2.standing_since_utc) == dep
     rec = evaluate_train(session, t.id, fixed_now + timedelta(minutes=1), "po odstavení")
     assert rec.decision == "ESKALOVAŤ"
-    assert any(f"Vlak stojí od {fmt(dep)}" in r and "zostáva 3.0 h" in r for r in rec.reasons)
+    assert any(f"Vlak stojí od {fmt(dep)}" in r and "zostáva 3,0 h" in r for r in rec.reasons)
     assert _within_limit(rec, dep)
 
 

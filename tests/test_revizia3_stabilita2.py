@@ -113,7 +113,7 @@ def test_odstaveny_vlak_s_nedopisanym_preberanim(session, fixed_now):
     assert not any("neprišiel" in r or "nestihne" in r for r in rec.reasons)
     assert rec.chosen["needs_new_path"] is False and "odrieknuť" not in rec.summary
     assert any(r.startswith(f"Vlak stojí od {fmt(fixed_now - timedelta(minutes=50))} – do limitu 18 h (PPŽS) "
-                            f"zostáva 17.2 h") for r in rec.reasons)
+                            f"zostáva 17,2 h") for r in rec.reasons)
 
 
 # ====================================================================== pripravenosť zapísaná po avíze

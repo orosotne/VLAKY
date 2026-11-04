@@ -28,31 +28,90 @@ def eur(value, digits: int = 0) -> str:
     return text.replace(",", " ").replace(".", ",") + " €"
 
 
+def dec(value, digits: int = 1) -> str:
+    """Desatinné číslo s desatinnou čiarkou („0,8“ h, „4,7“ h, „110,1“ km, „1,08“) – ako na webe; zápis Pythonu
+    „0.8“ nie je slovenský."""
+    try:
+        return f"{float(value):.{digits}f}".replace(".", ",")
+    except (TypeError, ValueError):
+        return str(value if value is not None else "")
+
+
+def hours(value) -> str:
+    """Počet hodín limitu bez zbytočných desatinných miest („13“, „18“, „12,5“) – nie „13.0“."""
+    try:
+        return f"{float(value):g}".replace(".", ",")
+    except (TypeError, ValueError):
+        return str(value if value is not None else "")
+
+
+def number(value) -> str:
+    """Číslo po slovensky: tisíce oddelené medzerou, desatinná čiarka, celé číslo bez desatinných miest („1 500“,
+    „12,5“) – napr. hmotnosť a dĺžka vlaku v koncepte objednávky trasy."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value if value is not None else "")
+    text = f"{v:,.0f}" if abs(v - round(v)) < 1e-9 else f"{v:,.1f}"
+    return text.replace(",", " ").replace(".", ",")
+
+
 def _duty_h(crew: dict) -> str:
     try:
-        return f"{float(crew.get('max_duty_h') or 13):g}"
+        return hours(float(crew.get("max_duty_h") or 13))
     except (TypeError, ValueError):
         return "13"
 
 
-def crew_relief_text(crew: dict | None) -> str:
-    """Kedy vystriedať rušňovodiča. Pri neznámom nástupe (``unknown_start``) len ako odhad – nikdy ako fakt."""
+def relief_overdue(crew: dict | None) -> str:
+    """Čas vystriedania rušňovodiča (``relieve_by``) už pri prepočte uplynul → „limit 13 h uplynie (uplynul) o …“,
+    inak „“. Pokyn „vystriedať najneskôr o <minulý čas>“ by dispečer nemal ako splniť – treba „ihneď“."""
     crew = crew or {}
+    left, limit, relieve = crew.get("left_min"), crew.get("limit"), crew.get("relieve_by")
+    if not isinstance(left, (int, float)) or not limit or not relieve:
+        return ""
+    try:
+        post = (datetime.fromisoformat(limit) - datetime.fromisoformat(relieve)).total_seconds() / 60.0
+    except (TypeError, ValueError):
+        return ""
+    if left > post:
+        return ""
+    return f"limit {_duty_h(crew)} h {'uplynul' if left <= 0 else 'uplynie'} o {_t(limit)}"
+
+
+def crew_relief_text(crew: dict | None) -> str:
+    """Kedy vystriedať rušňovodiča. Pri neznámom nástupe (``unknown_start``) len ako odhad – nikdy ako fakt.
+    Ak čas vystriedania už uplynul, „vystriedať ihneď“ s časom limitu (:func:`relief_overdue`)."""
+    crew = crew or {}
+    late = relief_overdue(crew)
     if crew.get("unknown_start"):
         if crew.get("relieve_by"):
+            if late:
+                return f"odhad: vystriedať ihneď ({late}; nástup rušňovodiča nie je zadaný)"
             return f"odhad: vystriedať najneskôr o {_t(crew['relieve_by'])} (nástup rušňovodiča nie je zadaný)"
         return f"limit {_duty_h(crew)} h sa nedá overiť – zadajte nástup rušňovodiča"
     if crew.get("relieve_by"):
+        if late:
+            return f"vystriedať ihneď ({late})"
         return f"vystriedať najneskôr o {_t(crew['relieve_by'])}"
     return ""
+
+
+def _decision_head(rec: Recommendation) -> str:
+    """Rozhodnutie s časom odchodu (predmet e-mailu, SMS). Idúci vlak, ktorý pred cieľom čaká, kým sa neuvoľní vjazd
+    (``chosen["until_entry"]``), čas odchodu nemá – je to len hranica výpočtu, posúva sa s každým prepočtom."""
+    ch = rec.chosen or {}
+    if ch.get("until_entry"):
+        return f"{rec.decision} pred cieľom"
+    if ch.get("depart") and rec.decision not in ("ESKALOVAŤ", "POKRAČOVAŤ"):
+        return f"{rec.decision} {_t(ch['depart'])}"
+    return rec.decision
 
 
 def recommendation_subject(rec: Recommendation) -> str:
     train = rec.train
     rel = f"{train.origin} → {train.destination}" if train else ""
-    head = rec.decision
-    if rec.chosen.get("depart") and rec.decision not in ("ESKALOVAŤ", "POKRAČOVAŤ"):
-        head += f" {_t(rec.chosen['depart'])}"
+    head = _decision_head(rec)
     prefix = "[TIEŇ]" if settings().shadow_mode else ""
     return f"{prefix}[AGENT][{rec.priority}] Vlak {train.number if train else '?'} {rel}: {head} ({rec.color})"
 
@@ -62,10 +121,7 @@ _RANK = {"ZELENÁ": 0, "ORANŽOVÁ": 1, "ČERVENÁ": 2}
 
 def _km(value) -> str:
     """Kilometre s desatinnou čiarkou („110,1 km“)."""
-    try:
-        return f"{float(value):.1f}".replace(".", ",")
-    except (TypeError, ValueError):
-        return str(value or "")
+    return dec(value) if value is not None else ""
 
 
 def _semafor_cap(rec: Recommendation) -> Optional[str]:
@@ -112,12 +168,14 @@ def recommendation_body(rec: Recommendation) -> str:
         lines += [
             f"Odporúčanie: {rec.decision} – semafor {rec.color}",
             f"Trasa: {ch.get('route', '')}",
-            f"Odchod: {_t(ch.get('depart'))}   Príchod: {_t(ch.get('arrival_p50'))} (90 % do {_t(ch.get('arrival_p90'))})",
+            f"Odchod: {'po uvoľnení vjazdu do cieľa' if ch.get('until_entry') else _t(ch.get('depart'))}   "
+            f"Príchod: {_t(ch.get('arrival_p50'))} (90 % do {_t(ch.get('arrival_p90'))})",
             f"P(včas): {ch.get('p_on_time', 0):.0%}   P(zadržania pred výlukou): {ch.get('p_hold', 0):.0%}",
             f"Očakávaný náklad: {eur(ch.get('expected_cost', 0))} (vzorové sadzby, ak nie sú nastavené vlastné)",
         ]
     pp = rec.path_proposal or {}
-    if pp.get("stations"):
+    # návrh s jedinou dopravňou (zvyšok jazdy pred cieľom) nie je trasa, ktorú by sa dalo objednať
+    if len(pp.get("stations") or []) >= 2:
         lines += ["", f"NÁVRH TRASY ({pp.get('route', '')}, {_km(pp.get('km'))} km):"]
         if pp.get("needs_new_path"):
             win = pp.get("request_window")
@@ -147,14 +205,16 @@ def recommendation_body(rec: Recommendation) -> str:
                          f"zadajte skutočný nástup rušňovodiča)")
     elif crew and ch.get("v_cieli") and not ch.get("prichod_v_cieli"):
         lines += ["", f"Rušňovodič: {crew.get('driver') or '—'}; nástup {_t(crew.get('start'))}, limit "
-                      f"{crew.get('max_duty_h', 13)} h do {_t(crew.get('limit'))}; koniec služby po ukončení jazdy "
+                      f"{_duty_h(crew)} h do {_t(crew.get('limit'))}; koniec služby po ukončení jazdy "
                       f"– {crew.get('status', '')}"]
     elif crew:
         lines += ["", f"Rušňovodič: {crew.get('driver') or '—'}; nástup {_t(crew.get('start'))}, limit "
-                      f"{crew.get('max_duty_h', 13)} h do {_t(crew.get('limit'))}; koniec {_t(crew.get('end_p50'))} "
+                      f"{_duty_h(crew)} h do {_t(crew.get('limit'))}; koniec {_t(crew.get('end_p50'))} "
                       f"(90 % do {_t(crew.get('end_p90'))}) – {crew.get('status', '')}"]
         if crew.get("status") in ("ORANŽOVÁ", "ČERVENÁ") and crew.get("relieve_by"):
-            lines.append(f"  → Vystriedať najneskôr o {_t(crew.get('relieve_by'))}.")
+            late = relief_overdue(crew)
+            lines.append(f"  → Vystriedať ihneď ({late})." if late else
+                         f"  → Vystriedať najneskôr o {_t(crew.get('relieve_by'))}.")
     if rec.variants:
         lines += ["", "Porovnanie variantov:"]
         for v in rec.variants:
@@ -172,7 +232,11 @@ def recommendation_body(rec: Recommendation) -> str:
             parts.append(f"schránka skontrolovaná pred {age['mailbox_min']:.0f} min")
         if parts:
             lines += ["", "Čerstvosť dát: " + ", ".join(parts)]
-    if rec.decision in ("VYPRAVIŤ", "POČKAŤ", "ODSTAVIŤ", "PRESMEROVAŤ"):
+    # idúci vlak (aj keď čaká pred výlukou či pred vjazdom do cieľa) už vyšiel – kontrolný zoznam pred odchodom
+    # patrí len k odchodu (pri odstavení idúceho vlaku k neskoršiemu odchodu na novú trasu)
+    running = rec.train is not None and rec.train.status == "v_jazde"
+    if rec.decision in ("VYPRAVIŤ", "POČKAŤ", "ODSTAVIŤ", "PRESMEROVAŤ") and \
+            not (running and rec.decision != "ODSTAVIŤ"):
         lines += ["", "Pred odchodom (kontrolný zoznam): vlak aktivovaný a súpis vlaku ND + správa o zostave "
                       "zadané v KIS/PIS (inak ŽSR vlak nevypraví), pripravenosť vlaku v KIS, skúška bŕzd, "
                       "doklady (CIM / CIM/SMGS), rušňovodič s platnou znalosťou trate."]
@@ -191,15 +255,15 @@ def recommendation_body(rec: Recommendation) -> str:
 def sms_text(rec: Recommendation) -> str:
     train = rec.train
     ch = rec.chosen or {}
-    txt = f"AGENT {rec.priority}: vlak {train.number if train else '?'} {rec.decision}"
-    if ch.get("depart") and rec.decision not in ("ESKALOVAŤ", "POKRAČOVAŤ"):
-        txt += f" {_t(ch['depart'])}"
+    txt = f"AGENT {rec.priority}: vlak {train.number if train else '?'} {_decision_head(rec)}"
     crew = rec.crew or {}
     if crew.get("status") in ("ORANŽOVÁ", "ČERVENÁ"):
         if crew.get("unknown_start"):
             txt += f"; rušňovodič: {crew_relief_text(crew)}"
         elif crew.get("relieve_by"):
-            txt += f"; vystriedať rušňovodiča do {_t(crew.get('relieve_by'))}"
+            late = relief_overdue(crew)
+            txt += f"; vystriedať rušňovodiča ihneď ({late})" if late else \
+                f"; vystriedať rušňovodiča do {_t(crew.get('relieve_by'))}"
     return (txt + f". Detail: {settings().public_url.rstrip('/')}/odporucania/{rec.id}")[:300]
 
 
@@ -212,15 +276,16 @@ def order_proposal_text(order, plan: dict) -> tuple:
         return subject, f"Objednávku sa nepodarilo naplánovať: {plan['error']}\n\nSkontrolujte údaje objednávky."
     lines = [f"Zákazník: {order.customer or '—'}", f"Relácia: {order.origin} → {order.destination}",
              f"Najskorší odchod: {fmt(order.earliest_departure_utc)}   Termín: {fmt(order.deadline_utc)}",
-             f"Tovar: {order.cargo or '—'}   Vozne: {order.wagons or '—'}   Hmotnosť: {order.weight_t or '—'} t   "
-             f"Dĺžka: {order.length_m or '—'} m{'   RID: áno' if order.rid else ''}", "",
+             f"Tovar: {order.cargo or '—'}   Vozne: {order.wagons or '—'}   "
+             f"Hmotnosť: {number(order.weight_t) if order.weight_t else '—'} t   "
+             f"Dĺžka: {number(order.length_m) if order.length_m else '—'} m{'   RID: áno' if order.rid else ''}", "",
              f"Odporúčanie agenta: {plan.get('decision', '')}"]
     lines += [f"  - {e}" for e in plan.get("explanation", [])]
     if plan.get("routes"):
         lines += ["", "Možné trasy:"]
         for r in plan["routes"]:
             via = ", ".join(r["stations"][1:-1][:8])
-            lines.append(f"  {r['name']}: {r['km']} km, ~{r['minutes']} min (cez {via}…)")
+            lines.append(f"  {r['name']}: {_km(r['km'])} km, ~{r['minutes']} min (cez {via}…)")
     pp = plan.get("path_proposal") or {}
     if pp.get("stations"):
         win = pp.get("request_window")

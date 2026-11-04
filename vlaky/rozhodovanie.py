@@ -464,7 +464,8 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
               stable_needs_new_path: bool = False,
               grid_origin: Optional[float] = None,
               already_stabled: bool = False,
-              requested_departures: Optional[dict] = None) -> Recommendation:
+              requested_departures: Optional[dict] = None,
+              allow_stabling: bool = True) -> Recommendation:
     """Prehľadá odchody od `ready` po `ready + horizon_min` po každej trase.
 
     Pravidlá výberu:
@@ -484,7 +485,9 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
       grid_origin – pevná mriežka odchodov (_departures), nie posunutá od `ready`,
       already_stabled – vlak už stojí odstavený: jednorazový náklad odstavenia je zaplatený (evaluate),
       requested_departures – {názov trasy: [odchody]} nových trás, ktoré dispečer už objednal v lehote
-        (prijaté odporúčanie): odchod v ich tolerancii sa ponúkne aj po uplynutí lehoty new_path_lead_min.
+        (prijaté odporúčanie): odchod v ich tolerancii sa ponúkne aj po uplynutí lehoty new_path_lead_min,
+      allow_stabling – False: ODSTAVIŤ sa neponúka vôbec (napr. idúci vlak tesne pred cieľom – odstavenie na trati
+        a nová trasa pre posledný kilometer nemajú zmysel; ostáva pokračovať alebo počkať).
     """
     candidates, windows = [], {}
     horizon_min = min(horizon_min, p.max_hold_h * 60.0)  # dlhšie čakanie nie je podľa PPŽS prípustné
@@ -503,7 +506,7 @@ def recommend(routes: Sequence[Route], now: float, ready: float, deadline: float
                 continue
             # POČKAŤ: ten istý rušňovodič čaká (jeho pracovný čas beží od crew_start, ak už je v službe)
             options = [evaluate(route, depart, ready, deadline, p, normals, False, new_path, crew_start)]
-            if depart > ready:
+            if depart > ready and allow_stabling:
                 # ODSTAVIŤ: rušňovodič sa uvoľní, neskôr nastúpi nový (pracovný čas od depart - prep)
                 st_new = new_path or stable_needs_new_path
                 if not (st_new and late):
