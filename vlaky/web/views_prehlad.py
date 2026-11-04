@@ -467,7 +467,8 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
         parts = ", ".join(f"#{t.get('id')}" for t in result.get("terms") or [])
         msg += f"; výluka #{result.get('id')} je rozdelená ({parts}) – zmena či zrušenie sa týka len uvedenej časti"
     elif result.get("action") == "bez_zmeny":
-        msg += f"; register sa nezmenil – {str(result.get('note') or '')[:300]}".rstrip(" –")
+        note = str(result.get("note") or "")[:300]
+        msg += f"; register sa nezmenil – {note[:1].lower() + note[1:]}".rstrip(" –")
     if kept:
         msg += f"; ponechané úpravy z registra výluk ({', '.join(kept)})"
     return redirect("/fronta", msg + ("" if msg.endswith(".") else "."))
