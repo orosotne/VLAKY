@@ -625,10 +625,11 @@ deploy/scripts/update.sh --ref main      # neskoršia aktualizácia (po rollback
   `sudo apt update && sudo apt full-upgrade` (aktualizuje aj Docker – kontajnery sa krátko reštartujú).
 - Ak `check.sh` hlási „čaká sa na reštart“, naplánuj `sudo reboot` mimo špičky (služby sa spustia samé).
   Automatický reštart v noci zapne `setup.sh --auto-reboot 03:40`.
-- **Synchronizáciu času nevypínaj** (`setup.sh` zapne chrony alebo systemd-timesyncd, stav: `timedatectl`):
-  poradie súbežných prepočtov toho istého vlaku (web a agent) určujú hodiny servera, preto web, agent a databáza
-  bežia na tom istom serveri. Skok hodín späť o viac ako 5 s (napr. po obnovení virtuálneho servera zo snímky)
-  aplikácia zvládne – log zapíše „… hodiny servera sa zrejme posunuli späť; výsledok prepočtu sa uloží“.
+- **Synchronizáciu času nevypínaj** (`setup.sh` ponechá bežiaci chrony, inak zapne systemd-timesyncd; stav:
+  `timedatectl`): poradie súbežných prepočtov toho istého vlaku (web a agent) určujú hodiny servera, preto web
+  a agent bežia na tom istom serveri (docker compose), prípadne s hodinami synchronizovanými cez NTP. Skok hodín
+  späť o viac ako 5 s (napr. po obnovení virtuálneho servera zo snímky) aplikácia zvládne – log zapíše „… hodiny
+  servera sa zrejme posunuli späť; výsledok prepočtu sa uloží“.
 
 ### 10.4 PostgreSQL
 
@@ -684,8 +685,9 @@ Pri každom incidente: (1) informuj dispečing, či má pracovať ručne, (2) za
    dočítavanie, dispečerom neposiela; po dočítaní vlaky hneď prepočíta. Nová výluka z nahromadenej pošty sa
    oznámi hneď. Dočítavanie dlhšie ako 30 min od poslednej úplnej kontroly hlási zdravie aj heartbeat
    („schránka: dočítava sa …“) – častou príčinou je pomalý jazykový model (pozri „LLM nedostupné“).
-   Odovzdávku služby môže dispečing vytvoriť na webe (Odovzdávka → Vytvoriť teraz): počas výpadku začína
-   „POZOR: Údaje agenta nie sú čerstvé (…)“ a zelené vlaky uvedie ako ORANŽOVÉ (príručka, kapitola 11).
+   Odovzdávku služby môže dispečing vytvoriť na webe (Odovzdávka → Vytvoriť teraz; uloží sa na webe, e-mailom
+   sa neposiela): počas výpadku začína „POZOR: Údaje agenta nie sú čerstvé (…)“ a zelené vlaky uvedie ako
+   ORANŽOVÉ (príručka, kapitola 11).
 2. `docker compose ps` – stav kontajnera `agent`.
 3. `docker compose logs --tail 200 agent` a `docker compose exec agent python -m vlaky health`
    (DB, posledný cyklus, posledná kontrola schránky).
