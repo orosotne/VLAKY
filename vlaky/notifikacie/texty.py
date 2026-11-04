@@ -103,6 +103,45 @@ def crew_relief_text(crew: dict | None) -> str:
     return ""
 
 
+def is_running(rec: Recommendation) -> bool:
+    """Odporúčanie idúceho vlaku (vlak už vyšiel): plánovač to zapíše do ``chosen["running"]``; staršie odporúčania
+    podľa stavu vlaku."""
+    ch = rec.chosen or {}
+    if "running" in ch:
+        return bool(ch["running"])
+    return rec.train is not None and rec.train.status == "v_jazde"
+
+
+def departure_line(rec: Recommendation) -> str:
+    """Riadok odchodu v správe. Idúci vlak neodchádza – pokračuje v jazde: „ihneď“ (pokračovanie bez čakania, nie
+    odchod „teraz“ v čase prepočtu), „o …“ (počká a pokračuje), pred zatvoreným cieľom „po uvoľnení vjazdu do cieľa“
+    (čas odchodu je len hranica výpočtu)."""
+    ch = rec.chosen or {}
+    if ch.get("until_entry"):
+        return "Odchod: po uvoľnení vjazdu do cieľa"
+    if is_running(rec):
+        if ch.get("kind") == "VYPRAVIŤ":
+            return "Pokračovať v jazde: ihneď"
+        if ch.get("kind") == "POČKAŤ":
+            return f"Pokračovať v jazde o: {_t(ch.get('depart'))}"
+    return f"Odchod: {_t(ch.get('depart'))}"
+
+
+def variant_columns(rec: Recommendation, v: dict) -> tuple:
+    """(čas, rozhodnutie) varianty v porovnaní variantov – rovnako pre e-mail aj web. Idúci vlak: pokračovanie bez
+    čakania je „POKRAČOVAŤ“ „ihneď“ (nie VYPRAVIŤ s časom prepočtu); zvolená varianta vlaku, ktorý čaká pred
+    zatvoreným cieľom dlhšie, ako siaha prehľadávané obdobie (``chosen["until_entry"]``), nemá čas odchodu (hranica
+    výpočtu nič nehovorí) – „po uvoľnení vjazdu“."""
+    ch = rec.chosen or {}
+    kind = v.get("kind", "")
+    if ch.get("until_entry") and kind == "POČKAŤ" and v.get("depart") == ch.get("depart") and \
+            v.get("route") == ch.get("route"):
+        return "po uvoľnení vjazdu", kind
+    if is_running(rec) and kind == "VYPRAVIŤ":
+        return "ihneď", "POKRAČOVAŤ"
+    return _t(v.get("depart")), kind
+
+
 def _decision_head(rec: Recommendation) -> str:
     """Rozhodnutie s časom odchodu (predmet e-mailu, SMS). Idúci vlak, ktorý pred cieľom čaká, kým sa neuvoľní vjazd
     (``chosen["until_entry"]``), čas odchodu nemá – je to len hranica výpočtu, posúva sa s každým prepočtom."""
@@ -174,7 +213,7 @@ def recommendation_body(rec: Recommendation) -> str:
         lines += [
             f"Odporúčanie: {rec.decision} – semafor {rec.color}",
             f"Trasa: {ch.get('route', '')}",
-            f"Odchod: {'po uvoľnení vjazdu do cieľa' if ch.get('until_entry') else _t(ch.get('depart'))}   "
+            f"{departure_line(rec)}   "
             f"Príchod: {_t(ch.get('arrival_p50'))} (90 % do {_t(ch.get('arrival_p90'))})",
             f"P(včas): {ch.get('p_on_time', 0):.0%}   P(zadržania pred výlukou): {ch.get('p_hold', 0):.0%}",
             f"Očakávaný náklad: {eur(ch.get('expected_cost', 0))} (vzorové sadzby, ak nie sú nastavené vlastné)",
@@ -190,8 +229,10 @@ def recommendation_body(rec: Recommendation) -> str:
         for st in pp["stations"]:
             if st.get("type") == "junction":
                 continue
+            # čakanie na dopravni pred blokujúcou výlukou (do jej konca s rezervou) – nie časy vnútri výluky
+            hold = " – čakať pred výlukou" if st.get("hold") else ""
             lines.append(f"  {st['name']:<34} prích. {_t(st.get('arr')):>13}  odch. {_t(st.get('dep')):>13}"
-                         f"  ({_km(st.get('km'))} km)")
+                         f"  ({_km(st.get('km'))} km){hold}")
     cap = _semafor_cap(rec)
     win = rec.windows or {}
     if win:
@@ -224,7 +265,8 @@ def recommendation_body(rec: Recommendation) -> str:
     if rec.variants:
         lines += ["", "Porovnanie variantov:"]
         for v in rec.variants:
-            lines.append(f"  {v.get('route', '')[:30]:<30} {_t(v.get('depart')):>13} {v.get('kind', ''):<12} "
+            when, kind = variant_columns(rec, v)
+            lines.append(f"  {v.get('route', '')[:30]:<30} {when:>13} {kind:<12} "
                          f"{_capped_status(v.get('status', ''), cap):<9} P(včas) {v.get('p_on_time', 0):.0%}  "
                          f"{eur(v.get('expected_cost', 0))}")
     if rec.reasons:
@@ -299,7 +341,8 @@ def order_proposal_text(order, plan: dict) -> tuple:
         for st in pp["stations"]:
             if st.get("type") == "junction":
                 continue
-            lines.append(f"  {st['name']:<34} prích. {_t(st.get('arr')):>13}  odch. {_t(st.get('dep')):>13}")
+            hold = " – čakať pred výlukou" if st.get("hold") else ""
+            lines.append(f"  {st['name']:<34} prích. {_t(st.get('arr')):>13}  odch. {_t(st.get('dep')):>13}{hold}")
     lines += ["", "Ďalší krok: dispečer potvrdí termín zákazníkovi a objedná trasu v IS KIS (ad hoc trasa "
                   "najneskôr 6 h pred odchodom). Agent nič neodosiela navonok.",
               f"Detail: {s.public_url.rstrip('/')}/vlaky"]
