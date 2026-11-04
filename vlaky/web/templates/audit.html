@@ -22,7 +22,7 @@
       <td class="nowrap">{{ a.ts|tfull }}</td>
       <td>{{ a.actor }}</td>
       <td>{{ a.action|audit_action }} <code class="small muted">{{ a.action }}</code></td>
-      <td>{{ a.entity }}{% if a.entity_id %} #{{ a.entity_id }}{% endif %}</td>
+      <td>{{ AUDIT_ENTITY.get(a.entity, a.entity) or "—" }}{% if a.entity_id %} #{{ a.entity_id }}{% endif %}{% if a.entity and AUDIT_ENTITY.get(a.entity) %} <code class="small muted">{{ a.entity }}</code>{% endif %}</td>
       <td>{% if a.detail %}<details><summary class="small">zobraziť</summary><pre class="mono small">{{ a.detail|jsonpretty }}</pre></details>{% endif %}</td>
     </tr>
   {% else %}

@@ -301,6 +301,19 @@ def _rec_dict(r: Optional[Recommendation]) -> Optional[dict]:
             "reasons": list(r.reasons or [])[:6], "data_age": r.data_age or {}}
 
 
+def crew_matches_shift(crew: Optional[dict], start: Optional[datetime], tolerance_s: float = 60.0) -> bool:
+    """Opisuje pracovný čas rušňovodiča z odporúčania (rec.crew) zmenu s nástupom ``start``?
+
+    Plánovač pri zaznamenanej zmene uvádza jej nástup. Pri odstavení (nový rušňovodič po odstavení), pri vlaku bez
+    zmeny, pri naplánovanom vystriedaní (rušňovodič v službe) a pri odhade (nástup nie je zadaný) opisuje iného
+    rušňovodiča – jeho časy (vystriedať najneskôr, koniec P90) ani farba k tejto zmene nepatria."""
+    crew = crew or {}
+    if not crew or crew.get("unknown_start") or start is None:
+        return False
+    crew_start = parse_iso(crew.get("start"))
+    return crew_start is not None and abs((crew_start - ensure_utc(start)).total_seconds()) <= tolerance_s
+
+
 def _driver_dict(sh: Optional[DriverShift], rec: Optional[Recommendation], params: dict,
                  now: datetime) -> Optional[dict]:
     crew = (rec.crew if rec is not None else None) or {}
@@ -318,6 +331,10 @@ def _driver_dict(sh: Optional[DriverShift], rec: Optional[Recommendation], param
         out.update(name=sh.driver.name if sh.driver else "", shift_id=sh.id, start=iso(start), limit=iso(limit),
                    left_min=round(left), relieve_by=iso(limit - timedelta(minutes=params["crew_post_min"])),
                    color=crew_color(left, params["crew_buffer_min"]), shift_status=sh.status)
+        if start > now:
+            # zmena ešte nezačala (naplánovaná, prípadne „prebieha“ s budúcim nástupom): 13 h limit ešte nebeží –
+            # odpočet od budúceho nástupu by ukázal viac ako 13 h
+            out.update(left_min=None, color="seda", not_started=True)
     unknown = bool(crew.get("unknown_start")) and not (
         sh is not None and sh.status == "prebieha" and ensure_utc(sh.start_utc) <= now)
     if unknown:
@@ -331,22 +348,33 @@ def _driver_dict(sh: Optional[DriverShift], rec: Optional[Recommendation], param
                    relieve_by_estimate=crew.get("relieve_by"), relieve_note=crew_relief_text(crew),
                    color="cervena" if overdue or crew.get("status") == "ČERVENÁ" else "oranzova")
         return out
-    if crew:
+    # časy a farba z odporúčania len vtedy, keď opisujú túto zmenu (nie nového rušňovodiča po odstavení ani
+    # rušňovodiča v službe pri naplánovanom vystriedaní); bez zmeny vlaku platí odporúčanie
+    matches = sh is None or crew_matches_shift(crew, ensure_utc(sh.start_utc))
+    if crew and matches:
         out["name"] = out["name"] or crew.get("driver") or ""
         out["status"] = crew.get("status")
         out["end_p90"] = crew.get("end_p90")
         if sh is None:
+            crew_start = parse_iso(crew.get("start"))
             crew_limit = parse_iso(crew.get("limit"))
-            left = (crew_limit - now).total_seconds() / 60.0 if crew_limit else crew.get("left_min")
-            out.update(start=crew.get("start"), limit=crew.get("limit"),
-                       left_min=round(left) if isinstance(left, (int, float)) else None,
-                       relieve_by=crew.get("relieve_by"),
-                       color=crew_color(left if isinstance(left, (int, float)) else None, params["crew_buffer_min"]))
+            if not crew.get("driver") or (crew_start is not None and crew_start > now):
+                # rušňovodič nie je pridelený (alebo nastúpi až neskôr – nový rušňovodič po odstavení): limit 13 h
+                # nikomu nebeží – žiadny odpočet hypotetického rušňovodiča (napr. „63 h 17 min“), len potrebný nástup
+                out.update(start=crew.get("start"), limit=crew.get("limit"), left_min=None,
+                           relieve_by=crew.get("relieve_by"), not_started=True)
+            else:
+                left = (crew_limit - now).total_seconds() / 60.0 if crew_limit else crew.get("left_min")
+                out.update(start=crew.get("start"), limit=crew.get("limit"),
+                           left_min=round(left) if isinstance(left, (int, float)) else None,
+                           relieve_by=crew.get("relieve_by"),
+                           color=crew_color(left if isinstance(left, (int, float)) else None,
+                                            params["crew_buffer_min"]))
         worse = {"ČERVENÁ": "cervena", "ORANŽOVÁ": "oranzova"}.get(crew.get("status"))
         rank = {"cervena": 0, "oranzova": 1, "zelena": 2, "seda": 3}
         if worse and rank[worse] < rank.get(out["color"], 3):
             out["color"] = worse
-        elif out["color"] == "seda" and crew.get("status") == "ZELENÁ":
+        elif out["color"] == "seda" and crew.get("status") == "ZELENÁ" and not out.get("not_started"):
             out["color"] = "zelena"
     return out
 
@@ -405,54 +433,17 @@ def _anchor(train: Train, ho: Optional[Handover]) -> Optional[dict]:
 MAILBOX_MAX_AGE_MIN = 30   # bez úspešnej kontroly schránky za 30 min nikdy ZELENÁ (rovnako ako plánovač)
 
 
-def _kv_age_minutes(s: Session, key: str, now: datetime) -> Optional[float]:
-    """Vek záznamu agenta {"ts": ISO} v minútach (None = záznam chýba alebo je neplatný)."""
-    from ..models import KeyValue
-
-    kv = s.scalar(select(KeyValue).where(KeyValue.key == key))
-    try:
-        ts = ensure_utc(datetime.fromisoformat(str((kv.value or {}).get("ts"))))
-    except (AttributeError, TypeError, ValueError):
-        return None
-    return (now - ts).total_seconds() / 60.0
-
-
 def data_freshness(s: Session, now: Optional[datetime] = None) -> dict:
     """Vek dát agenta: posledná úspešná kontrola schránky a posledný cyklus agenta.
 
     Semafor odporúčania platí len k času prepočtu. Keď agent stojí (neprepočítava, nečíta schránku), web nesmie
     ďalej ukazovať jeho poslednú ZELENÚ (PROMPT 12: bez čerstvých dát nikdy zelená) – train_rows ju zníži na
     ORANŽOVÚ a dôvod je v „text“. Cyklus je starý po 2 × VLAKY_REEVALUATE_MINUTES, schránka po 30 min.
+    Rovnaké pravidlo použije aj odovzdávka služby (vlaky.agent.zdravie.data_freshness).
     """
-    now = now or now_utc()
-    cycle_limit = 2 * settings().reevaluate_minutes
-    mailbox = _kv_age_minutes(s, "mail_last_ok", now)
-    cycle = _kv_age_minutes(s, "agent_last_cycle", now)
-    reasons = []
-    if cycle is None:
-        reasons.append("agent zatiaľ neprebehol")
-    elif cycle > cycle_limit:
-        reasons.append(f"posledný cyklus agenta pred {cycle:.0f} min")
-    from ..models import KeyValue
+    from ..agent.zdravie import data_freshness as agent_data_freshness
 
-    kv_mail = s.scalar(select(KeyValue).where(KeyValue.key == "mail_last_ok"))
-    mail_val = kv_mail.value if kv_mail is not None and isinstance(kv_mail.value, dict) else {}
-    if mail_val.get("partial"):
-        # agent dočítava nahromadenú poštu – kontrola nie je úplná (žiadna ZELENÁ), text to povie pravdivo
-        last_full = parse_iso(mail_val.get("last_full"))
-        if last_full is not None:
-            mailbox = (now - last_full).total_seconds() / 60.0
-            reasons.append(f"schránka agenta sa dočítava (posledná úplná kontrola pred {mailbox:.0f} min)")
-        else:
-            reasons.append("schránka agenta sa dočítava (úplná kontrola zatiaľ neprebehla)")
-    elif mailbox is None:
-        reasons.append("schránka agenta ešte nebola úspešne skontrolovaná")
-    elif mailbox > MAILBOX_MAX_AGE_MIN:
-        reasons.append(f"schránka agenta sa nekontrolovala {mailbox:.0f} min")
-    return {"mailbox_min": round(mailbox, 1) if mailbox is not None else None,
-            "agent_cycle_min": round(cycle, 1) if cycle is not None else None,
-            "stale": bool(reasons),
-            "text": f"Údaje agenta nie sú čerstvé ({', '.join(reasons)})." if reasons else ""}
+    return agent_data_freshness(s, now or now_utc())
 
 
 # ---------------------------------------------------------------- semafor odporúčania na webe

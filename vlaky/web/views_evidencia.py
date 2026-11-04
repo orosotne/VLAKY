@@ -11,7 +11,7 @@ from sqlalchemy import case, or_, select
 from sqlalchemy.orm import selectinload
 
 from ..audit import audit
-from ..cas import ensure_utc, now_utc
+from ..cas import ensure_utc, fmt, now_utc
 from ..db import session_scope
 from ..models import (AuditLog, BorderCrossing, Closure, Driver, DriverShift, ExtractedEvent, Handover, Locomotive,
                       Order, Path, PositionReport, Recommendation, Train)
@@ -20,7 +20,8 @@ from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, LOCO_SYSTE
                      NetworkUnavailable,
                      crew_color, current_params, input_dt, iso, log, redirect, render, resolve_station,
                      safe_next, station_or_error)
-from .data import closure_edges, closure_spans, data_freshness, latest_recommendations
+from .data import (closure_edges, closure_spans, crew_matches_shift, current_shifts, data_freshness,
+                   latest_recommendations)
 from .prepocet import evaluate_all_bg, evaluate_train_bg, evaluate_train_now
 from .rusnovodic import driver_link, revoke_driver_links, token_version
 
@@ -793,8 +794,6 @@ def _assignment_proposal(s) -> tuple:
 
 @router.get("/rusnovodici", response_class=HTMLResponse)
 def drivers_page(request: Request, navrh: int = 0, user=Depends(view)):
-    from .common import parse_iso
-
     now = now_utc()
     with session_scope() as s:
         proposal, proposal_error = _assignment_proposal(s) if navrh and user.can("crew") else (None, "")
@@ -813,30 +812,46 @@ def drivers_page(request: Request, navrh: int = 0, user=Depends(view)):
         for sh in shifts:
             start = ensure_utc(sh.start_utc)
             limit = start + timedelta(minutes=params["crew_max_duty_min"])
-            left = (limit - now).total_seconds() / 60.0 if sh.status != "ukoncena" else None
+            train = trains.get(sh.train_id)
+            # „prebieha“ s nástupom v budúcnosti (starší záznam – formulár ho už neprijme): plánovač ho za nástup
+            # neberie (pri idúcom vlaku len odhad), odpočet od budúceho času by ukázal viac ako 13 h
+            future = sh.status == "prebieha" and start > now
+            left = (limit - now).total_seconds() / 60.0 if sh.status != "ukoncena" and not future else None
             color = crew_color(left, params["crew_buffer_min"]) if sh.status == "prebieha" else "seda"
+            if future:
+                color = "oranzova"
             rec = recs.get(sh.train_id)
             crew_info = (rec.crew or {}) if rec is not None else {}
-            if sh.status == "prebieha" and crew_info.get("unknown_start"):
-                crew_info = {}  # odhad z času, keď nástup nebol zadaný – pre zaznamenanú zmenu neplatí
-            elif sh.status == "planovana" and crew_info.get("start") and not crew_info.get("unknown_start") and \
-                    (parse_iso(crew_info["start"]) or start) <= now < start:
-                crew_info = {}  # pracovný čas rušňovodiča v službe – nie tohto naplánovaného vystriedania
-            if sh.status == "prebieha" and crew_info.get("status") == "ČERVENÁ":
+            estimate = None
+            if crew_info.get("unknown_start"):
+                # odhad plánovača (idúci vlak bez zaznamenaného nástupu) patrí k zmene, ktorú plánovač za nástup nevzal
+                # (naplánovaná na neskôr, „prebieha“ s budúcim nástupom) – pri zaznamenanom nástupe neplatí
+                if train is not None and train.status == "v_jazde" and start > now and sh.status != "ukoncena":
+                    estimate = crew_info
+                crew_info = {}
+            elif not crew_matches_shift(crew_info, start):
+                # odporúčanie opisuje iného rušňovodiča (nový rušňovodič po odstavení, rušňovodič v službe pri
+                # naplánovanom vystriedaní) – jeho časy ani farba nepatria k tejto zmene
+                crew_info = {}
+            if sh.status == "prebieha" and not future and crew_info.get("status") == "ČERVENÁ":
                 color = "cervena"
             elif sh.status == "prebieha" and crew_info.get("status") == "ORANŽOVÁ" and color == "zelena":
                 color = "oranzova"
-            rows.append({"sh": sh, "train": trains.get(sh.train_id), "limit": limit, "left": left, "color": color,
-                         "relieve_by": limit - timedelta(minutes=params["crew_post_min"]), "crew": crew_info})
+            # vystriedať najneskôr: vlastný limit zmeny mínus odovzdanie rušňa – nikdy neskôr ako jej limit
+            rows.append({"sh": sh, "train": train, "limit": limit, "left": left, "color": color, "future": future,
+                         "relieve_by": limit - timedelta(minutes=params["crew_post_min"]), "crew": crew_info,
+                         "estimate": estimate})
         active_trains = list(s.scalars(select(Train).where(Train.status.notin_(DONE_TRAIN_STATES))
                                        .order_by(Train.number)))
-        # idúce vlaky bez záznamu o nástupe rušňovodiča (ako v plánovači: žiadna zmena, ktorá prebieha alebo už mala
-        # začať) – 13 h limit sa pri nich nedá overiť, stránka to musí ukázať (text ako v odporúčaní, len odhad)
+        # idúce vlaky bez záznamu o nástupe rušňovodiča (ako v plánovači: zmena vlaku – prebiehajúca, inak tá, ktorá je
+        # na rade – nemá nástup najneskôr teraz) – 13 h limit sa pri nich nedá overiť, stránka to musí ukázať (text
+        # ako v odporúčaní, len odhad)
         from ..notifikacie.texty import crew_relief_text
 
-        known = {sh.train_id for sh in shifts if sh.train_id and (
-            sh.status == "prebieha" or (sh.status == "planovana" and ensure_utc(sh.start_utc) <= now))}
-        missing = [t for t in active_trains if t.status == "v_jazde" and t.id not in known]
+        running_trains = [t for t in active_trains if t.status == "v_jazde"]
+        current = current_shifts(s, [t.id for t in running_trains], now)
+        missing = [t for t in running_trains
+                   if t.id not in current or ensure_utc(current[t.id].start_utc) > now]
         missing_recs = latest_recommendations(s, [t.id for t in missing]) if missing else {}
         crew_missing = []
         for t in missing:
@@ -900,7 +915,10 @@ def driver_update(driver_id: int, request: Request, user=Depends(crew), form=Dep
     return redirect("/rusnovodici", "Rušňovodič uložený." if changes else "Bez zmien.")
 
 
-def _read_shift(reader: FormReader, s) -> dict:
+FUTURE_START_TOLERANCE_MIN = 5  # „prebieha“: nástup najviac o toľko po teraz (minúty vo formulári) sa berie ako teraz
+
+
+def _read_shift(reader: FormReader, s, notes: Optional[list] = None) -> dict:
     driver_id = reader.number("driver_id", "Rušňovodič", required=True, integer=True, minimum=1)
     train_id = reader.number("train_id", "Vlak", integer=True, minimum=1)
     start = reader.local_dt("start_utc", "Nástup", required=True)
@@ -910,17 +928,54 @@ def _read_shift(reader: FormReader, s) -> dict:
         reader.errors["driver_id"] = "Neplatný rušňovodič."
     if train_id and s.get(Train, int(train_id)) is None:
         reader.errors["train_id"] = "Neplatný vlak."
+    if start and status == "prebieha":
+        # zmena, ktorá prebieha, má skutočný nástup – nie budúci: plánovač ho za nástup nevezme (pri idúcom vlaku len
+        # odhad) a 13 h limit, odpočet aj upozornenia strážnika by sa rátali od budúceho času (viac ako 13 h)
+        now = now_utc()
+        if start > now + timedelta(minutes=FUTURE_START_TOLERANCE_MIN):
+            reader.errors["start_utc"] = (
+                f"Skutočný nástup nemôže byť v budúcnosti (zadané {fmt(start)}, teraz {fmt(now)}) – zmena "
+                f"„prebieha“ znamená, že rušňovodič už nastúpil. Zadajte skutočný čas nástupu, alebo zmenu uložte "
+                f"ako plánovanú.")
+        elif start > now:
+            if notes is not None and start - now > timedelta(minutes=1):
+                notes.append(f"Nástup zapísaný ako {fmt(now)} (zadaný čas {fmt(start)} bol v budúcnosti).")
+            start = now  # pár minút dopredu (čas vo formulári je v celých minútach) – nástup najneskôr teraz
     if start and planned_end and planned_end <= start:
         reader.errors["planned_end_utc"] = "Plánovaný koniec musí byť po nástupe."
     return {"driver_id": int(driver_id) if driver_id else None, "train_id": int(train_id) if train_id else None,
             "start_utc": start, "planned_end_utc": planned_end, "status": status}
 
 
+def _running_elsewhere(s, sh: DriverShift) -> str:
+    """Upozornenie, ak má rušňovodič okrem tejto zmeny aj inú zmenu, ktorá prebieha (napr. na inom vlaku) – jeden
+    rušňovodič nemôže viesť dva vlaky naraz; zabudnutá zmena by strážila nesprávny limit. Spoločný rušňovodič
+    „neznámy (nástup z mobilu)“ sa nekontroluje (má zmeny viacerých vlakov)."""
+    from ..planovanie.planovac import MOBILE_DRIVER
+
+    if sh.status != "prebieha" or not sh.driver_id:
+        return ""
+    driver = s.get(Driver, sh.driver_id)
+    if driver is None or driver.name == MOBILE_DRIVER:
+        return ""
+    others = list(s.scalars(select(DriverShift).where(DriverShift.driver_id == sh.driver_id,
+                                                      DriverShift.status == "prebieha", DriverShift.id != sh.id)
+                            .order_by(DriverShift.start_utc)))
+    if not others:
+        return ""
+    numbers = {t.id: t.number for t in s.scalars(select(Train).where(
+        Train.id.in_({o.train_id for o in others if o.train_id})))}
+    where = ", ".join(f"vlak {numbers.get(o.train_id, '?')}" if o.train_id else "bez vlaku" for o in others[:3])
+    return (f"Pozor: rušňovodič {driver.name} má aj inú zmenu, ktorá prebieha ({where}, nástup "
+            f"{fmt(others[0].start_utc)}) – ak ju už nevedie, ukončite ju.")
+
+
 @router.post("/zmeny/nova")
 def shift_create(request: Request, background: BackgroundTasks, user=Depends(crew), form=Depends(csrf_form)):
     reader = FormReader(form)
+    notes: list = []
     with session_scope() as s:
-        values = _read_shift(reader, s)
+        values = _read_shift(reader, s, notes)
         if not reader.ok:
             return redirect("/rusnovodici#zmeny", " ".join(reader.errors.values()), "chyba")
         sh = DriverShift(**values)
@@ -928,10 +983,12 @@ def shift_create(request: Request, background: BackgroundTasks, user=Depends(cre
         s.flush()
         audit(s, user.username, "shift_create", "driver_shift", sh.id,
               **{k: (iso(v) if hasattr(v, "tzinfo") else v) for k, v in values.items()})
+        warning = _running_elsewhere(s, sh)
         tid = sh.train_id
     if tid and request.app.state.auto_evaluate:
         background.add_task(evaluate_train_bg, tid, "nová zmena rušňovodiča")
-    return redirect("/rusnovodici#zmeny", "Zmena uložená.")
+    return redirect("/rusnovodici#zmeny", " ".join(["Zmena uložená."] + notes + ([warning] if warning else [])),
+                    "varovanie" if warning else "ok")
 
 
 @router.post("/zmeny/z-navrhu")
@@ -960,7 +1017,7 @@ def shift_from_proposal(request: Request, background: BackgroundTasks, user=Depe
         s.flush()
         audit(s, user.username, "shift_create_from_proposal", "driver_shift", sh.id, driver=driver.name,
               train=train.number, start=start, end=end)
-        msg = f"Zmena pre {driver.name} na vlak {train.number} naplánovaná od {iso(start)}."
+        msg = f"Zmena pre {driver.name} na vlak {train.number} naplánovaná od {fmt(start)}."
         tid = train.id
     if request.app.state.auto_evaluate:
         background.add_task(evaluate_train_bg, tid, "zmena podľa návrhu nasadenia")
@@ -971,11 +1028,12 @@ def shift_from_proposal(request: Request, background: BackgroundTasks, user=Depe
 def shift_update(shift_id: int, request: Request, background: BackgroundTasks, user=Depends(crew),
                  form=Depends(csrf_form)):
     reader = FormReader(form)
+    notes: list = []
     with session_scope() as s:
         sh = s.get(DriverShift, shift_id)
         if sh is None:
             raise HTTPException(404, "Zmena neexistuje.")
-        values = _read_shift(reader, s)
+        values = _read_shift(reader, s, notes)
         if not reader.ok:
             return redirect("/rusnovodici#zmeny", " ".join(reader.errors.values()), "chyba")
         changes = _diff(sh, values)
@@ -983,10 +1041,13 @@ def shift_update(shift_id: int, request: Request, background: BackgroundTasks, u
             setattr(sh, k, v)
         if changes:
             audit(s, user.username, "shift_update", "driver_shift", sh.id, changes=changes)
+        warning = _running_elsewhere(s, sh) if changes else ""
         tid = sh.train_id
     if changes and tid and request.app.state.auto_evaluate:
         background.add_task(evaluate_train_bg, tid, "úprava zmeny rušňovodiča")
-    return redirect("/rusnovodici#zmeny", "Zmena uložená." if changes else "Bez zmien.")
+    text = " ".join(["Zmena uložená." if changes else "Bez zmien."] + (notes if changes else [])
+                    + ([warning] if warning else []))
+    return redirect("/rusnovodici#zmeny", text, "varovanie" if warning else "ok")
 
 
 @router.post("/zmeny/{shift_id}/nastup")
@@ -1001,10 +1062,12 @@ def shift_start(shift_id: int, request: Request, background: BackgroundTasks, us
         old = sh.start_utc
         sh.start_utc, sh.status = now_utc(), "prebieha"
         audit(s, user.username, "shift_start", "driver_shift", sh.id, previous_start=old, start=sh.start_utc)
+        warning = _running_elsewhere(s, sh)
         tid = sh.train_id
     if tid and request.app.state.auto_evaluate:
         background.add_task(evaluate_train_bg, tid, "nástup rušňovodiča")
-    return redirect("/rusnovodici#zmeny", "Nástup zaznamenaný – limit pracovného času beží od teraz.")
+    text = "Nástup zaznamenaný – limit pracovného času beží od teraz."
+    return redirect("/rusnovodici#zmeny", f"{text} {warning}" if warning else text, "varovanie" if warning else "ok")
 
 
 @router.post("/zmeny/{shift_id}/ukoncit")

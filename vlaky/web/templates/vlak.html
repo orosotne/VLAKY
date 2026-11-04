@@ -62,7 +62,8 @@
     {% endif %}
     <h3>Rušňovodič</h3>
     {% for sh in shifts %}
-      <p>{{ sh.driver.name if sh.driver else "?" }} – {{ SHIFT_STATUS.get(sh.status, sh.status) }}, nástup {{ sh.start_utc|t }}{% if sh.status == "prebieha" %}, limit <span data-countdown="{{ sh.start_utc|iso }}" data-limit-min="{{ params.crew_max_duty_min }}" data-buffer-min="{{ params.crew_buffer_min }}">{{ sh.start_utc|t }}</span>{% endif %}</p>
+      {# „prebieha“ s nástupom v budúcnosti (starší záznam): 13 h limit ešte nebeží – žiadny odpočet viac ako 13 h #}
+      <p>{{ sh.driver.name if sh.driver else "?" }} – {{ SHIFT_STATUS.get(sh.status, sh.status) }}, nástup {{ sh.start_utc|t }}{% if sh.status == "prebieha" and sh.start_utc|future %} <span class="crew crew-oranzova">nástup je v budúcnosti – opravte čas nástupu</span>{% elif sh.status == "prebieha" %}, limit <span data-countdown="{{ sh.start_utc|iso }}" data-limit-min="{{ params.crew_max_duty_min }}" data-buffer-min="{{ params.crew_buffer_min }}">{{ sh.start_utc|t }}</span>{% endif %}</p>
     {% else %}
       <p class="muted">Bez naplánovanej zmeny. <a href="/rusnovodici#zmeny">Naplánovať zmenu</a></p>
     {% endfor %}

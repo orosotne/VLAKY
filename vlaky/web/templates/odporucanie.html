@@ -83,10 +83,11 @@
   {% else %}
   <dl class="meta meta-wide">
     <dt>Rušňovodič</dt><dd>{{ crew.get("driver") or "nepriradený" }}</dd>
-    <dt>Nástup</dt><dd>{{ crew.get("start")|t }}</dd>
+    <dt>Nástup</dt><dd>{{ crew.get("start")|t }}{% if not crew.get("driver") %} <span class="muted small">(potrebný nástup podľa plánu)</span>{% endif %}</dd>
     <dt>Limit</dt><dd>{{ crew.get("limit")|t }}</dd>
     <dt>Predpokladaný koniec P50 / P90</dt><dd>{{ crew.get("end_p50")|t }} / {{ crew.get("end_p90")|t }}</dd>
-    <dt>Zostáva do limitu</dt><dd>{% if crew_now %}{{ crew_now.left_min|minutes }}{% if crew_now.left_min is number and crew_now.left_min < 0 %} <span class="badge badge-warn">limit prekročený</span>{% endif %}{% else %}{{ crew.get("left_min")|minutes }} <span class="muted small">(pri prepočte)</span>{% endif %}</dd>
+    {# kým rušňovodič nenastúpi (alebo nie je pridelený), limit mu nebeží – žiadny odpočet hypotetického rušňovodiča #}
+    <dt>Zostáva do limitu</dt><dd>{% if crew_waiting %}— <span class="muted small">({{ "rušňovodič nie je pridelený – " if not crew.get("driver") else "" }}limit {{ duty_h }} h začne plynúť nástupom)</span>{% elif crew_now %}{{ crew_now.left_min|minutes }}{% if crew_now.left_min is number and crew_now.left_min < 0 %} <span class="badge badge-warn">limit prekročený</span>{% endif %}{% else %}{{ crew.get("left_min")|minutes }} <span class="muted small">(pri prepočte)</span>{% endif %}</dd>
     <dt>Stav</dt><dd>{{ m.semafor(crew_status) }}{% if not crew_now %} <span class="muted small">(pri prepočte)</span>{% endif %}</dd>
   </dl>
   {% if crew.get("relieve_by") %}<p class="relieve">Vystriedať najneskôr o <strong>{{ crew.get("relieve_by")|t }}</strong></p>{% endif %}

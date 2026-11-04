@@ -17,6 +17,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..agent.zdravie import HEALTH_DETAIL_LABELS
 from ..cas import ensure_utc, fmt, local, local_naive_to_utc, now_utc
 from ..config import settings
 
@@ -95,8 +96,18 @@ NOTIFY_STATUS = {"nova": "nová", "odoslana": "odoslaná", "outbox": "uložená 
                  "zablokovana": "zablokovaná", "potlacena": "potlačená"}
 NOTIFY_CHANNEL = {"email": "e-mail", "teams": "MS Teams", "sms": "SMS", "app": "aplikácia"}
 HEALTH_STATUS = {"ok": "v poriadku", "warn": "upozornenie", "error": "chyba"}
-HEALTH_DETAIL = {"db": "Databáza", "cyklus": "Posledný cyklus agenta", "schranka": "Posledná kontrola schránky",
-                 "dorucenie": "Doručovanie správ", "stav": "Stav"}
+HEALTH_DETAIL = dict(HEALTH_DETAIL_LABELS)  # rovnaké popisy ako denná správa agenta
+# komponenty agenta (AgentHealth.component) na stránke /zdravie
+HEALTH_COMPONENT = {"cyklus": "Cyklus agenta", "schranka": "Schránka (kontrola e-mailov)",
+                    "planovanie": "Plánovanie (prepočet vlakov)", "objednavky": "Objednávky zákazníkov"}
+# entita záznamu v audite po slovensky (kód ostáva viditeľný – filter „Entita“ pracuje s kódom)
+AUDIT_ENTITY = {
+    "train": "vlak", "closure": "výluka", "Closure": "výluka", "email": "e-mail", "Email": "e-mail",
+    "ExtractedEvent": "udalosť z e-mailu", "driver": "rušňovodič", "driver_shift": "zmena rušňovodiča",
+    "handover": "preberanie", "border_crossing": "hraničný priechod", "location_info": "údaje dopravne",
+    "locomotive": "rušeň", "notification": "správa", "order": "objednávka", "parameter_set": "sada parametrov",
+    "recommendation": "odporúčanie", "shift_handover_report": "odovzdávka služby", "user": "používateľ",
+    "agent": "agent"}
 AUDIT_ACTION = {
     "recommendation": "nové odporúčanie agenta", "recommendation_prijat": "odporúčanie prijaté",
     "recommendation_upravit": "odporúčanie upravené", "recommendation_zamietnut": "odporúčanie zamietnuté",
@@ -115,6 +126,8 @@ AUDIT_ACTION = {
     "handover_taken_over": "vlak prevzatý", "order_proposal": "návrh prepravy k objednávke",
     "order_reject": "objednávka zamietnutá", "closure_create": "výluka zadaná", "closure_update": "výluka upravená",
     "closure_cancel": "výluka zrušená", "closure_verify": "výluka potvrdená",
+    "closure_update_conflict": "úprava výluky odmietnutá (výluku medzitým zmenil niekto iný)",
+    "zmeny_zrusenej_vyluky_odstranene": "dočasné záznamy zmien zrušenej výluky odstránené",
     "udalost_potvrdena": "udalosť z e-mailu potvrdená", "udalost_zamietnuta": "udalosť z e-mailu zamietnutá",
     "udalost_aplikovana": "udalosť z e-mailu zapísaná",
     "vyluka_navrh_na_potvrdenie": "výluka z e-mailu čaká na potvrdenie",
@@ -122,7 +135,9 @@ AUDIT_ACTION = {
     "email_prijaty": "e-mail prijatý", "email_extrakcia": "udalosti z e-mailu", "email_neulozeny": "e-mail neuložený",
     "email_nahradeny_overenou_kopiou": "e-mail nahradený overenou kópiou",
     "email_message_id_kolizia": "iný e-mail s rovnakým Message-ID", "posta_cyklus": "spracovanie schránky",
+    "email_vlastny_preskoceny": "vlastná správa agenta v schránke preskočená",
     "reply_unparsed": "odpoveď e-mailom nerozpoznaná", "reply_rejected": "odpoveď e-mailom odmietnutá",
+    "reply_automatic": "automatická odpoveď na e-mail agenta (nespracovaná)",
     "notification_blocked": "správa zablokovaná (príjemca mimo interného zoznamu)",
     "login": "prihlásenie", "logout": "odhlásenie", "login_failed": "neúspešné prihlásenie",
     "login_blocked": "prihlásenie zablokované (príliš veľa pokusov)", "parameters_update": "parametre rozhodovania zmenené",
@@ -267,6 +282,20 @@ def fmt_num(value: Any, digits: int = 0) -> str:
         return str(value)
 
 
+def fmt_num_short(value: Any) -> str:
+    """Číslo po slovensky bez zbytočných núl a s desatinnou čiarkou („60“, „0,85“, „37,5“); iná hodnota ako text."""
+    if value is None or value == "":
+        return "—"
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return str(value)
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    text = f"{f:.4f}".rstrip("0").rstrip(".")
+    return fmt_num(f, len(text.split(".")[1]) if "." in text else 0)
+
+
 def fmt_duty_h(value: Any) -> str:
     """Limit pracovného času v hodinách bez zbytočného „,0“ („13“, „12,5“)."""
     try:
@@ -371,6 +400,7 @@ def build_templates() -> Jinja2Templates:
     env.filters.update({
         "t": fmt_any, "tt": lambda v: fmt_any(v, False), "tfull": fmt_full, "dtinput": input_dt,
         "minutes": fmt_minutes, "pct": fmt_pct, "eur": fmt_eur, "num": fmt_num, "ago": ago, "duty_h": fmt_duty_h,
+        "numg": fmt_num_short,
         "color_class": _color_class, "jsonpretty": _json_pretty, "iso": lambda v: iso(parse_iso(v)) or "",
         "priority_class": lambda v: PRIORITY_CLASS.get(str(v or ""), "info"),
         "future": lambda v: bool(parse_iso(v) and parse_iso(v) > now_utc()),
@@ -383,6 +413,7 @@ def build_templates() -> Jinja2Templates:
         "ORDER_STATUS": ORDER_STATUS, "DEADLINE_TYPE": DEADLINE_TYPE, "PATH_KIND": PATH_KIND,
         "PATH_STATUS": PATH_STATUS, "EMAIL_STATUS": EMAIL_STATUS, "NOTIFY_STATUS": NOTIFY_STATUS,
         "NOTIFY_CHANNEL": NOTIFY_CHANNEL, "HEALTH_STATUS": HEALTH_STATUS, "HEALTH_DETAIL": HEALTH_DETAIL,
+        "HEALTH_COMPONENT": HEALTH_COMPONENT, "AUDIT_ENTITY": AUDIT_ENTITY,
         "DONE_TRAIN_STATES": DONE_TRAIN_STATES,
         "label": _label, "MAPLIBRE_JS": MAPLIBRE_JS, "MAPLIBRE_CSS": MAPLIBRE_CSS,
         "MAPLIBRE_JS_SRI": MAPLIBRE_JS_SRI, "MAPLIBRE_CSS_SRI": MAPLIBRE_CSS_SRI,

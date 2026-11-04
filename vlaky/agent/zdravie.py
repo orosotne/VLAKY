@@ -13,6 +13,16 @@ from ..models import AgentHealth, KeyValue, Notification, Order, Recommendation,
 
 MAILBOX_MAX_AGE_MIN = 30  # bez úspešnej (úplnej) kontroly schránky za posledných 30 min nie sú údaje čerstvé
 
+# položky stavu agenta (health_status) po slovensky – web /zdravie aj denná správa (bez surových kľúčov)
+HEALTH_DETAIL_LABELS = {"db": "Databáza", "cyklus": "Posledný cyklus agenta",
+                        "schranka": "Posledná kontrola schránky", "konfiguracia": "Nastavenie odosielania správ",
+                        "dorucenie": "Doručovanie správ", "stav": "Stav"}
+
+
+def detail_lines(detail: dict) -> list:
+    """Riadky stavu agenta po slovensky („Posledná kontrola schránky: pred 3 min“, „Databáza: v poriadku“)."""
+    return [f"{HEALTH_DETAIL_LABELS.get(k, k)}: {'v poriadku' if v == 'ok' else v}" for k, v in detail.items()]
+
 
 def record(session, component: str, status: str, **detail) -> None:
     session.add(AgentHealth(component=component, status=status, detail=detail, ts=now_utc()))
@@ -163,6 +173,55 @@ def mailbox_status(kv: dict, now: datetime | None = None) -> tuple:
     if full > MAILBOX_MAX_AGE_MIN:
         return False, text + f" (viac ako {MAILBOX_MAX_AGE_MIN} min!)"
     return True, text
+
+
+def _age_minutes(value, now: datetime) -> float | None:
+    """Vek ISO času v minútach (None = chýba alebo je neplatný)."""
+    if isinstance(value, datetime):
+        ts = ensure_utc(value)
+    else:
+        try:
+            ts = ensure_utc(datetime.fromisoformat(str(value).strip().replace("Z", "+00:00")))
+        except (TypeError, ValueError):
+            return None
+    return (now - ts).total_seconds() / 60.0
+
+
+def data_freshness(session, now: datetime | None = None) -> dict:
+    """Vek dát agenta: posledná úspešná (úplná) kontrola schránky a posledný cyklus agenta.
+
+    Semafor odporúčania platí len k času prepočtu. Keď agent stojí (neprepočítava, nečíta schránku), web ani
+    odovzdávka služby nesmú ďalej ukazovať jeho poslednú ZELENÚ (PROMPT 12: bez čerstvých dát nikdy zelená) – zníži
+    sa na ORANŽOVÚ a dôvod je v „text“. Cyklus je starý po 2 × VLAKY_REEVALUATE_MINUTES, schránka po 30 min.
+    Jedno pravidlo pre web (vlaky.web.data.data_freshness) aj odovzdávku služby (vlaky.agent.odovzdavka).
+    """
+    now = now or now_utc()
+    cycle_limit = 2 * settings().reevaluate_minutes
+    mail_val = get_kv(session, "mail_last_ok")
+    mailbox = _age_minutes(mail_val.get("ts"), now) if mail_val.get("ts") else None
+    cycle_val = get_kv(session, "agent_last_cycle")
+    cycle = _age_minutes(cycle_val.get("ts"), now) if cycle_val.get("ts") else None
+    reasons = []
+    if cycle is None:
+        reasons.append("agent zatiaľ neprebehol")
+    elif cycle > cycle_limit:
+        reasons.append(f"posledný cyklus agenta pred {cycle:.0f} min")
+    if mail_val.get("partial"):
+        # agent dočítava nahromadenú poštu – kontrola nie je úplná (žiadna ZELENÁ), text to povie pravdivo
+        last_full = _age_minutes(mail_val.get("last_full"), now) if mail_val.get("last_full") else None
+        if last_full is not None:
+            mailbox = last_full
+            reasons.append(f"schránka agenta sa dočítava (posledná úplná kontrola pred {mailbox:.0f} min)")
+        else:
+            reasons.append("schránka agenta sa dočítava (úplná kontrola zatiaľ neprebehla)")
+    elif mailbox is None:
+        reasons.append("schránka agenta ešte nebola úspešne skontrolovaná")
+    elif mailbox > MAILBOX_MAX_AGE_MIN:
+        reasons.append(f"schránka agenta sa nekontrolovala {mailbox:.0f} min")
+    return {"mailbox_min": round(mailbox, 1) if mailbox is not None else None,
+            "agent_cycle_min": round(cycle, 1) if cycle is not None else None,
+            "stale": bool(reasons),
+            "text": f"Údaje agenta nie sú čerstvé ({', '.join(reasons)})." if reasons else ""}
 
 
 def queue_counts(session) -> dict:

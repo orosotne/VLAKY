@@ -360,13 +360,24 @@ def _next_steps(rec: Recommendation, color: Optional[str] = None) -> list:
         else:
             steps.append("Objednať novú (ad hoc) trasu u ŽSR podľa návrhu.")
     crew = rec.crew or {}
+    if crew.get("unknown_start"):
+        steps.append("Zadať skutočný nástup rušňovodiča (Rušňovodiči) – limit 13 h je zatiaľ len odhad.")
     if crew.get("status") in ("ORANŽOVÁ", "ČERVENÁ"):
         steps.append("Pripraviť výmenu rušňovodiča (vystriedať najneskôr v uvedenom čase).")
     if rec.decision == "ODSTAVIŤ":
         steps.append("Zabezpečiť odstavnú koľaj a uvoľniť rušňovodiča.")
     if rec.decision in ("POČKAŤ", "ODSTAVIŤ", "PRESMEROVAŤ", "ESKALOVAŤ"):
         steps.append("Informovať zákazníka o novom predpokladanom príchode.")
-    if color == "ORANŽOVÁ":
+    if rec.decision == "POKRAČOVAŤ":
+        # idúci vlak sa nevypravuje – pri vlaku v cieli (aj len podľa plánu) treba ukončiť jazdu, resp. overiť polohu
+        if chosen.get("v_cieli") and chosen.get("prichod_v_cieli"):
+            steps.append("Ukončiť jazdu vlaku (stav „ukončený“) – vlak je v cieli.")
+        elif chosen.get("v_cieli"):
+            steps.append("Overiť polohu vlaku (rušňovodič, ŽSR); po príchode do cieľa ukončiť jazdu (stav "
+                         "„ukončený“).")
+        if color == "ORANŽOVÁ":
+            steps.append("ORANŽOVÁ: vlak je v jazde – preveriť dôvody nižšie (poloha, rušňovodič, výluky na trase).")
+    elif color == "ORANŽOVÁ":
         steps.append("ORANŽOVÁ: vypraviť len po výslovnom potvrdení dispečera (zvážiť dôvody nižšie).")
     return steps
 
@@ -395,6 +406,13 @@ def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
         history_colors = {h.id: newest_color if h.id == latest else h.color for h in history}
         # aktuálne odporúčanie: pracovný čas rušňovodiča a vek dát k teraz, nie zmrazené čísla z prepočtu
         crew_now = crew_live(rec.crew, current_params(s, now), now) if current and rec.crew else None
+        # rušňovodič z odporúčania ešte nenastúpil (naplánovaná zmena, nový rušňovodič po odstavení) alebo nie je
+        # pridelený (potrebný nástup podľa plánu): limit 13 h mu ešte nebeží – žiadny odpočet (napr. „63 h 17 min“)
+        crew = rec.crew or {}
+        crew_start = parse_iso(crew.get("start"))
+        crew_ref = now if current else (ensure_utc(rec.created_at) or now)  # staršie odporúčanie: čas prepočtu
+        crew_waiting = bool(crew) and not crew.get("unknown_start") and (
+            not crew.get("driver") or (crew_start is not None and crew_start > crew_ref))
         position_age = None
         if current:
             rows = latest_positions(s, [rec.train_id]).get(rec.train_id)
@@ -405,8 +423,8 @@ def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
             "history_colors": history_colors, "steps": _next_steps(rec, color),
             "stale_minutes": cfg.position_stale_minutes, "fresh": fresh, "current": current,
             "agent_stale": bool(current and fresh["stale"]), "color": color, "downgraded": color != rec.color,
-            "cap": cap, "variants": capped_variants(rec, cap), "crew_now": crew_now, "position_age": position_age},
-            user=user)
+            "cap": cap, "variants": capped_variants(rec, cap), "crew_now": crew_now, "crew_waiting": crew_waiting,
+            "position_age": position_age}, user=user)
 
 
 DECISION_STATE = {"prijat": "prijate", "upravit": "upravene", "zamietnut": "zamietnute"}
@@ -456,10 +474,9 @@ def handover_create(request: Request, user=Depends(operate), form=Depends(csrf_f
     try:
         mod = importlib.import_module("vlaky.agent.odovzdavka")
         with session_scope() as s:
-            try:
-                rep = mod.create_report(s, notify=False)
-            except TypeError:
-                rep = mod.create_report(s)
+            # bez odoslania (odovzdávku z webu dispečer doplní a potvrdí) – chyba pri zostavení sa nesmie zmeniť
+            # na druhý pokus, ktorý by ju poslal všetkým dispečerom
+            rep = mod.create_report(s, notify=False)
             audit(s, user.username, "handover_report_create", "shift_handover_report", rep.id)
             rep_id = rep.id
     except (ImportError, NotImplementedError, AttributeError):

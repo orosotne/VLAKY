@@ -19,7 +19,7 @@
       <div class="field{% if errors.get(p.key) %} has-error{% endif %}">
         <label for="par-{{ p.key }}">{{ p.label }}{% if p.unit %} <span class="muted">[{{ p.unit }}]</span>{% endif %}</label>
         <input id="par-{{ p.key }}" name="{{ p.key }}" type="number" value="{{ shown }}" step="{{ '1' if p.integer else ('0.01' if p.prob else 'any') }}" min="0"{% if p.prob %} max="1"{% endif %} required{% if errors.get(p.key) %} aria-invalid="true"{% endif %}>
-        <small class="help"><code>{{ p.key }}</code> · predvolené {{ p.default }}</small>
+        <small class="help"><code>{{ p.key }}</code> · predvolené {{ p.default|numg }}</small>
         {% if errors.get(p.key) %}<small class="error">{{ errors.get(p.key) }}</small>{% endif %}
       </div>
     {% endfor %}
@@ -30,7 +30,7 @@
   <fieldset>
     <legend>Ďalšie hodnoty platnej sady (len na čítanie)</legend>
     <p class="small muted">Napr. zdržania kalibrované z histórie (Reporty → Kalibrácia). Pri uložení sa prenesú do novej sady.</p>
-    <dl class="meta">{% for k, v in extra.items() %}<dt><code>{{ k }}</code></dt><dd>{{ v }}</dd>{% endfor %}</dl>
+    <dl class="meta">{% for k, v in extra.items() %}<dt><code>{{ k }}</code></dt><dd title="{{ v }}">{{ v|numg }}</dd>{% endfor %}</dl>
   </fieldset>
   {% endif %}
   <fieldset>
