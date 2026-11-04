@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orza.zsr.example; dkim=pass header.d=orza.zsr.example;
+ dmarc=pass header.from=orza.zsr.example
+Received: from mail.orza.zsr.example (mail.orza.zsr.example [192.0.2.126]) by
+ mx.dopravca.example with ESMTPS; Fri, 04 Dec 2026 07:20:00 +0100
+From:
+ =?utf-8?q?Kontroln=C3=BD_dispe=C4=8Der_OR_=C5=BDilina?= <kd@orza.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Z=C3=A1kaz_jazdy_n=C3=A1kladn=C3=BDch_vlakov_=C5=BDilina_?=
+ =?utf-8?b?4oCT?= Rajec
+Date: Fri, 04 Dec 2026 07:20:00 +0100
+Message-ID: <r5c-l04-116@orza.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+V úseku Žilina – Rajec platí dnes od 08:00 do 16:00 hod. zákaz jazdy nákladných vlakov (obmedzená únosnosť mosta v km 12,4).

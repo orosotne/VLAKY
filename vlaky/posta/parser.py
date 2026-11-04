@@ -298,6 +298,16 @@ def _filename(part: Message) -> str:
     return header_text(name or "")[:250]
 
 
+def _plain_is_stub(plain: str, html_text: str) -> bool:
+    """Textová časť e-mailu je len náhradou HTML časti: je oveľa kratšia a chýbajú v nej čísla (dátumy, časy, čísla
+    rozkazov), ktoré sú v HTML („Táto správa je vo formáte HTML …“) – obsah treba čítať z HTML."""
+    p, h = (plain or "").strip(), (html_text or "").strip()
+    if not h:
+        return False
+    pd, hd = len(re.findall(r"\d", p)), len(re.findall(r"\d", h))
+    return hd >= 4 and pd * 3 < hd and len(p) < 1.5 * len(h)
+
+
 def _disposition(part: Message) -> str:
     try:
         return part.get_content_disposition() or ""
@@ -357,6 +367,11 @@ class _Walker:
                         break
                 if chosen is None and children:
                     chosen = children[-1]
+                if chosen is not None and chosen.get_content_type() == "text/plain":
+                    html = next((ch for ch in children if ch.get_content_type() == "text/html"
+                                 and _disposition(ch) != "attachment"), None)
+                    if html is not None and _plain_is_stub(_part_text(chosen), prilohy.html_to_text(_part_text(html))):
+                        chosen = html     # text/plain je len náhrada („správa je vo formáte HTML“) – obsah je v HTML
                 for ch in children:
                     if ch is chosen or _filename(ch) or _disposition(ch) == "attachment":
                         self.walk(ch, depth)

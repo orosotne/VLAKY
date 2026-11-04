@@ -1,0 +1,21 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=cz.partner.example; dkim=pass header.d=cz.partner.example;
+ dmarc=pass header.from=cz.partner.example
+Received: from mail.cz.partner.example (mail.cz.partner.example [192.0.2.99])
+ by mx.dopravca.example with ESMTPS; Fri, 20 Nov 2026 07:30:00 +0100
+From: =?utf-8?b?RGlzcGXEjWluayDigJMgQ2FyZ28gQ1ogKGZpa3Rpdm7DrSk=?=
+ <dispecink@cz.partner.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Av=C3=ADzo_vlaku_Nex_46220_=E2=80=93_PPS_K=C3=BAty?=
+Date: Fri, 20 Nov 2026 07:30:00 +0100
+Message-ID: <r5c-g01-89@cz.partner.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý den,
+
+avizujeme vlak Nex 46220 (cisterny, RID, 22 vozů, 1 380 t). Předpokládaný příjezd do PPS Kúty: 20.11.2026 v 10:45 hod.
+
+S pozdravem
+dispečink

@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.33]) by
+ mx.dopravca.example with ESMTPS; Mon, 30 Nov 2026 13:00:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5280/2026 =?utf-8?b?UHJlxaFvdiDigJM=?= Lipany
+Date: Mon, 30 Nov 2026 13:00:00 +0100
+Message-ID: <r5c-a23-23@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka v úseku Prešov – Lipany v pondelok 7.12. a v utorok 8.12. vždy od 8:00 do 14:30 hod.
+
+OR Košice

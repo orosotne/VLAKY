@@ -1,0 +1,55 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orza.zsr.example; dkim=pass header.d=orza.zsr.example;
+ dmarc=pass header.from=orza.zsr.example
+Received: from mail.orza.zsr.example (mail.orza.zsr.example [192.0.2.20]) by
+ mx.dopravca.example with ESMTPS; Tue, 24 Nov 2026 10:00:00 +0100
+From: =?utf-8?b?xb1TUiBPUiDFvWlsaW5hIOKAkyByaWFkZW5pZSBwcmV2w6Fkemt5?=
+ <vyluky@orza.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV =?utf-8?b?xI0u?= 2744/2026
+Date: Tue, 24 Nov 2026 10:00:00 +0100
+Message-ID: <r5c-a10-10@orza.zsr.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============1372108847179306227=="
+
+--===============1372108847179306227==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+
+v prílohe zasielame ROV č. 2744/2026.
+
+S pozdravom
+OR Žilina
+
+--===============1372108847179306227==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="ROV_2744_2026.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4K
+ZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4K
+ZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAg
+MCA1OTUgODQyXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA0IDAgUiA+PiA+PiAvQ29udGVu
+dHMgNSAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUx
+IC9CYXNlRm9udCAvSGVsdmV0aWNhIC9FbmNvZGluZyA2IDAgUiA+PgplbmRvYmoKNSAwIG9iago8
+PCAvTGVuZ3RoIDQwMCA+PgpzdHJlYW0KQlQgL0YxIDEwIFRmIDUwIDgwMCBUZCAxNCBUTAoojkVM
+RVpOSUNFIFNMT1ZFTlNLRUogUkVQVUJMSUtZKSBUaiBUKgooT2JsYXN0bukgcmlhZGl0ZaRzdHZv
+II5pbGluYSkgVGogVCoKKFJPWktBWiBPIFbdTFVLRSChLiAyNzQ0LzIwMjYpIFRqIFQqCihUcmGn
+OiAxNzAgVnL6dGt5IJYgWnZvbGVuKSBUaiBUKgoo2nNlazogVnL6dGt5IJYgTWFydGluKSBUaiBU
+KgooRHJ1aDogdv1sdWthIHRyYadvdmVqIGtvpGFqZSBcKGplZG5va2+kYWpu4SB0cmGnXCkpIFRq
+IFQqCihUZXJt7W46IDAzLjEyLjIwMjYgb2QgMDg6MDAgZG8gMTQ6MDAgaG9kLikgVGogVCoKKFZs
+YWt5IHYg+nNla3UgbmVwcmVt4XZhavouKSBUaiBUKgooVnlwcmFjb3ZhbDogSW5nLiBKLiBIcnWa
+a2EsIDIwLjExLjIwMjYpIFRqIFQqCkVUCmVuZHN0cmVhbQplbmRvYmoKNiAwIG9iago8PCAvVHlw
+ZSAvRW5jb2RpbmcgL0Jhc2VFbmNvZGluZyAvV2luQW5zaUVuY29kaW5nIC9EaWZmZXJlbmNlcyBb
+MTYxIC9jY2Fyb24gL2RjYXJvbiAvbGFjdXRlIC9sY2Fyb24gL25jYXJvbiAvcmFjdXRlIC90Y2Fy
+b24gL0NjYXJvbiAvRGNhcm9uIC9MYWN1dGUgL0xjYXJvbiAvTmNhcm9uIC9SYWN1dGUgL1RjYXJv
+biAvZWNhcm9uIC9yY2Fyb24gL3VyaW5nIC9FY2Fyb24gL1JjYXJvbl0gPj4KZW5kb2JqCnhyZWYK
+MCA3CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDY0IDAw
+MDAwIG4gCjAwMDAwMDAxMjEgMDAwMDAgbiAKMDAwMDAwMDI0NyAwMDAwMCBuIAowMDAwMDAwMzMz
+IDAwMDAwIG4gCjAwMDAwMDA3ODMgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA3IC9Sb290IDEg
+MCBSID4+CnN0YXJ0eHJlZgoxMDIxCiUlRU9GCg==
+
+--===============1372108847179306227==--

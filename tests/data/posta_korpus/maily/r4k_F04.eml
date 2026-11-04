@@ -1,0 +1,24 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Wed, 04 Nov 2026 15:00:00 +0100
+From: KIS =?utf-8?b?4oCTIMW9U1I=?= <kis-noreply@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: KIS =?utf-8?q?=E2=80=93_zru=C5=A1enie_trasy_vlaku_Pn_12345_na_de?=
+ =?utf-8?q?=C5=88?= 15.11.2026
+Date: Wed, 04 Nov 2026 15:00:00 +0100
+Message-ID: <r4-f04.fiktivne@zsr.example>
+Auto-Submitted: auto-generated
+X-Auto-Response-Suppress: All
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Systém: KIS – Komplexný interoperabilný systém
+Typ správy: Zrušenie trasy
+ID trasy: KIS-2026-445120
+Vlak: Pn 12345
+Deň jazdy: 15.11.2026
+Dôvod zrušenia: na žiadosť dopravcu

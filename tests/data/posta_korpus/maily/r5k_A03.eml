@@ -1,0 +1,24 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.13]) by
+ mx.dopravca.example with ESMTPS; Mon, 16 Nov 2026 07:55:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkw==?= SROV <srov@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: SROV =?utf-8?b?xI0uIDQ3LzIwMjYg4oCTIHbDvWx1a3kgNDguIHTDvcW+ZGXFiA==?=
+ (23.11. =?utf-8?b?4oCT?= 29.11.2026)
+Date: Mon, 16 Nov 2026 07:55:00 +0100
+Message-ID: <r5c-a03-3@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Súhrnný rozkaz o výlukách č. 47/2026
+Oblastné riaditeľstvo Košice, platnosť 23.11.2026 – 29.11.2026
+
+P.č. | ROV       | Trať | Úsek                  | Koľaj    | Začiatok         | Koniec           | Poznámka
+1    | 5210/2026 | 180  | Margecany – Krompachy | 2. TK    | 23.11.2026 07:00 | 23.11.2026 15:00 | jednokoľajná prevádzka po 1. TK
+2    | 5211/2026 | 188  | Kysak – Prešov        | 1.+2. TK | 24.11.2026 08:00 | 24.11.2026 12:30 | úplná výluka, NAD
+3    | 5212/2026 | 190  | Slanec – Michaľany    | TV       | 25.11.2026 06:00 | 25.11.2026 18:00 | vypnuté trakčné vedenie, motorová trakcia môže prechádzať
+
+Zmeny vyhradené. Záväzné sú údaje v jednotlivých ROV.

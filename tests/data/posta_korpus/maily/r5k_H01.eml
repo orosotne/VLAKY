@@ -1,0 +1,26 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=huta.zakaznik.example; dkim=pass
+ header.d=huta.zakaznik.example; dmarc=pass header.from=huta.zakaznik.example
+Received: from mail.huta.zakaznik.example (mail.huta.zakaznik.example
+ [192.0.2.103]) by mx.dopravca.example with ESMTPS; Mon, 23 Nov 2026 09:00:00
+ +0100
+From: =?utf-8?b?SHV0bsOtY2t5IHrDoXZvZCDigJM=?= logistika
+ <logistika@huta.zakaznik.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Objedn=C3=A1vka_prepravy_=C4=8D=2E?= OBJ-2026/1187
+Date: Mon, 23 Nov 2026 09:00:00 +0100
+Message-ID: <r5c-h01-93@huta.zakaznik.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Objednávka prepravy č. OBJ-2026/1187
+Zákazník: Hutnícky závod Košice, a. s. (fiktívny)
+Stanica nakládky: Haniska pri Košiciach
+Stanica určenia: Štúrovo
+Tovar: oceľové zvitky
+Počet vozňov: 18
+Hmotnosť: 1 250 t
+Pristavenie vozňov: 01.12.2026 06:00
+Termín dodania: 03.12.2026 18:00
+RID: nie

@@ -1,0 +1,34 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.80]) by
+ mx.dopravca.example with ESMTPS; Mon, 30 Nov 2026 12:30:00 +0100
+From:
+ =?utf-8?q?=C5=BDSR_OR_Zvolen_=E2=80=93_v=C3=BDluky?= <vyluky@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: RE: ROV 6130/2026 Zvolen =?utf-8?b?4oCT?= Krupina
+Date: Mon, 30 Nov 2026 12:30:00 +0100
+Message-ID: <r5c-d07b-70@orzv.zsr.example>
+MIME-Version: 1.0
+In-Reply-To: <rov-6130-2026@orzv.zsr.example>
+Content-Type: multipart/mixed; boundary="===============6641312259923350862=="
+
+--===============6641312259923350862==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+výluka sa presúva na 05.12.2026 v rovnakom čase. Pôvodný ROV prikladáme.
+OR Zvolen
+
+--===============6641312259923350862==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+Content-Disposition: attachment; filename="ROV_6130_2026.txt"
+MIME-Version: 1.0
+
+ROV 6130/2026
+=C3=9Apln=C3=A1 v=C3=BDluka Zvolen osobn=C3=A1 stanica =E2=80=93 Krupina d=C5=
+=88a 04.12.2026 od 8:00 do 15:00 hod.
+
+--===============6641312259923350862==--

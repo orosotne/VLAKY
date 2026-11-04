@@ -1,0 +1,23 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.106]) by
+ mx.dopravca.example with ESMTPS; Tue, 17 Nov 2026 08:00:00 +0100
+From: Marta =?utf-8?b?S292w6HEjW92w6Eg4oCT?= OR Bratislava
+ <marta.kovacova@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Automatick=C3=A1_odpove=C4=8F=3A_ROV_=C4=8D=2E_4105/2026_?=
+ =?utf-8?b?4oCTIEdhbGFudGEg4oCTIMWgYcS+YSwgdsO9bHVrYQ==?= 1. TK
+Date: Tue, 17 Nov 2026 08:00:00 +0100
+Message-ID: <r5c-i01-96@orba.zsr.example>
+MIME-Version: 1.0
+Auto-Submitted: auto-replied
+X-Auto-Response-Suppress: All
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+
+do 20.11.2026 som mimo kancelárie. V súrnych veciach výluk v úseku Galanta – Šaľa kontaktujte kolegyňu Ing. Novú, tel. 02/2029 1235.
+
+Marta Kováčová

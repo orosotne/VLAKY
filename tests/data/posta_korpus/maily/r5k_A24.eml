@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.34]) by
+ mx.dopravca.example with ESMTPS; Tue, 01 Dec 2026 09:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 4210/2026 =?utf-8?b?4oCTIMWgYcS+YSDigJMgTm92w6kgWsOhbWt5LCBu?=
+ =?utf-8?b?b8SNbsOhIHbDvWx1a2E=?=
+Date: Tue, 01 Dec 2026 09:00:00 +0100
+Message-ID: <r5c-a24-24@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dňa 10.12.2026 od 21:30 do 5:30 hod. nasledujúceho dňa úplná výluka oboch TK v úseku Šaľa – Nové Zámky.

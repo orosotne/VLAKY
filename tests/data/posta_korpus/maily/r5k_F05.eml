@@ -1,0 +1,21 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=zsr.example; dkim=pass header.d=zsr.example; dmarc=pass
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.98]) by
+ mx.dopravca.example with ESMTPS; Thu, 19 Nov 2026 10:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_=E2=80=93_pride=C4=BEovanie?= kapacity
+ <kapacita@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: Pridelenie trasy ad hoc =?utf-8?b?4oCT?= vlak Nex 62017, 21.11.2026
+Date: Thu, 19 Nov 2026 10:00:00 +0100
+Message-ID: <r5c-f05-88@zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+
+na základe Vašej žiadosti Vám prideľujeme trasu ad hoc pre vlak Nex 62017 na deň 21.11.2026 s odchodom zo stanice Nové Zámky o 14:35 a príchodom do stanice Štúrovo o 15:20.
+
+S pozdravom
+Prideľovanie kapacity ŽSR

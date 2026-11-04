@@ -1,0 +1,23 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.117]) by
+ mx.dopravca.example with ESMTPS; Fri, 20 Nov 2026 07:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_inform=C3=A1cie?=
+ <info@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Informat=C3=ADvny_preh=C4=BEad_v=C3=BDluk_OR_Bratislava_?=
+ =?utf-8?b?4oCTIDQ4LiB0w73FvmRlxYg=?=
+Date: Fri, 20 Nov 2026 07:00:00 +0100
+Message-ID: <r5c-j01b-107@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Informatívny prehľad výluk OR Bratislava na 48. týždeň (23.11. – 29.11.2026)
+
+• ROV 4120/2026 – Galanta – Šaľa, 25.11.
+• ROV 4121/2026 – Senec – Galanta, 26.11., 1. TK
+• ROV 4122/2026 – Šaľa – Nové Zámky, 27.11. (8:00 – 12:00)
+
+Prehľad je informatívny, záväzné sú údaje uvedené v ROV.

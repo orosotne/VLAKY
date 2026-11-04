@@ -1,0 +1,32 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=zsr.example; dkim=pass header.d=zsr.example; dmarc=pass
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.97]) by
+ mx.dopravca.example with ESMTPS; Wed, 18 Nov 2026 16:10:00 +0100
+From:
+ KIS =?utf-8?b?xb1TUiDigJMgYXV0b21hdGlja8OhIHNwcsOhdmE=?= <kis@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: KIS =?utf-8?b?4oCT?= ponuka trasy ad hoc (P5) pre vlak Nex 62016,
+ 22.11.2026
+Date: Wed, 18 Nov 2026 16:10:00 +0100
+Message-ID: <r5c-f04-87@zsr.example>
+MIME-Version: 1.0
+Auto-Submitted: auto-generated
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Systém: KIS – Komplexný informačný systém
+Typ správy: Ponuka trasy
+Produkt: P5 – ad hoc trasa
+ID požiadavky: KIS-2026-512016
+Vlak: Nex 62016
+Deň jazdy: 22.11.2026
+Lehota na akceptáciu: 20.11.2026 12:00
+
+Dopravňa                 Príchod   Odchod
+Žilina                      –       13:05
+Vrútky                    13:22     13:23
+Kraľovany                 13:38     13:40
+Ružomberok                13:57       –
+
+Ponuku akceptujte v systéme KIS v uvedenej lehote.

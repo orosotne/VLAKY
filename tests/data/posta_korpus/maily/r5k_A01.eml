@@ -1,0 +1,34 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.11]) by
+ mx.dopravca.example with ESMTPS; Tue, 10 Nov 2026 09:12:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV =?utf-8?b?xI0uIDQxMDUvMjAyNiDigJMgR2FsYW50YSDigJMgxaBhxL5hLCB2?=
+ =?utf-8?q?=C3=BDluka?= 1. TK
+Date: Tue, 10 Nov 2026 09:12:00 +0100
+Message-ID: <r5c-a01-1@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Vážení dopravcovia,
+
+oznamujeme Vám schválený rozkaz o výluke.
+
+ROZKAZ O VÝLUKE č. 4105/2026
+Trať:                 130 Bratislava hl. st. – Štúrovo
+Medzistaničný úsek:   Galanta – Šaľa
+Vylúčená koľaj:       1. traťová koľaj
+Termín:               v stredu 18.11.2026 od 07:30 do 15:30 hod.
+Dôvod:                výmena koľajníc, oprava priecestia v km 47,850
+Opatrenia:            doprava po 2. TK, jednokoľajná prevádzka; rýchlosť v mieste prác 60 km/h.
+
+Vlaky osobnej dopravy premávajú podľa GVD s meškaním do 5 min.
+
+S pozdravom
+Ing. Marta Kováčová
+oddelenie výluk OR Bratislava
+tel. 02/2029 1234

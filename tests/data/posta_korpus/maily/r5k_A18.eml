@@ -1,0 +1,21 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.28]) by
+ mx.dopravca.example with ESMTPS; Thu, 26 Nov 2026 14:22:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5260/2026 Margecany =?utf-8?b?4oCT?= Krompachy
+Date: Thu, 26 Nov 2026 14:22:00 +0100
+Message-ID: <r5c-a18-18@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Číslo ROV: 5260/2026
+Úsek: Margecany – Krompachy
+Vylúčené koľaje: 1. TK, 2. TK
+Vypnutie TV: áno
+Začiatok: 04.12.2026 08:00
+Koniec: 04.12.2026 16:00

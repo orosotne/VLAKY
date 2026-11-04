@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.82]) by
+ mx.dopravca.example with ESMTPS; Sat, 28 Nov 2026 05:30:00 +0100
+From: KD OR Trnava <kd@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?UHJlcnXFoWVuaWUgZG9wcmF2eSBUcmVuxI3DrW4g4oCTIE5lbcWhb3Y=?=
+ =?utf-8?q?=C3=A1?=
+Date: Sat, 28 Nov 2026 05:30:00 +0100
+Message-ID: <r5c-e02a-72@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Z dôvodu pádu stromu na trakčné vedenie je od 05:12 hod. prerušená doprava v medzistaničnom úseku Trenčín – Nemšová. Predpokladané obnovenie prevádzky o 09:00 hod. O ďalšom vývoji budeme informovať.
+
+KD OR Trnava

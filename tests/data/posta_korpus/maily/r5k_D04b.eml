@@ -1,0 +1,40 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.74]) by
+ mx.dopravca.example with ESMTPS; Wed, 02 Dec 2026 09:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_pl=C3=A1novanie_v=C3=BDluk?=
+ <vyluky@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: RE: ROV 3370/2026 =?utf-8?b?UGllxaHFpWFueSDigJMgTm92w6kgTWVzdG8g?=
+ =?utf-8?q?nad_V=C3=A1hom_=E2=80=93_aktualiz=C3=A1cia?=
+Date: Wed, 02 Dec 2026 09:00:00 +0100
+Message-ID: <r5c-d04b-64@ortt.zsr.example>
+MIME-Version: 1.0
+In-Reply-To: <rov-3370-2026@ortt.zsr.example>
+Content-Type: multipart/mixed; boundary="===============6864781111111349550=="
+
+--===============6864781111111349550==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+
+posielame aktualizovaný ROV – termín výluky sa mení na 09.12.2026.
+
+OR Trnava
+
+> Úplná výluka oboch TK Piešťany – Nové Mesto nad Váhom dňa 08.12.2026 od 8:00 do 14:00 hod. (ROV 3370/2026).
+
+--===============6864781111111349550==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+Content-Disposition: attachment; filename="ROV_3370_2026_aktualizacia_1.txt"
+MIME-Version: 1.0
+
+ROZKAZ O VÝLUKE č. 3370/2026 – aktualizácia č. 1
+Úsek: Piešťany – Nové Mesto nad Váhom
+Druh: úplná výluka oboch traťových koľají
+Termín: 09.12.2026 od 08:00 do 14:00 hod.
+
+--===============6864781111111349550==--

@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.51]) by
+ mx.dopravca.example with ESMTPS; Fri, 20 Nov 2026 10:00:00 +0100
+From:
+ =?utf-8?q?=C5=BDSR_OR_Zvolen_=E2=80=93_v=C3=BDluky?= <vyluky@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 6100/2026 =?utf-8?b?SHJvbnNrw6EgRMO6YnJhdmEg4oCTIMW9aWFy?= nad
+ Hronom
+Date: Fri, 20 Nov 2026 10:00:00 +0100
+Message-ID: <r5c-b07a-41@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka Hronská Dúbrava – Žiar nad Hronom v dňoch 01.12., 02.12. a 03.12.2026 vždy od 8:00 do 14:00 hod. (ROV 6100/2026).

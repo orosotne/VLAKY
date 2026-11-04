@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.84]) by
+ mx.dopravca.example with ESMTPS; Sun, 29 Nov 2026 13:40:00 +0100
+From: =?utf-8?b?S29udHJvbG7DoSBkaXNwZcSNZXJza8OhIHNsdcW+YmEgT1IgS2/FoWlj?=
+ =?utf-8?q?e?= <kd@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: Porucha TV =?utf-8?b?S2/FoWljZSDigJMgxIxhxYhh?=
+Date: Sun, 29 Nov 2026 13:40:00 +0100
+Message-ID: <r5c-e03-74@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Od 13:20 hod. je porucha trakčného vedenia v úseku Košice – Čaňa. Vlaky elektrickej trakcie nemôžu úsekom prechádzať, vlaky motorovej trakcie premávajú bez obmedzenia. Koniec poruchy zatiaľ nie je známy.

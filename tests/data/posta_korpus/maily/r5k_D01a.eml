@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.69]) by
+ mx.dopravca.example with ESMTPS; Mon, 30 Nov 2026 10:12:00 +0100
+From:
+ =?utf-8?q?=C5=BDSR_OR_Zvolen_=E2=80=93_v=C3=BDluky?= <vyluky@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV =?utf-8?q?=C4=8D=2E_6120/2026_Bansk=C3=A1_Bystrica_=E2=80=93?=
+ Brezno
+Date: Mon, 30 Nov 2026 10:12:00 +0100
+Message-ID: <rov-6120-2026@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka v úseku Banská Bystrica – Brezno dňa 09.12.2026 od 07:00 do 15:00 hod. (ROV č. 6120/2026).

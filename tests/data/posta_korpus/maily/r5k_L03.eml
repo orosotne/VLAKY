@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.125]) by
+ mx.dopravca.example with ESMTPS; Mon, 30 Nov 2026 07:50:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkw==?= SROV <srov@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: SROV =?utf-8?b?xI0uIDQ5LzIwMjYg4oCTIHbDvWx1a3kgNTAuIHTDvcW+ZGXFiA==?=
+Date: Mon, 30 Nov 2026 07:50:00 +0100
+Message-ID: <r5c-l03-115@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Súhrnný rozkaz o výlukách č. 49/2026 (OR Košice)
+
+P.č. | ROV       | Úsek                  | Koľaj    | Začiatok         | Koniec           | Poznámka
+1    | 5541/2026 | Margecany – Krompachy | 1.+2. TK | 07.12.2026 08:00 | 07.12.2026 12:00 | NAD

@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.26]) by
+ mx.dopravca.example with ESMTPS; Tue, 24 Nov 2026 15:40:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5250/2026 a 5251/2026
+Date: Tue, 24 Nov 2026 15:40:00 +0100
+Message-ID: <r5c-a16-16@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dňa 01.12.2026 od 7:00 do 13:00 hod. budú úplné výluky v úsekoch Košice – Čaňa a Moldava nad Bodvou – Turňa nad Bodvou.
+
+OR Košice

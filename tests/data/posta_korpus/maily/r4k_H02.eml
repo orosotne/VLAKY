@@ -1,0 +1,40 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zakaznik.example; dkim=pass (2048-bit key)
+ header.d=zakaznik.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT
+ dis=NONE) header.from=zakaznik.example
+Received: from mail.zakaznik.example (mail.zakaznik.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Wed, 11 Nov 2026 10:00:00 +0100
+From: Logistika =?utf-8?b?4oCTIHrDoWthem7DrWs=?= <objednavky@zakaznik.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?T2JqZWRuw6F2a2EgcMWZZXByYXZ5IOKAkyBrb250ZWpuZXJvdsO9?= vlak
+ =?utf-8?b?S8O6dHkg4oaSIMW9aWxpbmEtVGVwbGnEjWth?=
+Date: Wed, 11 Nov 2026 10:00:00 +0100
+Message-ID: <r4-h02.fiktivne@zakaznik.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============1686245903659946971=="
+
+--===============1686245903659946971==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý den,
+
+v příloze zasíláme objednávku přepravy. Prosíme o potvrzení termínu.
+
+S pozdravem
+Odbyt
+
+--===============1686245903659946971==
+Content-Type: text/plain
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="objednavka_2026-140.txt"
+MIME-Version: 1.0
+
+T0JKRUROw4FWS0EgUMWYRVBSQVZZIMSNLiAyMDI2LzE0MApPYmplZG5hdGVsOiBGSUtUSVZOw40g
+TG9naXN0aWthIHMuci5vLgpPZGVzw61sYWPDrSBzdGFuaWNlOiBLw7p0eSAocMWZZWNob2QgQ1ov
+U0spCkPDrWxvdsOhIHN0YW5pY2U6IMW9aWxpbmEtVGVwbGnEjWthClpib8W+w606IGtvbnRlam5l
+cnkgNDAnLCBSSUQ6IG5lClBvxI1ldCB2b3rFrzogMjIKSG1vdG5vc3Q6IDEgNDgwIHQKRMOpbGth
+IHZsYWt1OiA1OTAgbQpQxZlpc3RhdmVuw606IDI3LjExLjIwMjYgMDY6MDAKVGVybcOtbiBkb2TD
+oW7DrTogMjguMTEuMjAyNiAxMjowMAo=
+
+--===============1686245903659946971==--

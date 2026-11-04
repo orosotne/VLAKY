@@ -1,0 +1,24 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=partner.example; dkim=pass (2048-bit key)
+ header.d=partner.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT
+ dis=NONE) header.from=partner.example
+Received: from mail.partner.example (mail.partner.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Thu, 05 Nov 2026 07:00:00 +0100
+From: Partner =?utf-8?b?4oCT?= newsletter <newsletter@partner.example>
+To: agent.dispecing@dopravca.example
+Subject: Newsletter 11/2026 =?utf-8?q?=E2=80=93_novinky_v_intermod=C3=A1lnej?=
+ preprave
+Date: Thu, 05 Nov 2026 07:00:00 +0100
+Message-ID: <r4-i01.fiktivne@partner.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Vážení obchodní partneri,
+
+v novembrovom vydaní nášho newslettera nájdete:
+- prehľad noviniek v intermodálnej preprave a nové terminály v regióne,
+- tipy, ako plánovať prepravy počas zimných mesiacov a sezónnych výluk v Európe,
+- pozvánku na webinár o digitalizácii objednávok, ktorý sa uskutoční 18.11.2026 od 10:00 do 11:30.
+
+Odhlásiť sa z odberu môžete na stránke partner.example/odhlasit.

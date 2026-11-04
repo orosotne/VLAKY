@@ -1,0 +1,15 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.129]) by
+ mx.dopravca.example with ESMTPS; Sat, 05 Dec 2026 06:40:00 +0100
+From: KD OR Zvolen <kd@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: MU =?utf-8?b?4oCTIMW+c3QuIEZpxL5ha292bw==?=
+Date: Sat, 05 Dec 2026 06:40:00 +0100
+Message-ID: <r5c-l07a-119@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dňa 05.12.2026 od 06:15 hod. je v žst. Fiľakovo porucha staničného zabezpečovacieho zariadenia, stanica je neprejazdná.

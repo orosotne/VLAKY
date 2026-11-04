@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orza.zsr.example; dkim=pass header.d=orza.zsr.example;
+ dmarc=pass header.from=orza.zsr.example
+Received: from mail.orza.zsr.example (mail.orza.zsr.example [192.0.2.131]) by
+ mx.dopravca.example with ESMTPS; Tue, 01 Dec 2026 09:00:00 +0100
+From: =?utf-8?b?xb1TUiBPUiDFvWlsaW5hIOKAkyByaWFkZW5pZSBwcmV2w6Fkemt5?=
+ <vyluky@orza.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 2810/2026 =?utf-8?b?VnLDunRreSDigJMgUnXFvm9tYmVyb2s=?=
+Date: Tue, 01 Dec 2026 09:00:00 +0100
+Message-ID: <r5c-l08a-121@orza.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dňa 10.12.2026 od 8:00 do 14:00 hod. budú úplné výluky v úsekoch Vrútky – Kraľovany a Kraľovany – Ružomberok (ROV 2810/2026).

@@ -24,6 +24,9 @@ _STOP_WORDS = {
 }
 _ABBREV = ("hl.", "st.", "os.", "zast.", "zst.", "nakl.", "zel.", "n.", "odb.", "vyh.", "zr.")
 _HARD_END = re.compile(r"[,;:!?()\[\]{}<>\"]$")
+# skrátené slovo názvu dopravne: veľké písmeno a najviac dve malé, bodka („N.“, „L.“, „Sp.“, „Pop.“)
+_SHORT_WORD = re.compile(r"[A-ZÁČĎÉÍĽĹŇÓÔŔŠŤÚÝŽ][a-záäčďéíĺľňóôŕšťúýž]{0,2}\.")
+_ABBR_WORD = re.compile(r"[a-z]{1,4}\.")
 _MAIN_SUFFIX = ("osobna stanica", "hlavna stanica")
 
 
@@ -50,11 +53,34 @@ class Tok:
         r = self.raw
         if _HARD_END.search(r):
             return True
-        return r.endswith(".") and not r.lower().endswith(_ABBREV)
+        # skrátené slovo názvu („N. Zámky“, „L. Mikuláš“, „Sp. N. Ves“) koniec názvu nie je
+        return r.endswith(".") and not r.lower().endswith(_ABBREV) and not _SHORT_WORD.fullmatch(r)
 
 
 def tokens(text: str, offset: int = 0) -> list[Tok]:
     return [Tok(m.group(0), m.start() + offset, m.end() + offset) for m in re.finditer(r"\S+", text)]
+
+
+# označenie dopravne pred jej názvom („žst. Žilina“, „ŽST Kysak“, „žel. st. Púchov“, „z. st. Žilina“, „stanica
+# Vrútky“, „železničná stanica …“, „zastávka …“) – názvom dopravne nie je
+_PREFIX_WORDS = {"zst", "zst.", "z.st.", "zel.st.", "zeleznicna", "zeleznicnej", "zeleznicnou", "zeleznicnu",
+                 "stanica", "stanice", "stanici", "stanicou", "stanicu", "dopravna", "dopravne", "dopravni", "dopravnu",
+                 "zastavka", "zastavky", "zastavke", "zastavku", "os.", "zast."}
+_PREFIX_FIRST = {"z.", "zel."}           # „z. st.“, „žel. st.“ – „st.“ samo (napr. „St. Ľubovňa“) nie
+
+
+def strip_station_prefix(toks: list[Tok]) -> list[Tok]:
+    """Tokeny bez označenia dopravne na začiatku („žst. Žilina“ → „Žilina“); bez neho pôvodný zoznam."""
+    i = 0
+    while i < len(toks) and i < 4:
+        w = fold(toks[i].raw.strip(",;:(["))
+        if w in _PREFIX_WORDS:
+            i += 1
+        elif w in _PREFIX_FIRST and i + 1 < len(toks) and fold(toks[i + 1].raw) in ("st.", "st"):
+            i += 2
+        else:
+            break
+    return toks[i:]
 
 
 def clean_name(s: str) -> str:
@@ -86,6 +112,7 @@ class Stations:
         self._stems: Optional[list] = None
         self._flat: Optional[dict] = None
         self._name_prefixes: Optional[set] = None
+        self._abbr_cache: Optional[dict] = None
 
     # ------------------------------------------------------------------ základné vyhľadávanie
     @staticmethod
@@ -170,6 +197,33 @@ class Stations:
         main = [s for name, s in cands.items() if self._norm(name).endswith(_MAIN_SUFFIX)]
         return main[0] if len(main) == 1 else None
 
+    def abbrev(self, text: str):
+        """Skrátený názov dopravne („N. Zámky“ → Nové Zámky, „L. Mikuláš“, „Sp. N. Ves“, „B. Bystrica“, „Nové Mesto
+        n. V.“, „Pop.-Tatry“): každé skrátené slovo je začiatkom slova názvu, ostatné slová sa zhodujú – len ak je
+        dopravňa jednoznačná."""
+        if not self.net or not text:
+            return None
+        words = self._norm(text).replace(" - ", " ").split()
+        if len(words) >= 2 and len(words[-1]) == 1 and words[-1].isalpha():
+            words[-1] += "."              # „Nové Mesto n. V.“ – bodka za posledným písmenom sa pri čistení stratí
+        if not words or len(words) > 5 or not any(_ABBR_WORD.fullmatch(w) for w in words) or \
+                words[0] in _STOP_WORDS or all(_ABBR_WORD.fullmatch(w) for w in words):
+            return None
+        key = tuple(words)
+        if self._abbr_cache is None:
+            self._abbr_cache = {}
+        if key not in self._abbr_cache:
+            found: dict = {}
+            for norm_key, lst in self.net.by_norm.items():
+                kw = norm_key.replace(" - ", " ").split()
+                if len(kw) == len(words) and all(k.startswith(w[:-1]) if _ABBR_WORD.fullmatch(w) else k == w
+                                                 for w, k in zip(words, kw)):
+                    for s in lst:
+                        if s.type in ("station", "yard", "border", "halt"):
+                            found[s.name] = s
+            self._abbr_cache[key] = next(iter(found.values())) if len(found) == 1 else None
+        return self._abbr_cache[key]
+
     def typo(self, text: str):
         """Preklep v názve (podobnosť ≥ 0,88)."""
         if not self.net:
@@ -197,6 +251,9 @@ class Stations:
         st = self.stem(t)
         if st:
             return StationMatch(t, st.name, st.railway_ref, "sklonovanie")
+        st = self.abbrev(t)
+        if st:
+            return StationMatch(t, st.name, st.railway_ref, "skratka")
         if allow_fuzzy:
             st = self.prefix_unique(t) or self.typo(t)
             if st:
@@ -221,6 +278,11 @@ class Stations:
             st = self.stem(cand)
             if st:
                 return StationMatch(cand, st.name, st.railway_ref, "sklonovanie", toks[0].start, toks[k - 1].end)
+        for k in range(min(limit, 4), 0, -1):
+            cand = _span_text(text, toks[0], toks[k - 1])
+            st = self.abbrev(cand)
+            if st:
+                return StationMatch(cand, st.name, st.railway_ref, "skratka", toks[0].start, toks[k - 1].end)
         return None
 
     def suffix(self, toks: list[Tok], text: str, max_tokens: int = 6) -> Optional[StationMatch]:
@@ -243,6 +305,11 @@ class Stations:
             st = self.stem(cand)
             if st:
                 return StationMatch(cand, st.name, st.railway_ref, "sklonovanie", toks[i].start, toks[-1].end)
+        for i in range(max(first, n - 4), n):
+            cand = _span_text(text, toks[i], toks[-1])
+            st = self.abbrev(cand)
+            if st:
+                return StationMatch(cand, st.name, st.railway_ref, "skratka", toks[i].start, toks[-1].end)
         return None
 
 
@@ -251,6 +318,8 @@ def _stem_eq(station_tok: str, text_tok: str) -> bool:
         return True
     if len(station_tok) < 4 or len(text_tok) < 3:
         return False
+    if station_tok.endswith("any") and text_tok in (station_tok[:-3] + "ian", station_tok[:-3] + "ianoch"):
+        return True                       # „Kraľovany“ → „z Kraľovian“
     k = 0
     for a, b in zip(station_tok, text_tok):
         if a != b:
@@ -268,6 +337,8 @@ _FLEETING = re.compile(r"^(.*[^aeiouy])(?:ie|e|o)([kcnlr])$")      # Ružomberok
 
 def _stems(tok: str) -> set:
     out: set = set()
+    if tok.endswith("ian") and len(tok) > 6:
+        out.add(tok[:-3] + "an")          # 2. pád množného čísla „Kraľovian“ (Kraľovany), „Šurian“ (Šurany)
     for e in _ENDINGS:
         if not tok.endswith(e) or len(tok) - len(e) < 3:
             continue

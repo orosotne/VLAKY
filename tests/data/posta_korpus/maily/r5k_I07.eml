@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=zsr.example; dkim=pass header.d=zsr.example; dmarc=pass
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.111]) by
+ mx.dopravca.example with ESMTPS; Fri, 20 Nov 2026 10:00:00 +0100
+From: =?utf-8?b?xb1TUiDigJMgdnpkZWzDoXZhbmll?= <skolenia@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?xaBrb2xlbmllIHJ1xaHFiG92b2RpxI1vdiDigJMgem1lbnkgcHJlZHBp?=
+ =?utf-8?q?su_=C5=BDSR_=C5=BD1?=
+Date: Fri, 20 Nov 2026 10:00:00 +0100
+Message-ID: <r5c-i07-101@zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Pozývame rušňovodičov dopravcov na školenie k zmenám predpisu Ž1 dňa 03.12.2026 od 8:00 do 12:00 v Žiline, Dom techniky. Prihlášky do 27.11.2026.

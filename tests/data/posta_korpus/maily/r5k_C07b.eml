@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.66]) by
+ mx.dopravca.example with ESMTPS; Tue, 08 Dec 2026 16:20:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?VsO9bHVrYSBHYWxhbnRhIOKAkyDFoGHEvmE=?= 12.12.2026
+Date: Tue, 08 Dec 2026 16:20:00 +0100
+Message-ID: <r5c-c07b-56@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Oznamujeme, že plánovaná výluka v úseku Galanta – Šaľa dňa 12.12.2026 nebude realizovaná z dôvodu nepriaznivého počasia.
+
+OR Bratislava

@@ -1,0 +1,36 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Mon, 02 Nov 2026 11:02:00 +0100
+From: KIS =?utf-8?b?4oCTIMW9U1I=?= <kis-noreply@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: KIS =?utf-8?q?=E2=80=93_pridelenie_trasy_ad_hoc_=E2=80=93?= vlak Nex
+ 54321 =?utf-8?q?d=C5=88a?= 14.11.2026
+Date: Mon, 02 Nov 2026 11:02:00 +0100
+Message-ID: <r4-f01a.fiktivne@zsr.example>
+Auto-Submitted: auto-generated
+X-Auto-Response-Suppress: All
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Systém: KIS – Komplexný interoperabilný systém
+Typ správy: Pridelenie trasy
+ID trasy: KIS-2026-447812
+Vlak: Nex 54321
+Deň jazdy: 14.11.2026
+Relácia: Čadca – Košice
+
+Dopravňa              Príchod   Odchod
+Čadca                    –       06:10
+Žilina                 06:52     07:05
+Vrútky                 07:22     07:23
+Kraľovany              07:38     07:39
+Ružomberok             07:55     07:56
+Liptovský Mikuláš      08:20     08:22
+Poprad-Tatry           09:05     09:15
+Spišská Nová Ves       09:42     09:43
+Kysak                  10:25     10:26
+Košice                 10:48       –

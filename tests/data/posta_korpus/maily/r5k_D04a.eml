@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.73]) by
+ mx.dopravca.example with ESMTPS; Wed, 25 Nov 2026 10:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_pl=C3=A1novanie_v=C3=BDluk?=
+ <vyluky@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 3370/2026 =?utf-8?b?UGllxaHFpWFueSDigJMgTm92w6kgTWVzdG8gbmFk?=
+ =?utf-8?q?_V=C3=A1hom?=
+Date: Wed, 25 Nov 2026 10:00:00 +0100
+Message-ID: <rov-3370-2026@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka oboch TK Piešťany – Nové Mesto nad Váhom dňa 08.12.2026 od 8:00 do 14:00 hod. (ROV 3370/2026).

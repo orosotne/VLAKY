@@ -1,0 +1,25 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Wed, 04 Nov 2026 09:00:00 +0100
+From:
+ =?utf-8?q?=C5=BDSR_OR_Zvolen_=E2=80=93_v=C3=BDluky?= <vyluky.orzv@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV =?utf-8?b?xI0uIDQ1MS8yMDI2IOKAkyB2w71sdWthIHRyYcWlb3ZlaiBrb8S+?=
+ =?utf-8?q?aje_Zvolen_=E2=80=93_Bansk=C3=A1?= Bystrica
+Date: Wed, 04 Nov 2026 09:00:00 +0100
+Message-ID: <r4-a23.fiktivne@zsr.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Vážení dopravcovia,
+
+podľa ROV č. 451/2026 bude vykonaná výluka traťovej koľaje v medzistaničnom úseku
+Zvolen osobná stanica – Banská Bystrica (trať 170, jednokoľajná trať) dňa 18.11.2026 od 08:00 do 14:00 hod.
+Počas výluky je doprava v úseku prerušená, obchádzka nie je možná.
+
+S pozdravom
+OR Zvolen – oddelenie výluk

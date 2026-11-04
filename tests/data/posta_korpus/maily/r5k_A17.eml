@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.27]) by
+ mx.dopravca.example with ESMTPS; Wed, 25 Nov 2026 11:11:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 4190/2026 =?utf-8?b?4oCTIFNlbmVjIOKAkw==?= Galanta, 2. TK
+Date: Wed, 25 Nov 2026 11:11:00 +0100
+Message-ID: <r5c-a17-17@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+V úseku Senec – Galanta (km 23,100 – 31,900) bude dňa 03.12.2026 od 8:00 do 14:00 výluka 2. TK. Jednokoľajná prevádzka po 1. TK.

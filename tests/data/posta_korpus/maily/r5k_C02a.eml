@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.55]) by
+ mx.dopravca.example with ESMTPS; Fri, 13 Nov 2026 11:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 4411/2026 Malacky =?utf-8?b?4oCTIEvDunR5LCBub8SNbsOpIHbDvWx1?=
+ =?utf-8?q?ky?=
+Date: Fri, 13 Nov 2026 11:00:00 +0100
+Message-ID: <r5c-c02a-45@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka oboch traťových koľají Malacky – Kúty v nociach 23./24.11., 24./25.11. a 25./26.11.2026 vždy od 22:30 do 04:30 hod. (ROV 4411/2026).

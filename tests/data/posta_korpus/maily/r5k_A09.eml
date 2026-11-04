@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.19]) by
+ mx.dopravca.example with ESMTPS; Wed, 18 Nov 2026 15:20:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBadm9sZW4g4oCTIHNwcsOhdmEgdHJhdMOt?=
+ <potr@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: Zavedenie pomalej jazdy =?utf-8?b?4oCTIFBPVFIgxI0u?= 87/2026
+Date: Wed, 18 Nov 2026 15:20:00 +0100
+Message-ID: <r5c-a09-9@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Od 20.11.2026 od 10:00 hod. sa v úseku Zvolen osobná stanica – Banská Bystrica (trať 170) zavádza pomalá jazda rýchlosťou 40 km/h z dôvodu zlého stavu koľaje, a to do odvolania.
+
+Správa tratí OR Zvolen

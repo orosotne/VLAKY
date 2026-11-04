@@ -1,0 +1,23 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Tue, 10 Nov 2026 10:00:00 +0100
+From:
+ =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_v=C3=BDluky?= <vyluky.ortt@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV =?utf-8?b?xI0uIDIyNzAvMjAyNiDigJMgdsO9bHVrYSAxLiBUSyBOb3bDqQ==?=
+ Mesto nad =?utf-8?b?VsOhaG9tIOKAkyBQaWXFocWlYW55?=
+Date: Tue, 10 Nov 2026 10:00:00 +0100
+Message-ID: <r4-b08a.fiktivne@zsr.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Dobrý deň,
+
+výluka 1. TK v úseku Nové Mesto nad Váhom – Piešťany v termíne od 07.12.2026 do 11.12.2026 denne od 08:00 do 15:00 hod. (ROV č. 2270/2026).
+
+S pozdravom
+OR Trnava, oddelenie výluk

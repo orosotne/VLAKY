@@ -1,0 +1,32 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.121]) by
+ mx.dopravca.example with ESMTPS; Fri, 27 Nov 2026 10:00:00 +0100
+From:
+ =?utf-8?q?=C5=BDSR_OR_Zvolen_=E2=80=93_v=C3=BDluky?= <vyluky@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 6140/2026
+Date: Fri, 27 Nov 2026 10:00:00 +0100
+Message-ID: <r5c-k02-111@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="===============7394066458120141809=="
+
+--===============7394066458120141809==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Táto správa je vo formáte HTML. Ak sa Vám nezobrazuje správne, otvorte ju v inom programe.
+
+--===============7394066458120141809==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+<html><body><h3>Rozkaz o výluke č. 6140/2026</h3>
+<table border="1"><tr><td>Úsek</td><td>Lučenec – Fiľakovo</td></tr>
+<tr><td>Termín</td><td>16.12.2026 od 08:00 do 14:00 hod.</td></tr>
+<tr><td>Druh</td><td>úplná výluka</td></tr></table></body></html>
+
+--===============7394066458120141809==--

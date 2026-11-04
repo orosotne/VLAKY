@@ -1,0 +1,28 @@
+Authentication-Results: mx.dopravca.example; spf=pass smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example; dmarc=pass header.from=orba.zsr.example
+From: =?utf-8?b?TWFydGEgS292w6HEjW92w6Eg4oCTIE9SIEJyYXRpc2xhdmE=?= <marta.kovacova@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?UHJlxI3DrXRhbsOpOiBST1YgxI0uIDQxMDUvMjAyNiDigJMgR2FsYW50YSDigJMg?=
+ =?utf-8?b?xaBhxL5hLCB2w71sdWthIDEuIFRL?=
+Date: Sun, 22 Nov 2026 09:00:00 +0100
+Message-ID: <r5c-i10-104@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=disposition-notification; boundary="=_r5report_104"
+
+This is a MIME-encapsulated message.
+
+--=_r5report_104
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+VmHFoWEgc3Byw6F2YQoKUHJlZG1ldDogUk9WIMSNLiA0MTA1LzIwMjYg4oCTIEdhbGFudGEg4oCT
+IMWgYcS+YSwgdsO9bHVrYSAxLiBUSwoKYm9sYSBwcmXEjcOtdGFuw6EgZMWIYSAyMi4xMS4yMDI2
+IDg6NTkuCg==
+
+--=_r5report_104
+Content-Type: message/disposition-notification
+
+Reporting-UA: mail.orba.zsr.example
+Final-Recipient: rfc822; marta.kovacova@orba.zsr.example
+Disposition: manual-action/MDN-sent-manually; displayed
+
+--=_r5report_104--

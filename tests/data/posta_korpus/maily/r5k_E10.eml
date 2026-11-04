@@ -1,0 +1,20 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.93]) by
+ mx.dopravca.example with ESMTPS; Sat, 05 Dec 2026 05:10:00 +0100
+From: =?utf-8?b?S29udHJvbG7DoSBkaXNwZcSNZXJza8OhIHNsdcW+YmEgT1IgS2/FoWlj?=
+ =?utf-8?q?e?= <kd@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?SW5mb3Jtw6FjaWEgbyBtaW1vcmlhZG5vc3RpIOKAkyBTdHLDocW+?=
+ =?utf-8?q?ske_=E2=80=93_Humenn=C3=A9?=
+Date: Sat, 05 Dec 2026 05:10:00 +0100
+Message-ID: <r5c-e10-83@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<html><body><p>Informácia o mimoriadnosti</p>
+<table border="1"><tr><th>Miesto</th><th>Začiatok</th><th>Predpokladaný koniec</th><th>Dôsledok</th></tr>
+<tr><td>Strážske – Humenné</td><td>05.12.2026 04:50</td><td>05.12.2026 10:30</td><td>doprava prerušená – poškodenie mosta</td></tr>
+</table><p>KD OR Košice</p></body></html>

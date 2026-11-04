@@ -1,0 +1,15 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.90]) by
+ mx.dopravca.example with ESMTPS; Wed, 02 Dec 2026 06:20:00 +0100
+From: KD OR Zvolen <kd@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: Porucha =?utf-8?q?v=C3=BDhybky_=C5=BDiar?= nad Hronom
+Date: Wed, 02 Dec 2026 06:20:00 +0100
+Message-ID: <r5c-e07-80@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+V Žiari nad Hronom je od 6:10 hod. porucha výhybky č. 12, stanica je neprejazdná do odvolania.

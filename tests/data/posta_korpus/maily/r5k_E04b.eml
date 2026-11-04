@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.86]) by
+ mx.dopravca.example with ESMTPS; Mon, 30 Nov 2026 11:50:00 +0100
+From: =?utf-8?b?S29udHJvbG7DoSBkaXNwZcSNZXJza8OhIHNsdcW+YmEgT1IgS2/FoWlj?=
+ =?utf-8?q?e?= <kd@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: MU =?utf-8?b?4oCTIMW+c3QuIFBsZcWhaXZlYyDigJMgxI1pYXN0b8SNbsOp?=
+ obnovenie
+Date: Mon, 30 Nov 2026 11:50:00 +0100
+Message-ID: <r5c-e04b-76@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Prevádzka v žst. Plešivec bola o 11:40 hod. obnovená pre osobné vlaky. Nákladné vlaky môžu stanicou Plešivec prechádzať až od 18:00 hod.

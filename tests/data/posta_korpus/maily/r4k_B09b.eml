@@ -1,0 +1,39 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=dopravca.example; dkim=pass (2048-bit key)
+ header.d=dopravca.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT
+ dis=NONE) header.from=dopravca.example
+Received: from mail.dopravca.example (mail.dopravca.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Thu, 12 Nov 2026 11:30:00 +0100
+From: =?utf-8?q?Dispe=C4=8Ding?= <dispecing@dopravca.example>
+To: agent.dispecing@dopravca.example
+Subject: FW: RE: ROV =?utf-8?b?xI0uIDEyNzEvMjAyNiDigJMgw7pwbG7DoSB2w71sdWth?=
+ =?utf-8?b?IMW9aWxpbmEg4oCTIFZhcsOtbg==?=
+Date: Thu, 12 Nov 2026 11:30:00 +0100
+Message-ID: <r4-b09b.fiktivne@dopravca.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Na vedomie.
+
+-----Original Message-----
+From: ŽSR OR Žilina – výluky <vyluky.orza@zsr.example>
+Sent: Thursday, November 12, 2026 11:00 AM
+To: dispecing@dopravca.example
+Subject: RE: ROV č. 1271/2026 – úplná výluka Žilina – Varín
+
+Dobrý deň,
+
+na základe požiadavky zhotoviteľa sa termín výluky mení na 27.11.2026 od 08:00 do 14:00 hod.
+
+S pozdravom
+OR Žilina
+
+Od: ŽSR OR Žilina – výluky <vyluky.orza@zsr.example>
+Odoslané: pondelok 9. novembra 2026 10:20
+Komu: dispecing@dopravca.example
+Predmet: ROV č. 1271/2026 – úplná výluka Žilina – Varín
+
+Dobrý deň,
+
+oznamujeme úplnú výluku oboch TK v úseku Žilina – Varín dňa 26.11.2026 od 08:00 do 14:00 hod. (ROV č. 1271/2026).

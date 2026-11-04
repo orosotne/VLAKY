@@ -1,0 +1,19 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.24]) by
+ mx.dopravca.example with ESMTPS; Fri, 27 Nov 2026 08:50:00 +0100
+From:
+ =?utf-8?q?=C5=BDSR_OR_Zvolen_=E2=80=93_v=C3=BDluky?= <vyluky@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?VsO9bHVrYSBrb8S+YWrDrSBIcm9uc2vDoSBEw7picmF2YSDigJMgxb1p?=
+ =?utf-8?q?ar?= n. Hronom
+Date: Fri, 27 Nov 2026 08:50:00 +0100
+Message-ID: <r5c-a14-14@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dňa 07.12.2026 v čase od 7:00 do 11:00 nebude možná jazda vlakov medzi Hronskou Dúbravou a Žiarom nad Hronom z dôvodu výluky oboch traťových koľají (ROV 6060/2026).
+
+OR Zvolen

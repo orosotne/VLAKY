@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.37]) by
+ mx.dopravca.example with ESMTPS; Fri, 04 Dec 2026 08:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_pl=C3=A1novanie_v=C3=BDluk?=
+ <vyluky@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 3350/26 Leopoldov =?utf-8?q?=E2=80=93_Sere=C4=8F?=
+Date: Fri, 04 Dec 2026 08:00:00 +0100
+Message-ID: <r5c-a27-27@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Výluka trate Leopoldov – Sereď 14.12.26 v čase 8 – 14 h.
+OR TT

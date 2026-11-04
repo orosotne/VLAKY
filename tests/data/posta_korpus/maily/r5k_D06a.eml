@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orza.zsr.example; dkim=pass header.d=orza.zsr.example;
+ dmarc=pass header.from=orza.zsr.example
+Received: from mail.orza.zsr.example (mail.orza.zsr.example [192.0.2.77]) by
+ mx.dopravca.example with ESMTPS; Fri, 27 Nov 2026 09:00:00 +0100
+From: =?utf-8?b?xb1TUiBPUiDFvWlsaW5hIOKAkyByaWFkZW5pZSBwcmV2w6Fkemt5?=
+ <vyluky@orza.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 2800/2026 =?utf-8?b?xb1pbGluYSDigJM=?= Rajec
+Date: Fri, 27 Nov 2026 09:00:00 +0100
+Message-ID: <r5c-d06a-67@orza.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka trate Žilina – Rajec dňa 07.12.2026 od 8:00 do 14:00 hod. (ROV 2800/2026).

@@ -1,0 +1,27 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=dopravca.example; dkim=pass header.d=dopravca.example;
+ dmarc=pass header.from=dopravca.example
+Received: from mail.dopravca.example (mail.dopravca.example [192.0.2.71]) by
+ mx.dopravca.example with ESMTPS; Thu, 26 Nov 2026 09:10:00 +0100
+From:
+ =?utf-8?b?SsOhbiBOb3bDoWsg4oCTIGRpc3BlxI1pbmc=?= <jan.novak@dopravca.example>
+To: agent.dispecing@dopravca.example
+Subject: Fwd: ROV =?utf-8?b?xI0uIDUzNTAvMjAyNiBLb8WhaWNlIOKAkyDEjGHFiGE=?=
+Date: Thu, 26 Nov 2026 09:10:00 +0100
+Message-ID: <r5c-d02-61@dopravca.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Posielam na vedomie, prišlo mi to na osobný e-mail.
+Jano
+
+---------- Preposlaná správa ---------
+Od: ŽSR OR Košice – výlukové pracovisko <vyluky@orke.zsr.example>
+Dátum: št 26. 11. 2026 o 8:41
+Predmet: ROV č. 5350/2026 Košice – Čaňa
+Komu: Ján Novák <jan.novak@dopravca.example>
+
+Úplná výluka oboch traťových koľají Košice – Čaňa dňa 11.12.2026 od 8:00 do 13:00 hod.
+
+OR Košice

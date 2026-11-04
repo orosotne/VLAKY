@@ -1,0 +1,46 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=dopravca.example; dkim=pass header.d=dopravca.example;
+ dmarc=pass header.from=dopravca.example
+Received: from mail.dopravca.example (mail.dopravca.example [192.0.2.72]) by
+ mx.dopravca.example with ESMTPS; Mon, 30 Nov 2026 15:30:00 +0100
+From:
+ =?utf-8?b?SsOhbiBOb3bDoWsg4oCTIGRpc3BlxI1pbmc=?= <jan.novak@dopravca.example>
+To: agent.dispecing@dopravca.example
+Subject: FW: ROV =?utf-8?b?xI0uIDQ0NjAvMjAyNiDFoGHEvmEg4oCTIE5vdsOpIFrDoW1r?=
+ =?utf-8?q?y?=
+Date: Mon, 30 Nov 2026 15:30:00 +0100
+Message-ID: <r5c-d03-62@dopravca.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============1223134511910380525=="
+
+--===============1223134511910380525==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Preposielam ROV v prílohe, prišiel na moju adresu.
+J. Novák
+
+--===============1223134511910380525==
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+Content-Disposition: attachment
+
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: jan.novak@dopravca.example
+Subject: ROV =?utf-8?b?xI0uIDQ0NjAvMjAyNiDFoGHEvmEg4oCTIE5vdsOpIFrDoW1reQ==?=
+Date: Mon, 30 Nov 2026 14:02:00 +0100
+Message-ID: <rov-4460-2026@orba.zsr.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Úplná výluka oboch traťových koľají v úseku Šaľa – Nové Zámky dňa 13.12.2026 od 8:00 do 14:00 hod. (ROV č. 4460/2026).
+
+OR Bratislava
+
+--===============1223134511910380525==--

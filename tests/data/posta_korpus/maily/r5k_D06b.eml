@@ -1,0 +1,29 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=dopravca.example; dkim=pass header.d=dopravca.example;
+ dmarc=pass header.from=dopravca.example
+Received: from mail.dopravca.example (mail.dopravca.example [192.0.2.78]) by
+ mx.dopravca.example with ESMTPS; Tue, 01 Dec 2026 10:40:00 +0100
+From:
+ =?utf-8?b?SsOhbiBOb3bDoWsg4oCTIGRpc3BlxI1pbmc=?= <jan.novak@dopravca.example>
+To: agent.dispecing@dopravca.example
+Subject: FW: RE: ROV 2800/2026 =?utf-8?b?xb1pbGluYSDigJM=?= Rajec
+Date: Tue, 01 Dec 2026 10:40:00 +0100
+Message-ID: <r5c-d06b-68@dopravca.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Na vedomie – OR posunulo výluku.
+
+Od: Mgr. Eva Kubišová – OR Žilina <eva.kubisova@orza.zsr.example>
+Odoslané: utorok 1. decembra 2026 9:58
+Komu: Ján Novák <jan.novak@dopravca.example>
+Predmet: RE: ROV 2800/2026 Žilina – Rajec
+
+Dobrý deň, výluka podľa ROV 2800/2026 sa presúva na 08.12.2026, čas 8:00 – 14:00 platí.
+
+Od: ŽSR OR Žilina – riadenie prevádzky <vyluky@orza.zsr.example>
+Odoslané: piatok 27. novembra 2026 9:00
+Predmet: ROV 2800/2026 Žilina – Rajec
+
+Úplná výluka trate Žilina – Rajec dňa 07.12.2026 od 8:00 do 14:00 hod. (ROV 2800/2026).

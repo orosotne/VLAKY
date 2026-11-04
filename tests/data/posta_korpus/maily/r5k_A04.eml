@@ -1,0 +1,24 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orza.zsr.example; dkim=pass header.d=orza.zsr.example;
+ dmarc=pass header.from=orza.zsr.example
+Received: from mail.orza.zsr.example (mail.orza.zsr.example [192.0.2.14]) by
+ mx.dopravca.example with ESMTPS; Wed, 11 Nov 2026 10:20:00 +0100
+From: =?utf-8?b?xb1TUiBPUiDFvWlsaW5hIOKAkyByaWFkZW5pZSBwcmV2w6Fkemt5?=
+ <vyluky@orza.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?VsO9bHVrYSDEjGFkY2Eg4oCTIEtyw6Fzbm8=?= nad Kysucou, noci
+ 16. =?utf-8?b?4oCT?= 19.11.2026
+Date: Wed, 11 Nov 2026 10:20:00 +0100
+Message-ID: <r5c-a04-4@orza.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+
+na základe ROV č. 2731/2026 Vám oznamujeme úplnú výluku oboch traťových koľají v medzistaničnom úseku Čadca – Krásno nad Kysucou v nociach 16./17.11., 17./18.11. a 18./19.11.2026 vždy od 23:10 do 04:20 hod.
+
+Počas výluky nebude možná jazda žiadnych vlakov. Vlaky nákladnej dopravy odporúčame vopred presmerovať alebo ich jazdu časovo prispôsobiť.
+
+S pozdravom
+OR Žilina, riadenie prevádzky

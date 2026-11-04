@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.64]) by
+ mx.dopravca.example with ESMTPS; Mon, 23 Nov 2026 08:00:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBadm9sZW4g4oCTIHNwcsOhdmEgdHJhdMOt?=
+ <potr@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: Odvolanie POTR =?utf-8?b?xI0u?= 88/2026
+Date: Mon, 23 Nov 2026 08:00:00 +0100
+Message-ID: <r5c-c06b-54@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Pomalá jazda v úseku Zvolen osobná stanica – Banská Bystrica zavedená POTR č. 88/2026 sa ruší dňom 24.11.2026 od 12:00 hod.

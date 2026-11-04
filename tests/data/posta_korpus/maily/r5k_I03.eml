@@ -1,0 +1,47 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.108]) by
+ mx.dopravca.example with ESMTPS; Wed, 18 Nov 2026 09:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_pl=C3=A1novanie_v=C3=BDluk?=
+ <vyluky@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Pozv=C3=A1nka=3A_Koordin=C3=A1cia_v=C3=BDluk?= trate 120 v
+ roku 2027
+Date: Wed, 18 Nov 2026 09:00:00 +0100
+Message-ID: <r5c-i03-98@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============3113329494717062737=="
+
+--===============3113329494717062737==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Pozývame Vás na koordinačné stretnutie dňa 25.11.2026 od 9:00 do 11:30 v zasadačke OR Trnava. Program: plán výluk v úseku Piešťany – Nové Mesto nad Váhom na rok 2027.
+
+--===============3113329494717062737==
+Content-Type: text/calendar; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+Content-Disposition: attachment; filename="pozvanka.ics"
+MIME-Version: 1.0
+
+BEGIN:VCALENDAR
+PRODID:-//Example Corp//Calendar 1.0//SK
+VERSION:2.0
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:r5-510391505@dopravca.example
+DTSTAMP:20261125T080000Z
+DTSTART:20261125T080000Z
+DTEND:20261125T103000Z
+SUMMARY:Koordin=C3=A1cia v=C3=BDluk trate 120
+LOCATION:OR Trnava, zasada=C4=8Dka
+DESCRIPTION:Pl=C3=A1n v=C3=BDluk Pie=C5=A1=C5=A5any =E2=80=93 Nov=C3=A9 Mesto=
+ nad V=C3=A1hom 2027
+ORGANIZER;CN=3DOrganizator:mailto:vyluky@ortt.zsr.example
+ATTENDEE;ROLE=3DREQ-PARTICIPANT;PARTSTAT=3DNEEDS-ACTION;RSVP=3DTRUE:mailto:ag=
+ent.dispecing@dopravca.example
+END:VEVENT
+END:VCALENDAR
+
+--===============3113329494717062737==--

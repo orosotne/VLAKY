@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.116]) by
+ mx.dopravca.example with ESMTPS; Mon, 16 Nov 2026 09:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 4120/2026 Galanta =?utf-8?b?4oCTIMWgYcS+YQ==?=
+Date: Mon, 16 Nov 2026 09:00:00 +0100
+Message-ID: <r5c-j01a-106@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka oboch TK Galanta – Šaľa dňa 25.11.2026 od 8:00 do 14:00 hod. (ROV 4120/2026).
