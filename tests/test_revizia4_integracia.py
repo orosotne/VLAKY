@@ -60,3 +60,58 @@ def test_kroky_vlaku_pred_odchodom_ostavaju():
     steps = _next_steps(_rec("POČKAŤ", "ORANŽOVÁ", "planovany"))
     assert "ORANŽOVÁ: vypraviť len po výslovnom potvrdení dispečera (zvážiť dôvody nižšie)." in steps
     assert not any(x.startswith("Počkať pred vjazdom") for x in steps)
+
+
+# ---------------------------------------------------------------- integrácia s M4 (fronta, upozornenia, odkazy)
+def test_popis_udalosti_bez_miesta_a_terminu():
+    from vlaky.models import ExtractedEvent
+    from vlaky.posta.spracovanie import describe_event
+
+    ev = ExtractedEvent(id=7, kind="vyluka_zmena", data={})
+    text = describe_event(ev)
+    assert "? – ?" not in text, text
+    assert "(miesto sa nepodarilo prečítať)" in text and "(termín sa nepodarilo prečítať)" in text, text
+    known = ExtractedEvent(id=8, kind="vyluka_nova", data={"from_station": "Kysak", "to_station": "Košice",
+                                                           "start": "2026-11-20T07:00:00+00:00",
+                                                           "end": "2026-11-20T13:00:00+00:00"})
+    assert describe_event(known).startswith("nová výluka Kysak – Košice 20.11. 08:00 – 20.11. 14:00"), \
+        describe_event(known)
+    incident = ExtractedEvent(id=9, kind="mimoriadnost", data={"start": "2026-11-02T03:30:00+00:00"})
+    assert "(miesto sa nepodarilo prečítať)" in describe_event(incident)
+    assert "do odvolania" in describe_event(incident)
+
+
+def test_upozornenie_na_dve_cakajuce_udalosti_ma_spravny_tvar(cfg, session, monkeypatch):
+    """Dve čakajúce mimoriadnosti bez dopravne v jednom e-maile: predmet „2 udalosti“ (nie „2 udalostí“)."""
+    from test_revizia4_pravidla import KD_ZA, _process  # rovnaké prostredie ako testy oblasti M4
+    from test_revizia3_terminy import drop, events, raw_mail, utc
+    from vlaky.hranice import seed_borders
+
+    monkeypatch.setattr(cfg, "require_dmarc_pass", True)
+    monkeypatch.setattr(cfg, "trusted_authserv_ids", "mx.dopravca.example")
+    seed_borders(session)
+    session.commit()
+    now = utc(2026, 11, 2, 4)
+    drop(cfg, "km1.eml", raw_mail("Mimoriadnost na trati 180", "Mimoriadna udalosť: porucha koľaje na trati 180 v km "
+                                  "251,4 od 02.11.2026 04:30, trať je neprejazdná.\n", "km1", sender=KD_ZA,
+                                  date="Mon, 02 Nov 2026 04:55:00 +0100"))
+    drop(cfg, "km2.eml", raw_mail("Mimoriadnost na trati 120", "Mimoriadna udalosť: porucha zabezpečovacieho "
+                                  "zariadenia na trati 120 v km 88,2 od 02.11.2026 04:40, trať je neprejazdná.\n",
+                                  "km2", sender=KD_ZA, date="Mon, 02 Nov 2026 04:56:00 +0100"))
+    _process(session, now)
+    assert len([e for e in events(session) if e.kind == "mimoriadnost"]) == 2
+    subjects = [n.subject for n in session.scalars(select(Notification).where(Notification.kind == "upozornenie"))]
+    multi = [x for x in subjects if "Na potvrdenie čaká 2 " in x]
+    assert multi and all("2 udalosti z e-mailov" in x for x in multi), subjects
+    assert not any("udalostí" in x for x in multi), subjects
+
+
+def test_odkazy_na_udalost_vo_vylukach_a_po_chybe_potvrdenia_vedu_na_formular():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    vyluky = (root / "vlaky" / "web" / "templates" / "vyluky.html").read_text(encoding="utf-8")
+    assert '/fronta/udalost/{{ c.source_event_id }}' in vyluky and "/fronta#udalost-" not in vyluky
+    evidencia = (root / "vlaky" / "web" / "views_evidencia.py").read_text(encoding="utf-8")
+    assert 'redirect(f"/fronta#udalost-' not in evidencia
+    assert evidencia.count('/fronta?udalost={event_id}#udalost-{event_id}') >= 2
+    fronta = (root / "vlaky" / "web" / "templates" / "fronta.html").read_text(encoding="utf-8")
+    assert "(a.size / 1024)|num(1)" in fronta and "|round(1) }} kB" not in fronta

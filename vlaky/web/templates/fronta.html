@@ -52,7 +52,7 @@
       <pre class="email-body" tabindex="0">{{ mail.body_text }}</pre>
       {% for a in mail.attachments %}
       <details class="attachment">
-        <summary>Príloha: {{ a.filename }} <span class="muted small">({{ a.content_type }}, {{ (a.size / 1024)|round(1) }} kB)</span></summary>
+        <summary>Príloha: {{ a.filename }} <span class="muted small">({{ a.content_type }}, {{ (a.size / 1024)|num(1) }} kB)</span></summary>
         <pre class="email-body">{{ a.text[:20000] }}</pre>
       </details>
       {% endfor %}

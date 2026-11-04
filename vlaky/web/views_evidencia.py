@@ -605,12 +605,15 @@ def closure_verify(closure_id: int, request: Request, background: BackgroundTask
                 c = s.get(Closure, closure_id)
                 if result.get("action") == "nahradene":
                     # staršia udalosť – záznam medzitým zmenila (napr. zrušila) novšia udalosť, ktorá má prednosť
-                    return redirect(f"/fronta#udalost-{event_id}", "Udalosť potvrdená, ale nič sa nezapísalo: "
+                    # návrat na formulár udalosti (aj keď je udalosť na inej strane fronty)
+                    back_event = f"/fronta?udalost={event_id}#udalost-{event_id}"
+                    return redirect(back_event, "Udalosť potvrdená, ale nič sa nezapísalo: "
                                     f"{str(result.get('note') or 'záznam medzitým zmenila novšia udalosť.')[:300]}",
                                     "varovanie")
                 if result.get("ok") is False or (c is not None and c.status != "overene"):
                     error = result.get("error") or "výluka zostala v stave návrh"
-                    return redirect(f"/fronta#udalost-{event_id}", f"Výluku sa nepodarilo potvrdiť: {error}", "chyba")
+                    return redirect(f"/fronta?udalost={event_id}#udalost-{event_id}",
+                                    f"Výluku sa nepodarilo potvrdiť: {error}", "chyba")
                 audit(s, user.username, "closure_verify", "closure", closure_id, event_id=event_id)
         except (ImportError, NotImplementedError, AttributeError):
             return redirect(back, "Spracovanie e-mailov (modul posta) zatiaľ nie je k dispozícii.", "chyba")

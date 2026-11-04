@@ -364,7 +364,8 @@ def _store_one(session: Session, raw: RawMail) -> Optional[Email]:
     # je len informatívna (inak by spätne datovaný e-mail obišiel súhrny a uchovávanie)
     received = raw.received_at or now_utc()
     fields = dict(source=raw.source, received_at=received, sender=header_text(pm.sender or pm.from_header)[:300],
-                  subject=header_text(pm.subject)[:500], body_text=pm.body_text, auth_results="\n".join(pm.auth_results),
+                  subject=header_text(pm.subject)[:500], body_text=pm.body_text,
+                  auth_results="\n".join(pm.auth_results),
                   verdict=ver.verdict, verdict_reason=ver.reason_text,
                   status="spracovany" if ver.verdict == KARANTENA else "prijaty", raw_path=raw_path,
                   forwarded_from=",".join(ver.forwarded_from))
@@ -649,7 +650,8 @@ def apply_event(session: Session, event: ExtractedEvent, actor: str = "agent") -
     if event.kind not in CLOSURE_EVENT_KINDS:
         _drop_pending(session, event, f"Udalosť #{event.id} zapísaná ako {KIND_LABELS.get(event.kind, event.kind)}.")
     audit(session, actor, "udalost_aplikovana", "ExtractedEvent", event.id, druh=event.kind,
-          popis=describe_event(event), vysledok={k: v for k, v in result.items() if k not in ("before", "train_before")})
+          popis=describe_event(event),
+          vysledok={k: v for k, v in result.items() if k not in ("before", "train_before")})
     return result
 
 
@@ -1339,7 +1341,8 @@ def _drop_pending(session: Session, ev: ExtractedEvent, note: str, own: bool = T
     Mení len záznamy, ktoré udalosti stále patria (``source_event_id``).
     """
     msgs = []
-    for c in list(session.scalars(select(Closure).where(Closure.source_event_id == ev.id, Closure.status != "zrusene"))):
+    for c in list(session.scalars(select(Closure).where(Closure.source_event_id == ev.id,
+                                                        Closure.status != "zrusene"))):
         if c.proposed_change_of is not None:
             msgs.append(f"dočasný záznam výluky #{c.id} odstránený")
             session.delete(c)
@@ -2368,6 +2371,7 @@ def _alert_uncertain(session: Session, event_ids: Iterable[int], errors: list[st
     """Upozornenie dispečerom (DÔLEŽITÉ, hneď – nie až v súhrne) na nové čakajúce udalosti, s ktorými plánovač
     nevie počítať a ktoré sa môžu týkať vlaku (zrušenie/zmena pridelenej trasy, výluka bez záznamu)."""
     from ..notifikacie.odosielanie import send_internal
+    from ..notifikacie.texty import count
 
     try:
         items = []
@@ -2384,10 +2388,15 @@ def _alert_uncertain(session: Session, event_ids: Iterable[int], errors: list[st
         if len(items) == 1:
             subject = f"[AGENT][DÔLEŽITÉ] Na potvrdenie čaká {describe_event(items[0][0])}"
         else:
-            subject = (f"[AGENT][DÔLEŽITÉ] Na potvrdenie čaká {len(items)} udalostí z e-mailov, ktoré ovplyvňujú "
-                       "vlaky")
+            subject = (f"[AGENT][DÔLEŽITÉ] Na potvrdenie čaká {count(len(items), 'udalosť', 'udalosti', 'udalostí')} "
+                       "z e-mailov, ktoré ovplyvňujú vlaky")
         lines = ["Tieto udalosti z e-mailov čakajú na potvrdenie a plánovač s nimi nevie počítať – vlaky, ktorých "
                  "sa môžu týkať, nedostanú ZELENÚ, kým ich nepotvrdíte (s opravou) alebo nezamietnete:", ""]
+        if any(ev.kind == "trasa_zrusena" for ev, _w in items):
+            # odriekol ju sám dispečer podľa prijatého odporúčania („pôvodnú trasu odrieknuť, nová trasa na …“) –
+            # odchod na novú, objednanú trasu plánovač neobmedzí, len pripomenie potvrdenie
+            lines[0] = lines[0][:-1] + " (pri zrušení trasy okrem odchodu na novú trasu objednanú podľa prijatého " \
+                "odporúčania):"
         for ev, why in items:
             lines.append(f"- {describe_event(ev)}: {why}")
             lines.append(f"  {url}/fronta/udalost/{ev.id}")    # odkaz vždy ukáže udalosť (aj na ďalšej strane fronty)
@@ -2543,9 +2552,14 @@ def describe_event(ev: ExtractedEvent) -> str:
         return fmt(dt) if dt else "?"
 
     if ev.kind in ("vyluka_nova", "vyluka_zmena", "pomala_jazda", "mimoriadnost"):
-        sec = f"{d.get('from_station') or '?'} – {d.get('to_station') or '?'}"
+        if d.get("from_station") or d.get("to_station"):
+            sec = f"{d.get('from_station') or '?'} – {d.get('to_station') or '?'}"
+        else:  # ani jedna dopravňa – nie „? – ?“, dispečer má vedieť, že miesto treba doplniť
+            sec = "(miesto sa nepodarilo prečítať)"
         extra = f", {d['speed_kmh']:g} km/h" if isinstance(d.get("speed_kmh"), (int, float)) else ""
         daily = f", denne {d['daily_from']}–{d['daily_to']}" if d.get("daily_from") else ""
+        if not d.get("start") and not d.get("end") and not d.get("until_revoked") and ev.kind != "mimoriadnost":
+            return f"{label} {sec} (termín sa nepodarilo prečítať){daily}{extra} (#{ev.id})"
         # chýbajúci koniec je „do odvolania“ len pri výslovnom príznaku a pri mimoriadnosti, inak neznámy termín
         end = t("end") if d.get("end") else ("do odvolania" if d.get("until_revoked") or ev.kind == "mimoriadnost"
                                              else "?")

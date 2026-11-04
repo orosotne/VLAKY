@@ -260,7 +260,6 @@ def recommendation_body(rec: Recommendation) -> str:
 
 def sms_text(rec: Recommendation) -> str:
     train = rec.train
-    ch = rec.chosen or {}
     txt = f"AGENT {rec.priority}: vlak {train.number if train else '?'} {_decision_head(rec)}"
     crew = rec.crew or {}
     if crew.get("status") in ("ORANŽOVÁ", "ČERVENÁ"):
