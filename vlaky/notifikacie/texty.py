@@ -97,12 +97,21 @@ def crew_relief_text(crew: dict | None) -> str:
     return ""
 
 
+def _decision_head(rec: Recommendation) -> str:
+    """Rozhodnutie s časom odchodu (predmet e-mailu, SMS). Idúci vlak, ktorý pred cieľom čaká, kým sa neuvoľní vjazd
+    (``chosen["until_entry"]``), čas odchodu nemá – je to len hranica výpočtu, posúva sa s každým prepočtom."""
+    ch = rec.chosen or {}
+    if ch.get("until_entry"):
+        return f"{rec.decision} pred cieľom"
+    if ch.get("depart") and rec.decision not in ("ESKALOVAŤ", "POKRAČOVAŤ"):
+        return f"{rec.decision} {_t(ch['depart'])}"
+    return rec.decision
+
+
 def recommendation_subject(rec: Recommendation) -> str:
     train = rec.train
     rel = f"{train.origin} → {train.destination}" if train else ""
-    head = rec.decision
-    if rec.chosen.get("depart") and rec.decision not in ("ESKALOVAŤ", "POKRAČOVAŤ"):
-        head += f" {_t(rec.chosen['depart'])}"
+    head = _decision_head(rec)
     prefix = "[TIEŇ]" if settings().shadow_mode else ""
     return f"{prefix}[AGENT][{rec.priority}] Vlak {train.number if train else '?'} {rel}: {head} ({rec.color})"
 
@@ -159,7 +168,8 @@ def recommendation_body(rec: Recommendation) -> str:
         lines += [
             f"Odporúčanie: {rec.decision} – semafor {rec.color}",
             f"Trasa: {ch.get('route', '')}",
-            f"Odchod: {_t(ch.get('depart'))}   Príchod: {_t(ch.get('arrival_p50'))} (90 % do {_t(ch.get('arrival_p90'))})",
+            f"Odchod: {'po uvoľnení vjazdu do cieľa' if ch.get('until_entry') else _t(ch.get('depart'))}   "
+            f"Príchod: {_t(ch.get('arrival_p50'))} (90 % do {_t(ch.get('arrival_p90'))})",
             f"P(včas): {ch.get('p_on_time', 0):.0%}   P(zadržania pred výlukou): {ch.get('p_hold', 0):.0%}",
             f"Očakávaný náklad: {eur(ch.get('expected_cost', 0))} (vzorové sadzby, ak nie sú nastavené vlastné)",
         ]
@@ -245,9 +255,7 @@ def recommendation_body(rec: Recommendation) -> str:
 def sms_text(rec: Recommendation) -> str:
     train = rec.train
     ch = rec.chosen or {}
-    txt = f"AGENT {rec.priority}: vlak {train.number if train else '?'} {rec.decision}"
-    if ch.get("depart") and rec.decision not in ("ESKALOVAŤ", "POKRAČOVAŤ"):
-        txt += f" {_t(ch['depart'])}"
+    txt = f"AGENT {rec.priority}: vlak {train.number if train else '?'} {_decision_head(rec)}"
     crew = rec.crew or {}
     if crew.get("status") in ("ORANŽOVÁ", "ČERVENÁ"):
         if crew.get("unknown_start"):

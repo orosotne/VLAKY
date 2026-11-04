@@ -22,16 +22,19 @@ from vlaky.planovanie import planovac
 
 
 class _Clock:
-    """Skutočný čas začiatku prepočtu pod kontrolou testu: každé volanie o 1 s neskôr (aj z iného vlákna)."""
+    """Skutočný čas (začiatok prepočtu, „teraz“ pri ukladaní) pod kontrolou testu: každé volanie o 1 s neskôr (aj
+    z iného vlákna); ``calls`` – vrátené časy v poradí volaní."""
 
     def __init__(self, monkeypatch):
         self.t = datetime(2026, 11, 4, 10, 0, tzinfo=timezone.utc)
+        self.calls: list = []
         self.lock = threading.Lock()
         monkeypatch.setattr(planovac, "_wall_clock", self, raising=False)
 
     def __call__(self) -> datetime:
         with self.lock:
             self.t += timedelta(seconds=1)
+            self.calls.append(self.t)
             return self.t
 
 
@@ -106,7 +109,8 @@ def test_qu2_starsi_prepocet_sa_po_novsom_neulozi(cfg, fixed_now, monkeypatch):
     assert a_id == out["b"][0]
     assert rows[0][4].get("eval_started") == out["b"][1] == (datetime(2026, 11, 4, 10, 0, 2, tzinfo=timezone.utc)
                                                             .isoformat())
-    assert clock.t == datetime(2026, 11, 4, 10, 0, 2, tzinfo=timezone.utc)   # A začal (1 s) pred B (2 s)
+    # A začal (1 s) pred B (2 s); A pri ukladaní (3 s) zistil, že B je novší
+    assert clock.calls[:2] == [datetime(2026, 11, 4, 10, 0, s, tzinfo=timezone.utc) for s in (1, 2)], clock.calls
 
 
 def test_qu2_novsi_prepocet_po_starsom_nahradi(cfg, fixed_now, monkeypatch):
@@ -197,6 +201,7 @@ def test_qu2_zaznam_o_chybe_sa_riadi_poradim(cfg, fixed_now, monkeypatch):
     clock.t = base                                  # … ako prepočet všetkých vlakov, ktorý pri vlaku zlyhal
 
     def broken(session, train_id, now=None, trigger=""):
+        clock.t = max(clock.t, base + timedelta(minutes=15))  # výpočet trval, kým B začal a uložil (zlyhal až potom)
         raise RuntimeError("FIKTÍVNA chyba výpočtu")
 
     monkeypatch.setattr(planovac, "evaluate_train", broken)

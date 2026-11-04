@@ -2056,6 +2056,21 @@ def _day_text(day: Any) -> str:
         return str(day or "?")
 
 
+class PendingNote(str):
+    """Dôvod čakajúcej udalosti z e-mailu pre plánovač (text) s údajmi o udalosti: ``kind`` – druh udalosti
+    (napr. ``trasa_zrusena``, ``trasa_zmena``), ``event_id`` a ``fleet`` – udalosť bez známeho miesta (bez dopravne
+    aj trate) sa môže týkať ktoréhokoľvek vlaku. Je to obyčajný text (str) – kto údaje nepotrebuje, nič nemení."""
+
+    kind: str = ""
+    event_id: Optional[int] = None
+    fleet: bool = False
+
+    def __new__(cls, text: str, kind: str = "", event_id: Optional[int] = None, fleet: bool = False):
+        obj = super().__new__(cls, text)
+        obj.kind, obj.event_id, obj.fleet = kind, event_id, fleet
+        return obj
+
+
 def pending_uncertainty(session: Session, train: Train, route: Any = None, paths: Iterable[Any] = (),
                         window: Optional[tuple] = None) -> list[str]:
     """Dôvody, prečo vlak nesmie byť ZELENÝ pre čakajúce udalosti z e-mailov, s ktorými plánovač nevie počítať.
@@ -2084,7 +2099,8 @@ def pending_uncertainty_routes(session: Session, train: Any, routes: dict, paths
     objednávky), jedným dotazom do databázy. Plánovač posudzuje ZELENÚ pri trase, ktorú odporúča (aj obchádzke).
 
     Vracia (dôvody k pridelenej trase vlaku – nezávisia od trasy v sieti, {názov trasy: dôvody k úsekom na tejto
-    trase}). Chyba pri zisťovaní nesmie dať ZELENÚ – každá trasa dostane všeobecný dôvod."""
+    trase}); dôvody sú :class:`PendingNote` (druh a číslo udalosti, ``fleet`` – udalosť bez známeho miesta, môže sa
+    týkať ktoréhokoľvek vlaku). Chyba pri zisťovaní nesmie dať ZELENÚ – každá trasa dostane všeobecný dôvod."""
     try:
         return _pending_uncertainty(session, train, routes, paths, window)
     except Exception as exc:  # noqa: BLE001 – plánovanie nesmie zastaviť, ale ani dať ZELENÚ naslepo
@@ -2148,9 +2164,10 @@ def _pending_uncertainty(session: Session, train: Any, routes: dict, paths: Iter
                 continue
             what = ("pridelená trasa ŽSR nemusí platiť" if ev.kind == "trasa_zrusena"
                     else "časy pridelenej trasy sa môžu zmeniť")
-            path_notes.append(f"{label.capitalize()} vlaku {number} na deň {_day_text(d.get('date'))} z e-mailu čaká "
-                              f"na potvrdenie dispečerom (udalosť #{ev.id}) – {what}; kým ju dispečer nepotvrdí alebo "
-                              "nezamietne, vlak nemôže byť ZELENÝ.")
+            path_notes.append(PendingNote(
+                f"{label.capitalize()} vlaku {number} na deň {_day_text(d.get('date'))} z e-mailu čaká na "
+                f"potvrdenie dispečerom (udalosť #{ev.id}) – {what}; kým ju dispečer nepotvrdí alebo nezamietne, "
+                "vlak nemôže byť ZELENÝ.", kind=ev.kind, event_id=ev.id))
             continue
         start, end = parse_utc(d.get("start")), parse_utc(d.get("end"))
         if window and ((start is not None and start > window[1]) or (end is not None and end < window[0])):
@@ -2158,9 +2175,10 @@ def _pending_uncertainty(session: Session, train: Any, routes: dict, paths: Iter
         a, b = d.get("from_station"), d.get("to_station")
         if a or b:
             sec = f"{a or b} – {b or a}"
-            note = (f"{label.capitalize()} {sec} z e-mailu čaká na potvrdenie (udalosť #{ev.id}) a plánovač s ňou "
-                    f"nevie počítať ({why}) – overte ju vo fronte na potvrdenie; kým sa to nevyrieši, vlak nemôže "
-                    "byť ZELENÝ.")
+            note = PendingNote(
+                f"{label.capitalize()} {sec} z e-mailu čaká na potvrdenie (udalosť #{ev.id}) a plánovač s ňou "
+                f"nevie počítať ({why}) – overte ju vo fronte na potvrdenie; kým sa to nevyrieši, vlak nemôže "
+                "byť ZELENÝ.", kind=ev.kind, event_id=ev.id)
             for name, route in routes.items():
                 if route is not None:
                     if name not in covers:
@@ -2171,12 +2189,14 @@ def _pending_uncertainty(session: Session, train: Any, routes: dict, paths: Iter
             continue
         # miesto sa nepodarilo prečítať (žiadna dopravňa, napr. len „trať 180 v km 212,4“): s číslom trate sa týka
         # vlaku, ktorého trasa touto traťou vedie, inak každého vlaku v jej období – nesmie ostať neviditeľná
+        # (bez trate je to poistka pre celý vozový park – ``fleet``: dispečer o udalosti dostane jedno upozornenie)
         line = norm_line_ref(str(d.get("line_ref") or ""))
         where = f"trať {line}, " if line else ""
         who = (f"vlak ide po trati {line} – " if line else "môže sa týkať ktoréhokoľvek vlaku – ")
-        note = (f"{label.capitalize()} z e-mailu ({where}{_term_text(start, end)}; udalosť #{ev.id}) čaká na "
-                f"potvrdenie a plánovač s ňou nevie počítať – miesto sa nepodarilo prečítať – overte vo fronte; "
-                f"{who}kým sa to nevyrieši, vlak nemôže byť ZELENÝ.")
+        note = PendingNote(
+            f"{label.capitalize()} z e-mailu ({where}{_term_text(start, end)}; udalosť #{ev.id}) čaká na "
+            f"potvrdenie a plánovač s ňou nevie počítať – miesto sa nepodarilo prečítať – overte vo fronte; "
+            f"{who}kým sa to nevyrieši, vlak nemôže byť ZELENÝ.", kind=ev.kind, event_id=ev.id, fleet=not line)
         for name, route in routes.items():
             if line and route is not None:
                 if name not in lines:
