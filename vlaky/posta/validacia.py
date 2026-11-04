@@ -451,7 +451,7 @@ def validate_event(session: Session, kind: str, data: dict, *, confidence: float
         if data.get("train_number") and run_day:
             tr = find_train(session, data["train_number"], run_day.isoformat())
             if tr is None:
-                res.warnings.append(f"Vlak {data['train_number']} dňa {run_day.isoformat()} zatiaľ nie je v systéme.")
+                res.warnings.append(f"Vlak {data['train_number']} dňa {run_day:%d.%m.%Y} zatiaľ nie je v systéme.")
             else:
                 res.train_id = tr.id
     if kind == "avizo":

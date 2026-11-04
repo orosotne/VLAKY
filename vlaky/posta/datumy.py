@@ -755,6 +755,9 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
                 and (0 <= wa.start - t.end <= 40 or 0 <= t.start - wb.end <= 40)]
         if not near:
             continue
+        # pôvodný deň presunu či dátum vydania („dňa 24.11.2026 (namiesto 23.11.2026) od 08:00 do 14:00“) okno
+        # nedostane, ak je pri okne aj deň termínu
+        near = [t for t in near if not not_term_date(folded, t)] or near
         d = min(near, key=lambda t: min(abs(wa.start - t.end), abs(t.start - wb.end)))
         out.append(_token_period(d, wa, wb, min(d.start, wa.start), max(d.end, wb.end)))
         # zoznam dní pri okne („8:00 – 14:00 v dňoch 12.11. a 13.11.2026“, „12.11., 13.11. v čase 8:00 – 14:00“)
@@ -805,6 +808,28 @@ def _labelled_periods(folded: str, toks: list[Temporal], used: set[int]) -> list
             used.update((i, j))
             break
     return out
+
+
+def time_windows(folded: str, toks: list[Temporal], start: int, end: int) -> list[tuple[Temporal, Temporal]]:
+    """Časové okná bez dňa v časti textu ``start:end`` („v čase od 10:00 do 14:00“, „10:00 – 14:00 hod.“): dvojice
+    časov za sebou s „do“, „–“ medzi nimi."""
+    out: list[tuple[Temporal, Temporal]] = []
+    inside = [t for t in toks if start <= t.start < end]
+    i = 0
+    while i + 1 < len(inside):
+        a, b = inside[i], inside[i + 1]
+        gap = folded[a.end:b.start]
+        if a.kind == "time" and b.kind == "time" and len(gap) <= 14 and _TO_GAP.match(gap):
+            out.append((a, b))
+            i += 2
+            continue
+        i += 1
+    return out
+
+
+def night_window_day(day: date, night: bool, tm: time) -> date:
+    """Deň okna ``tm`` dňa ``day``: pri noci („v noci z 12. na 13.11.“) okno po polnoci patrí k druhému dňu noci."""
+    return day + timedelta(days=1) if night and tm.hour < 12 else day
 
 
 def first_datetime_after(folded: str, toks: list[Temporal], pos: int, max_chars: int = 120,
