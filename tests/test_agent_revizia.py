@@ -285,4 +285,4 @@ def test_denna_sprava_obsahuje_stav_schranky(cfg, fixed_now):
         n = s.scalar(select(Notification).where(Notification.subject.contains("Denná správa")))
     assert n is not None
     assert "e-maily za 24 h" in n.body and "udalosti čakajúce na potvrdenie" in n.body
-    assert "posledný stav čítania schránky: ok" in n.body
+    assert "posledný stav čítania schránky: v poriadku" in n.body

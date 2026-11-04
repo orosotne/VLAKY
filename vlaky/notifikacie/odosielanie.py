@@ -46,7 +46,7 @@ from ..audit import audit
 from ..cas import ensure_utc, fmt, now_utc
 from ..config import settings
 from ..models import Closure, Email, Notification, Recommendation
-from .texty import recommendation_body, recommendation_subject, sms_text
+from .texty import count, recommendation_body, recommendation_subject, sms_text
 
 SENT_STATES = ("odoslana", "outbox")
 CONNECT_TIMEOUT_S = 10  # spojenie so serverom správ (SMTP, Graph, Teams, SMS brána) – nedostupný nezdrží agenta
@@ -620,12 +620,14 @@ def send_digest(session: Session, since: datetime, only: set | None = None) -> l
         lines += [f"  - {r.summary}" for r in recs]
         lines.append("")
     if queue["total"]:
-        lines.append(f"Čaká na potvrdenie dispečerom: {queue['total']} udalostí z e-mailov "
+        lines.append(f"Čaká na potvrdenie dispečerom: "
+                     f"{count(queue['total'], 'udalosť', 'udalosti', 'udalostí')} z e-mailov "
                      f"({settings().public_url.rstrip('/')}/fronta)")
         if queue["auto"]:
             lines.append(f"  - z toho zapísané automaticky – overte: {queue['auto']}")
     if quarantined:
-        lines.append(f"V karanténe (nepovolený alebo neoverený odosielateľ): {len(quarantined)} e-mailov")
+        lines.append(f"V karanténe (nepovolený alebo neoverený odosielateľ): "
+                     f"{count(len(quarantined), 'e-mail', 'e-maily', 'e-mailov')}")
         lines += [f"  - {e.sender}: {e.subject}" for e in quarantined[:10]]
     body = "\n".join(lines)
     return send_internal(session, "suhrn", "[AGENT][INFO] Súhrn", body, "INFO",

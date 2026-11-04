@@ -157,7 +157,7 @@ def test_zlyhane_potvrdenie_sa_pocita_vo_fronte_suhrne_aj_odovzdavke(session, fi
     assert pending_queue_count(session) == 1
     assert any("Na potvrdenie čaká 1 udalosť" in a["text"] for a in alerts(session, fixed_now))
     sent = send_digest(session, fixed_now - timedelta(hours=2))
-    assert sent and all("Čaká na potvrdenie dispečerom: 1 udalostí" in n.body for n in sent if n.channel == "email")
+    assert sent and all("Čaká na potvrdenie dispečerom: 1 udalosť" in n.body for n in sent if n.channel == "email")
     content, data = build_report(session, fixed_now)
     assert data["waiting"] == 1 and "Nepotvrdené udalosti z e-mailov: 1" in content
 

@@ -45,6 +45,12 @@ def hours(value) -> str:
         return str(value if value is not None else "")
 
 
+def count(n: int, one: str, few: str, many: str) -> str:
+    """Počet s tvarom podstatného mena po slovensky: „1 udalosť“, „3 udalosti“, „5 udalostí“ (aj „0 udalostí“)."""
+    n = int(n or 0)
+    return f"{n} {one if n == 1 else few if 2 <= n <= 4 else many}"
+
+
 def number(value) -> str:
     """Číslo po slovensky: tisíce oddelené medzerou, desatinná čiarka, celé číslo bez desatinných miest („1 500“,
     „12,5“) – napr. hmotnosť a dĺžka vlaku v koncepte objednávky trasy."""

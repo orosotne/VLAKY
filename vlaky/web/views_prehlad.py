@@ -366,8 +366,12 @@ def _next_steps(rec: Recommendation, color: Optional[str] = None) -> list:
         steps.append("Pripraviť výmenu rušňovodiča (vystriedať najneskôr v uvedenom čase).")
     if rec.decision == "ODSTAVIŤ":
         steps.append("Zabezpečiť odstavnú koľaj a uvoľniť rušňovodiča.")
+    if rec.decision == "POČKAŤ" and chosen.get("until_entry"):
+        # idúci vlak pred zatvoreným cieľom: čaká pred vjazdom, kým sa neuvoľní (bez času odchodu)
+        steps.append("Počkať pred vjazdom do cieľa, kým sa neuvoľní vjazd; rušňovodiča vystriedať podľa limitu 13 h.")
     if rec.decision in ("POČKAŤ", "ODSTAVIŤ", "PRESMEROVAŤ", "ESKALOVAŤ"):
         steps.append("Informovať zákazníka o novom predpokladanom príchode.")
+    running = rec.train is not None and rec.train.status == "v_jazde"
     if rec.decision == "POKRAČOVAŤ":
         # idúci vlak sa nevypravuje – pri vlaku v cieli (aj len podľa plánu) treba ukončiť jazdu, resp. overiť polohu
         if chosen.get("v_cieli") and chosen.get("prichod_v_cieli"):
@@ -377,6 +381,10 @@ def _next_steps(rec: Recommendation, color: Optional[str] = None) -> list:
                          "„ukončený“).")
         if color == "ORANŽOVÁ":
             steps.append("ORANŽOVÁ: vlak je v jazde – preveriť dôvody nižšie (poloha, rušňovodič, výluky na trase).")
+    elif color == "ORANŽOVÁ" and running:
+        # idúci vlak sa nevypravuje (POČKAŤ pred cieľom, odstavenie či odklon počas jazdy)
+        steps.append("ORANŽOVÁ: vlak je v jazde – odporúčanie vykonať až po výslovnom potvrdení dispečera "
+                     "(zvážiť dôvody nižšie).")
     elif color == "ORANŽOVÁ":
         steps.append("ORANŽOVÁ: vypraviť len po výslovnom potvrdení dispečera (zvážiť dôvody nižšie).")
     return steps

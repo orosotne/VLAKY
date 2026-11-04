@@ -709,7 +709,7 @@ def test_ms6_fronta_rovnaka_v_suhrne_odovzdavke_dennej_sprave_aj_na_webe(cfg, fi
         sent = send_digest(s, fixed_now - timedelta(hours=2))
         content, data = build_report(s, fixed_now)
         digests = [n.body for n in sent if n.channel == "email"]
-    assert digests and all("Čaká na potvrdenie dispečerom: 3 udalostí" in b for b in digests), digests
+    assert digests and all("Čaká na potvrdenie dispečerom: 3 udalosti" in b for b in digests), digests
     assert all("z toho zapísané automaticky – overte: 1" in b for b in digests)
     assert data["waiting"] == 3 and "Nepotvrdené udalosti z e-mailov: 3" in content
     assert "z toho zapísané automaticky – overte: 1" in content

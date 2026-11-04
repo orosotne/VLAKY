@@ -361,6 +361,10 @@ def _order_failed(oid: int, exc: Exception) -> bool:
         return False
 
 
+# stav posledného čítania schránky v dennej správe po slovensky (v databáze sú kódy ok/warn/error)
+_MAIL_STATUS = {"ok": "v poriadku", "warn": "upozornenie", "error": "chyba"}
+
+
 def _periodic(now: datetime, summary: dict) -> None:
     """Súhrn, odovzdávka, denná správa a uchovávanie – každá úloha vo vlastnej transakcii: chyba jednej nezastaví
     ostatné a denná správa už vidí, čo sa v tomto cykle doručilo. Správa je vybavená, až keď prišla každému
@@ -428,7 +432,7 @@ def _periodic(now: datetime, summary: dict) -> None:
                 if delivered_to_all(s, f"daily:{dkey}"):
                     set_kv(s, "daily_report", {"date": dkey})
                 return
-            from .zdravie import health_status
+            from .zdravie import detail_lines, health_status
 
             ok, detail = health_status(ignore_keys=(f"daily:{dkey}",))  # vlastný zlyhaný pokus sa nepočíta
             borders = s.scalar(select(BorderCrossing.id).limit(1)) is not None
@@ -447,8 +451,9 @@ def _periodic(now: datetime, summary: dict) -> None:
             failed = s.scalar(select(func.count(Notification.id)).where(Notification.created_at >= day_ago,
                                                                         Notification.status == "chyba")) or 0
             body = "\n".join([f"Denná správa Agenta dispečera ({dkey})", "",
-                              *(f"{k}: {v}" for k, v in detail.items()),
-                              f"posledný stav čítania schránky: {last_mail.status if last_mail else 'neznámy'}",
+                              *detail_lines(detail),
+                              f"posledný stav čítania schránky: "
+                              f"{_MAIL_STATUS.get(last_mail.status, last_mail.status) if last_mail else 'neznámy'}",
                               f"e-maily za 24 h: {mails} (v karanténe {quarantined})",
                               f"udalosti čakajúce na potvrdenie: {queue['total']}"
                               + (f" (z toho zapísané automaticky – overte: {queue['auto']})" if queue["auto"] else ""),
