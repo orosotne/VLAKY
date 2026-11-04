@@ -326,6 +326,8 @@ def _stem_eq(station_tok: str, text_tok: str) -> bool:
             break
         k += 1
     need = len(station_tok) - 1 if len(station_tok) <= 6 else len(station_tok) - 2
+    if k >= 4 and k >= len(station_tok) - 2 and _FLEETING.match(text_tok) and len(text_tok) - k <= 2:
+        return True                       # vypadávajúca samohláska v 2. páde množného čísla („Vrútky“ → „do Vrútok“)
     return k >= max(3, need) and len(text_tok) - k <= 4
 
 
@@ -337,7 +339,7 @@ _FLEETING = re.compile(r"^(.*[^aeiouy])(?:ie|e|o)([kcnlr])$")      # Ružomberok
 
 def _stems(tok: str) -> set:
     out: set = set()
-    if tok.endswith("ian") and len(tok) > 6:
+    if tok.endswith("ian") and len(tok) >= 6:
         out.add(tok[:-3] + "an")          # 2. pád množného čísla „Kraľovian“ (Kraľovany), „Šurian“ (Šurany)
     for e in _ENDINGS:
         if not tok.endswith(e) or len(tok) - len(e) < 3:

@@ -541,8 +541,9 @@ def _merge(folded: str, toks: list[Temporal]) -> list[Temporal]:
 
 def _list_item_after_window(folded: str, out: list[Temporal], toks: list[Temporal], i: int, gap: str) -> bool:
     """„12.11.2026 od 8:00 do 14:00, 13.11.2026 od 9:00 do 15:00“: čas ``toks[i]`` uzatvára okno a dátum za
-    čiarkou (bodkočiarkou) má vlastný čas – je to ďalší deň zoznamu, nie koniec obdobia „do 14:00 13.11.2026“."""
-    if not re.search(r"[,;]", gap):
+    čiarkou (bodkočiarkou, bodkou – „… do 14:00 h. Dňa 13.11.2026 od 9:00 …“) má vlastný čas – je to ďalší deň
+    zoznamu, nie koniec obdobia „do 14:00 13.11.2026“."""
+    if not (re.search(r"[,;.]", gap) or folded[toks[i].start:toks[i].end].endswith(".")):
         return False
     prev = out[-1] if out else None
     nxt = toks[i + 2] if i + 2 < len(toks) else None
