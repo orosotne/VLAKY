@@ -34,7 +34,7 @@ def _zmeny(page: str) -> dict:
     """Riadky tabuľky Zmeny: meno rušňovodiča → bunky (text) [vlak, nástup, limit, zostáva, vystriedať, stav, …]."""
     part = page.split('id="h-zmeny"')[1].split("</table>")[0]
     out = {}
-    for m in re.finditer(r'<tr class="crew-row crew-row-[a-z]+">\s*<td><strong>([^<]+)</strong></td>(.*?)</tr>',
+    for m in re.finditer(r'<tr class="crew-row crew-row-[a-z]+"[^>]*>\s*<td><strong>([^<]+)</strong></td>(.*?)</tr>',
                          part, re.S):
         out[m.group(1)] = [_text(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", m.group(2), re.S)]
     return out
@@ -86,7 +86,7 @@ def test_vystriedat_najneskor_nie_je_cas_noveho_rusnovodica_po_odstaveni(client,
     assert "koniec P90" not in row[3]                                # koniec P90 nového rušňovodiča tu nepatrí
     # červená farba nového rušňovodiča nepatrí rušňovodičovi v službe (má 12 h rezervu)
     page = client.get("/rusnovodici").text
-    assert re.search(r'<tr class="crew-row crew-row-zelena">\s*<td><strong>Rušňovodič 6', page)
+    assert re.search(r'<tr class="crew-row crew-row-zelena"[^>]*>\s*<td><strong>Rušňovodič 6', page)
 
 
 def test_vystriedanie_ukazuje_vlastny_limit_aj_pri_odporucani_s_novym_rusnovodicom(client, cfg, fixed_now):
@@ -218,7 +218,7 @@ def test_starsia_zmena_s_buducim_nastupom_neukazuje_odpocet_nad_13_h(client, cfg
     page = client.get("/rusnovodici").text
     row = _zmeny(page)["Rušňovodič 5 (fiktívny)"]
     assert "nástup je v budúcnosti – opravte čas nástupu" in row[3]
-    raw = re.search(r'<tr class="crew-row[^"]*">\s*<td><strong>Rušňovodič 5 \(fiktívny\)</strong>(.*?)</tr>',
+    raw = re.search(r'<tr class="crew-row[^"]*"[^>]*>\s*<td><strong>Rušňovodič 5 \(fiktívny\)</strong>(.*?)</tr>',
                     page.split('id="h-zmeny"')[1], re.S).group(1)
     assert "15 h" not in row[3] and "data-countdown" not in raw and 'crew-row-oranzova' in page
     assert f"odhad: vystriedať najneskôr o {relieve}" in row[4]

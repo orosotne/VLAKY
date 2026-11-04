@@ -62,7 +62,8 @@
       <tr class="crew-row crew-row-{{ 'cervena' if r.crew.get('status') == 'ČERVENÁ' else 'oranzova' }}">
         <td><a href="/vlaky/{{ r.train.id }}">{{ r.train.number }}</a></td>
         <td>{{ r.train.origin }} → {{ r.train.destination }}</td>
-        <td class="small">{{ r.text }}</td>
+        <td class="small">{{ r.text }}{% if r.future_shift %}{% set fs = r.future_shift %}
+          <div class="crew crew-oranzova">Zmena „prebieha“ rušňovodiča {{ fs.driver.name if fs.driver else "?" }} má nástup v budúcnosti ({{ fs.start_utc|t }}) – agent ju za nástup neberie. Ak vlak vedie {{ fs.driver.name if fs.driver else "tento rušňovodič" }}, <a href="#zmena-{{ fs.id }}">opravte čas nástupu v zmene</a>; ak iný rušňovodič, zadajte jeho nástup (zmena s budúcim nástupom sa ukončí).</div>{% endif %}</td>
         {% if user.can("crew") %}
         <td class="actions-cell">
           <details class="mini">
@@ -94,7 +95,7 @@
     <tbody>
     {% for r in rows %}
       {% set sh = r.sh %}
-      <tr class="crew-row crew-row-{{ r.color }}">
+      <tr class="crew-row crew-row-{{ r.color }}" id="zmena-{{ sh.id }}">
         <td><strong>{{ sh.driver.name if sh.driver else "?" }}</strong></td>
         <td>{% if r.train %}<a href="/vlaky/{{ r.train.id }}">{{ r.train.number }}</a>{% else %}—{% endif %}</td>
         <td class="nowrap">{{ sh.start_utc|t }}</td>

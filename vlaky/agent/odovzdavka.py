@@ -122,6 +122,17 @@ def _crew_now(session: Session, train: Train, rec, now: datetime, p, near_min: f
                       f"{_minutes(left)}{who}"), note
 
 
+def _stale_advice(fresh: dict) -> str:
+    """Čo robiť, keď údaje agenta nie sú čerstvé – podľa dôvodu (zdravie.data_freshness „codes“). Výpadok (agent
+    nebeží, schránka sa nekontroluje) odkáže na kapitolu 12; samotné dočítavanie nahromadenej pošty nie je výpadok –
+    agent beží, len kým poštu nedočíta, nie je nič ZELENÉ."""
+    if fresh.get("outage", True):
+        return "Pred rozhodnutím overte stav – agent nebeží alebo nečíta schránku (príručka, kapitola 12)."
+    return ("Agent beží a dočítava nahromadenú poštu – kým ju nedočíta, nie je nič ZELENÉ a výluky z ešte "
+            "neprečítaných e-mailov nemusia byť zapísané; po dočítaní vlaky prepočíta. Pred rozhodnutím overte stav "
+            "(ak dočítavanie trvá dlho, pozri Zdravie agenta).")
+
+
 def build_report(session: Session, now: datetime | None = None, hours: int = 12) -> tuple:
     from ..config import settings
     from ..planovanie.planovac import current_params
@@ -137,8 +148,7 @@ def build_report(session: Session, now: datetime | None = None, hours: int = 12)
     lines = [f"ODOVZDÁVKA SLUŽBY – {fmt(now)}", ""]
     if fresh["stale"]:
         lines += [f"POZOR: {fresh['text']} Semafor a časy vlakov platia k času posledného prepočtu (uvedený pri "
-                  f"vlaku); vlaky so ZELENOU sú uvedené ako ORANŽOVÉ. Pred rozhodnutím overte stav – agent nebeží "
-                  f"alebo nečíta schránku (príručka, kapitola 12).", ""]
+                  f"vlaku); vlaky so ZELENOU sú uvedené ako ORANŽOVÉ. {_stale_advice(fresh)}", ""]
     data: dict = {"trains": [], "waiting": 0, "quarantined": 0, "closures_new": 0, "stale": fresh["stale"],
                   "data_note": fresh["text"]}
     red, orange, exceeded, near = [], [], [], []

@@ -23,7 +23,7 @@ from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, LOCO_SYSTE
 from .data import (closure_edges, closure_spans, crew_matches_shift, current_shifts, data_freshness,
                    latest_recommendations)
 from .prepocet import evaluate_all_bg, evaluate_train_bg, evaluate_train_now
-from .rusnovodic import driver_link, revoke_driver_links, token_version
+from .rusnovodic import driver_link, end_future_running, revoke_driver_links, token_version
 
 router = APIRouter()
 view = require("view")
@@ -859,7 +859,11 @@ def drivers_page(request: Request, navrh: int = 0, user=Depends(view)):
             info = dict(rec.crew or {}) if rec is not None else {}
             if not info.get("unknown_start"):
                 info = {"unknown_start": True, "max_duty_h": round(params["crew_max_duty_min"] / 60.0, 1)}
-            crew_missing.append({"train": t, "crew": info, "text": crew_relief_text(info)})
+            # zmena „prebieha“ s nástupom v budúcnosti (starší chybný záznam) zakrýva nástup – dispečer musí vedieť,
+            # či opraviť jej čas, alebo zadať nástup iného rušňovodiča (zmena sa potom ukončí)
+            sh = current.get(t.id)
+            future = sh if sh is not None and sh.status == "prebieha" and ensure_utc(sh.start_utc) > now else None
+            crew_missing.append({"train": t, "crew": info, "text": crew_relief_text(info), "future_shift": future})
         if proposal and crew_missing:
             # návrh nasadenia rieši len vlaky pred odchodom – nesmie tvrdiť, že vlaky bez rušňovodiča nie sú
             proposal = dict(proposal)
@@ -947,27 +951,62 @@ def _read_shift(reader: FormReader, s, notes: Optional[list] = None) -> dict:
             "start_utc": start, "planned_end_utc": planned_end, "status": status}
 
 
+def _replace_future_running(s, sh: DriverShift, actor: str) -> str:
+    """Vlak dostal nástup, s ktorým plánovač počíta (zmena ``sh`` „prebieha“ alebo naplánovaná s nástupom najneskôr
+    teraz): ostatné zmeny vlaku „prebieha“ s nástupom v budúcnosti (starší chybný záznam) sa ukončia – inak by zakryli
+    zadaný nástup (plánovač, stránka aj strážnik berú zo zmien „prebieha“ tú s najneskorším nástupom) a vlak by ostal
+    bez záznamu o nástupe, len s odhadom (rusnovodic.end_future_running). Vráti text pre dispečera alebo ""."""
+    now = now_utc()
+    if not sh.train_id or sh.status not in ("planovana", "prebieha") or ensure_utc(sh.start_utc) > now:
+        return ""
+    ended = end_future_running(s, sh.train_id, now, actor,
+                               f"nástup v budúcnosti – nahradila ju zmena #{sh.id} so zadaným nástupom", keep_id=sh.id)
+    if not ended:
+        return ""
+    if len(ended) == 1:
+        name = ended[0].driver.name if ended[0].driver else "?"
+        return (f"Zmena rušňovodiča {name} „prebieha“ s nástupom v budúcnosti ({fmt(ended[0].start_utc)}) je "
+                f"ukončená – inak by agent zadaný nástup nebral do úvahy (počítal by len s odhadom). Ak má {name} "
+                f"vlak prevziať neskôr, naplánujte mu zmenu.")
+    names = ", ".join(f"{x.driver.name if x.driver else '?'} ({fmt(x.start_utc)})" for x in ended[:3])
+    return (f"Zmeny „prebieha“ s nástupom v budúcnosti ({names}) sú ukončené – inak by agent zadaný nástup nebral "
+            f"do úvahy (počítal by len s odhadom). Ak má niektorý z rušňovodičov vlak prevziať neskôr, naplánujte mu "
+            f"zmenu.")
+
+
 def _running_elsewhere(s, sh: DriverShift) -> str:
-    """Upozornenie, ak má rušňovodič okrem tejto zmeny aj inú zmenu, ktorá prebieha (napr. na inom vlaku) – jeden
-    rušňovodič nemôže viesť dva vlaky naraz; zabudnutá zmena by strážila nesprávny limit. Spoločný rušňovodič
-    „neznámy (nástup z mobilu)“ sa nekontroluje (má zmeny viacerých vlakov)."""
+    """Upozornenia k zmene, ktorá prebieha:
+
+    - rušňovodič má okrem nej aj inú zmenu, ktorá prebieha (napr. na inom vlaku) – jeden rušňovodič nemôže viesť dva
+      vlaky naraz; zabudnutá zmena by strážila nesprávny limit (spoločný rušňovodič „neznámy (nástup z mobilu)“ sa
+      tu nekontroluje – má zmeny viacerých vlakov);
+    - na tom istom vlaku prebieha aj zmena iného rušňovodiča – vystriedanie zadané na webe ju neukončí (na rozdiel od
+      nástupu z odkazu rušňovodiča) a strážnik by ďalej strážil limit rušňovodiča, ktorý vlak už možno nevedie."""
     from ..planovanie.planovac import MOBILE_DRIVER
 
     if sh.status != "prebieha" or not sh.driver_id:
         return ""
+    out = []
     driver = s.get(Driver, sh.driver_id)
-    if driver is None or driver.name == MOBILE_DRIVER:
-        return ""
-    others = list(s.scalars(select(DriverShift).where(DriverShift.driver_id == sh.driver_id,
-                                                      DriverShift.status == "prebieha", DriverShift.id != sh.id)
-                            .order_by(DriverShift.start_utc)))
-    if not others:
-        return ""
-    numbers = {t.id: t.number for t in s.scalars(select(Train).where(
-        Train.id.in_({o.train_id for o in others if o.train_id})))}
-    where = ", ".join(f"vlak {numbers.get(o.train_id, '?')}" if o.train_id else "bez vlaku" for o in others[:3])
-    return (f"Pozor: rušňovodič {driver.name} má aj inú zmenu, ktorá prebieha ({where}, nástup "
-            f"{fmt(others[0].start_utc)}) – ak ju už nevedie, ukončite ju.")
+    others = [] if driver is None or driver.name == MOBILE_DRIVER else list(s.scalars(
+        select(DriverShift).where(DriverShift.driver_id == sh.driver_id, DriverShift.status == "prebieha",
+                                  DriverShift.id != sh.id).order_by(DriverShift.start_utc)))
+    if others:
+        numbers = {t.id: t.number for t in s.scalars(select(Train).where(
+            Train.id.in_({o.train_id for o in others if o.train_id})))}
+        where = ", ".join(f"vlak {numbers.get(o.train_id, '?')}" if o.train_id else "bez vlaku" for o in others[:3])
+        out.append(f"Pozor: rušňovodič {driver.name} má aj inú zmenu, ktorá prebieha ({where}, nástup "
+                   f"{fmt(others[0].start_utc)}) – ak ju už nevedie, ukončite ju.")
+    mates = [] if not sh.train_id else list(s.scalars(
+        select(DriverShift).options(selectinload(DriverShift.driver))
+        .where(DriverShift.train_id == sh.train_id, DriverShift.status == "prebieha", DriverShift.id != sh.id,
+               DriverShift.driver_id != sh.driver_id).order_by(DriverShift.start_utc)))
+    if mates:
+        train = s.get(Train, sh.train_id)
+        names = ", ".join(f"{m.driver.name if m.driver else '?'} (nástup {fmt(m.start_utc)})" for m in mates[:3])
+        out.append(f"Pozor: na vlaku {train.number if train else '?'} prebieha aj zmena rušňovodiča {names} – ak vlak "
+                   f"už nevedie (vystriedanie), ukončite ju.")
+    return " ".join(out)
 
 
 @router.post("/zmeny/nova")
@@ -983,12 +1022,12 @@ def shift_create(request: Request, background: BackgroundTasks, user=Depends(cre
         s.flush()
         audit(s, user.username, "shift_create", "driver_shift", sh.id,
               **{k: (iso(v) if hasattr(v, "tzinfo") else v) for k, v in values.items()})
-        warning = _running_elsewhere(s, sh)
+        warnings = [x for x in (_replace_future_running(s, sh, user.username), _running_elsewhere(s, sh)) if x]
         tid = sh.train_id
     if tid and request.app.state.auto_evaluate:
         background.add_task(evaluate_train_bg, tid, "nová zmena rušňovodiča")
-    return redirect("/rusnovodici#zmeny", " ".join(["Zmena uložená."] + notes + ([warning] if warning else [])),
-                    "varovanie" if warning else "ok")
+    return redirect("/rusnovodici#zmeny", " ".join(["Zmena uložená."] + notes + warnings),
+                    "varovanie" if warnings else "ok")
 
 
 @router.post("/zmeny/z-navrhu")
@@ -1041,13 +1080,13 @@ def shift_update(shift_id: int, request: Request, background: BackgroundTasks, u
             setattr(sh, k, v)
         if changes:
             audit(s, user.username, "shift_update", "driver_shift", sh.id, changes=changes)
-        warning = _running_elsewhere(s, sh) if changes else ""
+        warnings = [x for x in (_replace_future_running(s, sh, user.username), _running_elsewhere(s, sh)) if x] \
+            if changes else []
         tid = sh.train_id
     if changes and tid and request.app.state.auto_evaluate:
         background.add_task(evaluate_train_bg, tid, "úprava zmeny rušňovodiča")
-    text = " ".join(["Zmena uložená." if changes else "Bez zmien."] + (notes if changes else [])
-                    + ([warning] if warning else []))
-    return redirect("/rusnovodici#zmeny", text, "varovanie" if warning else "ok")
+    text = " ".join(["Zmena uložená." if changes else "Bez zmien."] + (notes if changes else []) + warnings)
+    return redirect("/rusnovodici#zmeny", text, "varovanie" if warnings else "ok")
 
 
 @router.post("/zmeny/{shift_id}/nastup")
@@ -1062,12 +1101,12 @@ def shift_start(shift_id: int, request: Request, background: BackgroundTasks, us
         old = sh.start_utc
         sh.start_utc, sh.status = now_utc(), "prebieha"
         audit(s, user.username, "shift_start", "driver_shift", sh.id, previous_start=old, start=sh.start_utc)
-        warning = _running_elsewhere(s, sh)
+        warnings = [x for x in (_replace_future_running(s, sh, user.username), _running_elsewhere(s, sh)) if x]
         tid = sh.train_id
     if tid and request.app.state.auto_evaluate:
         background.add_task(evaluate_train_bg, tid, "nástup rušňovodiča")
-    text = "Nástup zaznamenaný – limit pracovného času beží od teraz."
-    return redirect("/rusnovodici#zmeny", f"{text} {warning}" if warning else text, "varovanie" if warning else "ok")
+    text = " ".join(["Nástup zaznamenaný – limit pracovného času beží od teraz."] + warnings)
+    return redirect("/rusnovodici#zmeny", text, "varovanie" if warnings else "ok")
 
 
 @router.post("/zmeny/{shift_id}/ukoncit")

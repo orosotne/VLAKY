@@ -61,9 +61,9 @@ def crew_alerts(session: Session, now: datetime, errors: list | None = None) -> 
     sent = sum(_isolated(session, errors, f"zmena rušňovodiča #{sh.id}",
                          lambda sh=sh: _crew_alert(session, now, sh, p, thresholds)) for sh in shifts)
     return sent + sum(_isolated(session, errors, f"odhad pracovného času, vlak {t.number}",
-                                lambda t=t, a=start, b=limit, crew=crew:
-                                _estimate_alert(session, now, t, a, b, crew, p, thresholds))
-                      for t, start, limit, crew in estimates)
+                                lambda t=t, a=start, b=limit, crew=crew, sh=sh:
+                                _estimate_alert(session, now, t, a, b, crew, p, thresholds, sh))
+                      for t, start, limit, crew, sh in estimates)
 
 
 def _duty_h(p) -> str:
@@ -80,7 +80,8 @@ def _iso(value) -> datetime | None:
 
 def _unknown_start_trains(session: Session, now: datetime) -> list:
     """Idúce vlaky bez známeho nástupu rušňovodiča (zmena podľa plánovača – prebiehajúca, inak tá, ktorá je na rade –
-    nemá nástup najneskôr teraz) s odhadom plánovača v poslednom odporúčaní: [(vlak, nástup, limit, crew)]."""
+    nemá nástup najneskôr teraz) s odhadom plánovača v poslednom odporúčaní: [(vlak, nástup, limit, crew, zmena)]
+    (zmena = tá, ktorú plánovač vybral, alebo None)."""
     from ..models import Recommendation
     from ..planovanie.planovac import active_shift
 
@@ -94,13 +95,16 @@ def _unknown_start_trains(session: Session, now: datetime) -> list:
         crew = (rec.crew or {}) if rec is not None else {}
         start, limit = _iso(crew.get("start")), _iso(crew.get("limit"))
         if crew.get("unknown_start") and start is not None and limit is not None:
-            out.append((t, start, limit, crew))
+            out.append((t, start, limit, crew, sh))
     return out
 
 
 def _estimate_alert(session: Session, now: datetime, train: Train, start: datetime, limit: datetime, crew: dict,
-                    p, thresholds: list) -> int:
-    """Upozornenie podľa odhadu plánovača pri idúcom vlaku bez zaznamenaného nástupu – vždy ako ODHAD, nie fakt."""
+                    p, thresholds: list, shift: DriverShift | None = None) -> int:
+    """Upozornenie podľa odhadu plánovača pri idúcom vlaku bez zaznamenaného nástupu – vždy ako ODHAD, nie fakt.
+
+    Ak nástup zakrýva zmena „prebieha“ s nástupom v budúcnosti (starší chybný záznam), správa to povie – dispečer
+    opraví jej čas, alebo zadá nástup rušňovodiča, ktorý vlak vedie (zmena s budúcim nástupom sa tým ukončí)."""
     left = (limit - now).total_seconds() / 60.0
     duty_h = _duty_h(p)
     if left <= 0:
@@ -116,12 +120,18 @@ def _estimate_alert(session: Session, now: datetime, train: Train, start: dateti
     name = crew.get("driver") or "neznámy (chýba záznam o nástupe)"
     relieve_by = limit - timedelta(minutes=p.crew_post_min)
     subject = f"[AGENT][{priority}] Rušňovodič {name} (vlak {train.number}): {head}"
+    future = ""
+    if shift is not None and shift.status == "prebieha" and ensure_utc(shift.start_utc) > now:
+        who = shift.driver.name if shift.driver else f"#{shift.driver_id}"
+        future = (f"\nZmena „prebieha“ rušňovodiča {who} má nástup v budúcnosti ({fmt(shift.start_utc)}) – agent ju "
+                  f"za nástup neberie. Ak vlak vedie {who}, opravte čas nástupu v zmene; ak iný rušňovodič, zadajte "
+                  f"jeho nástup (zmena s budúcim nástupom sa ukončí).")
     body = (f"Rušňovodič: {name}\nVlak: vlak {train.number} ({train.origin} → {train.destination})\n"
             f"Nástup rušňovodiča nie je zadaný – limit {duty_h} h je len ODHAD plánovača (nástup = odchod vlaku "
             f"mínus príprava): nástup {fmt(start)}, limit {fmt(limit)}.\n"
             f"Odhad: vystriedať najneskôr o {fmt(relieve_by)} (vrátane {p.crew_post_min:.0f} min na odovzdanie rušňa)."
             f"\n\nZadajte skutočný nástup rušňovodiča (Rušňovodiči → Vlaky v jazde bez záznamu o nástupe rušňovodiča)."
-            f"\nAgent dispečer iba upozorňuje. Výmenu rušňovodiča zabezpečí dispečer.\n"
+            f"{future}\nAgent dispečer iba upozorňuje. Výmenu rušňovodiča zabezpečí dispečer.\n"
             f"Detail: {settings().public_url.rstrip('/')}/rusnovodici")
     key = f"crew:odhad:{train.id}:{start.strftime('%Y%m%d%H%M')}:{level}"
     out = send_internal(session, "upozornenie", subject, body, priority, dedup_key=key)
