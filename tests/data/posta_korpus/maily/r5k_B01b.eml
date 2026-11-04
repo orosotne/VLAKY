@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.40]) by
+ mx.dopravca.example with ESMTPS; Mon, 16 Nov 2026 14:30:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: Zmena ROV =?utf-8?b?xI0u?= 4220/2026
+Date: Mon, 16 Nov 2026 14:30:00 +0100
+Message-ID: <r5c-b01b-30@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Výluka Bratislava-Rača – Pezinok podľa ROV č. 4220/2026 sa presúva z 19.11.2026 na 20.11.2026, čas výluky ostáva bez zmeny (8:00 – 14:00).
+
+OR Bratislava

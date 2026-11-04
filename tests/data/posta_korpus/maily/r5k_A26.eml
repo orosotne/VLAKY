@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.36]) by
+ mx.dopravca.example with ESMTPS; Thu, 03 Dec 2026 09:20:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 4230/2026 =?utf-8?q?Bratislava-Ra=C4=8Da_=E2=80=93_Pezinok_?=
+ =?utf-8?q?=E2=80=93_=C5=A0enkvice?=
+Date: Thu, 03 Dec 2026 09:20:00 +0100
+Message-ID: <r5c-a26-26@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Výluka oboch TK v úseku Bratislava-Rača – Pezinok – Šenkvice dňa 12.12.2026 od 8:00 do 16:00 hod.

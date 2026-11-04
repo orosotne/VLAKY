@@ -1,0 +1,24 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=agro.zakaznik.example; dkim=pass
+ header.d=agro.zakaznik.example; dmarc=pass header.from=agro.zakaznik.example
+Received: from mail.agro.zakaznik.example (mail.agro.zakaznik.example
+ [192.0.2.104]) by mx.dopravca.example with ESMTPS; Tue, 24 Nov 2026 14:30:00
+ +0100
+From: Agro export =?utf-8?b?4oCT?= doprava <doprava@agro.zakaznik.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Objedn=C3=A1vka_=E2=80=93_obilie_Bratislava-Petr=C5=BEalk?=
+ =?utf-8?q?a_=E2=86=92_=C4=8Cierna?= nad Tisou
+Date: Tue, 24 Nov 2026 14:30:00 +0100
+Message-ID: <r5c-h02-94@agro.zakaznik.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<html><body><p>Dobrý deň, objednávame prepravu:</p><table border="1">
+<tr><td>Odosielacia stanica:</td><td>Bratislava-Petržalka</td></tr>
+<tr><td>Cieľová stanica:</td><td>Čierna nad Tisou</td></tr>
+<tr><td>Tovar:</td><td>pšenica, voľne ložená</td></tr>
+<tr><td>Počet vozňov:</td><td>20 (Tadns)</td></tr>
+<tr><td>Požadovaný odchod:</td><td>05.12.2026 10:00</td></tr>
+<tr><td>Dodanie do:</td><td>07.12.2026 12:00</td></tr>
+</table><p>Ďakujeme.</p></body></html>

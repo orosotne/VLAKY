@@ -1,0 +1,19 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.17]) by
+ mx.dopravca.example with ESMTPS; Thu, 19 Nov 2026 14:10:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkw==?= energetika
+ <energetika@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?TmFww6TFpW92w6EgdsO9bHVrYSBUViBTcGnFoXNrw6EgTm92w6EgVmVz?=
+ =?utf-8?q?_=E2=80=93?= Poprad-Tatry 26.11.2026
+Date: Thu, 19 Nov 2026 14:10:00 +0100
+Message-ID: <r5c-a07-7@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dňa 26.11.2026 od 9:00 do 13:00 hod. bude napäťová výluka trakčného vedenia oboch traťových koľají v úseku Spišská Nová Ves – Poprad-Tatry (ROV 5233/2026). Vlaky s motorovou trakciou môžu úsekom prechádzať, vlaky elektrickej trakcie nie.
+
+Výlukové pracovisko OR Košice

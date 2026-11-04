@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.59]) by
+ mx.dopravca.example with ESMTPS; Fri, 27 Nov 2026 09:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_pl=C3=A1novanie_v=C3=BDluk?=
+ <vyluky@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 3360/2026 =?utf-8?b?4oCTIHbDvWx1a3k=?= na trati 116
+Date: Fri, 27 Nov 2026 09:00:00 +0100
+Message-ID: <r5c-c04a-49@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dňa 09.12.2026 od 7:00 do 13:00 hod. budú úplné výluky v úsekoch Trnava – Senica a Senica – Kúty (ROV 3360/2026).

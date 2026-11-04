@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.127]) by
+ mx.dopravca.example with ESMTPS; Tue, 01 Dec 2026 10:40:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5550/2026 Kysak =?utf-8?b?4oCTIFByZcWhb3Y=?=
+Date: Tue, 01 Dec 2026 10:40:00 +0100
+Message-ID: <r5c-l05-117@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka v úseku Kysak (mimo) – Prešov (mimo) dňa 09.12.2026 od 8:00 do 14:00 hod. (ROV 5550/2026).

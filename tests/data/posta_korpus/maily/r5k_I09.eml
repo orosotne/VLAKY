@@ -1,0 +1,46 @@
+Authentication-Results: mx.dopravca.example; spf=pass smtp.mailfrom=mx.dopravca.example; dkim=pass header.d=mx.dopravca.example; dmarc=pass header.from=mx.dopravca.example
+From: Mail Delivery System <mailer-daemon@mx.dopravca.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?TmVkb3J1xI1pdGXEvm7DoSBzcHLDoXZhOiBEb3RheiBrIFJPViDEjS4gNDEwNS8y?=
+ =?utf-8?b?MDI2?=
+Date: Sat, 21 Nov 2026 11:00:00 +0100
+Message-ID: <r5c-i09-103@mx.dopravca.example>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status; boundary="=_r5report_103"
+
+This is a MIME-encapsulated message.
+
+--=_r5report_103
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+U3Byw6F2dSBzYSBuZXBvZGFyaWxvIGRvcnXEjWnFpSBuYXNsZWR1asO6Y2ltIGFkcmVzw6F0b206
+Cgp2eWx1a3lAb3JiYS56c3IuZXhhbXBsZSDigJMgc2NocsOhbmthIGplIHBsbsOhLgo=
+
+--=_r5report_103
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; mx.dopravca.example
+
+Final-Recipient: rfc822; vyluky@orba.zsr.example
+Action: failed
+Status: 5.2.2
+
+--=_r5report_103
+Content-Type: message/rfc822
+
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=dopravca.example; dkim=pass header.d=dopravca.example;
+ dmarc=pass header.from=dopravca.example
+From: Agent =?utf-8?q?dispe=C4=8Der?= <agent.dispecing@dopravca.example>
+To: vyluky@orba.zsr.example
+Subject: Dotaz k ROV =?utf-8?b?xI0u?= 4105/2026
+Date: Sat, 21 Nov 2026 10:58:00 +0100
+Message-ID: <agent-q-1@dopravca.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Dobrý deň, potvrďte prosím termín výluky Galanta – Šaľa 18.11.2026 od 07:30 do 15:30.
+
+--=_r5report_103--

@@ -1,0 +1,21 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=hu.partner.example; dkim=pass header.d=hu.partner.example;
+ dmarc=pass header.from=hu.partner.example
+Received: from mail.hu.partner.example (mail.hu.partner.example [192.0.2.102])
+ by mx.dopravca.example with ESMTPS; Sun, 22 Nov 2026 10:05:00 +0100
+From: "RCH dispatching (fictitious)" <dispatch@hu.partner.example>
+To: agent.dispecing@dopravca.example
+Subject: Train 47460 =?utf-8?q?=E2=80=93_arrival_notice_Kom=C3=A1rom/Kom?=
+ =?utf-8?q?=C3=A1rno?=
+Date: Sun, 22 Nov 2026 10:05:00 +0100
+Message-ID: <r5c-g03-92@hu.partner.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dear colleagues,
+
+train 47460 (empty wagons, 30 Eanos) is expected to arrive at Komárno border station on 22.11.2026 at 14:20.
+
+Best regards
+RCH dispatching

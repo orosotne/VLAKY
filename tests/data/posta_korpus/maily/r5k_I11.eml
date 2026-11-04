@@ -1,0 +1,15 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=zsr.example; dkim=pass header.d=zsr.example; dmarc=pass
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.115]) by
+ mx.dopravca.example with ESMTPS; Mon, 23 Nov 2026 09:00:00 +0100
+From: =?utf-8?b?xb1TUiDigJM=?= Sekcia GVD <gvd@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Konzult=C3=A1cie_k_n=C3=A1vrhu?= GVD 2027/2028
+Date: Mon, 23 Nov 2026 09:00:00 +0100
+Message-ID: <r5c-i11-105@zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Konzultácie k návrhu GVD 2027/2028 sa uskutočnia 09.12.2026 od 9:00 do 15:00 v Bratislave. Pripomienky k obmedzeniam kapacity (výluky) v úseku Bratislava-Rača – Trnava zasielajte do 30.11.2026.

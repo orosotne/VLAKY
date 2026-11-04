@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=cz.partner.example; dkim=pass header.d=cz.partner.example;
+ dmarc=pass header.from=cz.partner.example
+Received: from mail.cz.partner.example (mail.cz.partner.example [192.0.2.100])
+ by mx.dopravca.example with ESMTPS; Fri, 20 Nov 2026 09:40:00 +0100
+From: =?utf-8?b?RGlzcGXEjWluayDigJMgQ2FyZ28gQ1ogKGZpa3Rpdm7DrSk=?=
+ <dispecink@cz.partner.example>
+To: agent.dispecing@dopravca.example
+Subject: Aktualizace =?utf-8?q?av=C3=ADza_=E2=80=93?= vlak Nex 46220
+Date: Fri, 20 Nov 2026 09:40:00 +0100
+Message-ID: <r5c-g04-90@cz.partner.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Aktualizace: vlak Nex 46220 – nový předpokládaný příjezd do Kút 20.11.2026 ve 12:30 (původně 10:45). Zdržení na hranici v Břeclavi.

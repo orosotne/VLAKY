@@ -1,0 +1,25 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=zsr.example; dkim=pass header.d=zsr.example; dmarc=pass
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.109]) by
+ mx.dopravca.example with ESMTPS; Thu, 19 Nov 2026 07:00:00 +0100
+From: =?utf-8?q?=C5=BDSR?= Spravodaj <newsletter@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?=C5=BDSR?= Spravodaj 11/2026
+Date: Thu, 19 Nov 2026 07:00:00 +0100
+Message-ID: <r5c-i04-99@zsr.example>
+MIME-Version: 1.0
+List-Unsubscribe: <mailto:newsletter-off@zsr.example>
+Precedence: bulk
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+ŽSR Spravodaj 11/2026
+
+Modernizácia pokračuje
+V decembri pokračujú práce v úseku Kysak – Prešov (ROV 5211/2026), výluky budú v dňoch 7.12. až 11.12.2026 vždy od 8:00 do 14:00 hod.
+
+Personálne zmeny
+Na OR Košice nastúpil nový vedúci oddelenia výluk.
+
+Odhlásiť odber: newsletter-off@zsr.example

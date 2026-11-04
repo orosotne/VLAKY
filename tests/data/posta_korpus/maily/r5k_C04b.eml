@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.60]) by
+ mx.dopravca.example with ESMTPS; Thu, 03 Dec 2026 14:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_pl=C3=A1novanie_v=C3=BDluk?=
+ <vyluky@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 3360/2026 =?utf-8?b?4oCTIMSNaWFzdG/EjW7DqSB6cnXFoWVuaWU=?=
+Date: Thu, 03 Dec 2026 14:00:00 +0100
+Message-ID: <r5c-c04b-50@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Výluka v úseku Senica – Kúty dňa 09.12.2026 sa ruší. Výluka v úseku Trnava – Senica sa uskutoční podľa ROV 3360/2026.

@@ -1,0 +1,15 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.83]) by
+ mx.dopravca.example with ESMTPS; Sat, 28 Nov 2026 08:50:00 +0100
+From: KD OR Trnava <kd@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?VHJlbsSNw61uIOKAkyBOZW3FoW92w6Eg4oCT?= obnovenie dopravy
+Date: Sat, 28 Nov 2026 08:50:00 +0100
+Message-ID: <r5c-e02b-73@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úsek Trenčín – Nemšová je od 08:40 hod. opäť zjazdný, strom bol odstránený a trakčné vedenie je pod napätím.

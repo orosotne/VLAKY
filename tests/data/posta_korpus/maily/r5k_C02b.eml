@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.56]) by
+ mx.dopravca.example with ESMTPS; Fri, 20 Nov 2026 08:45:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 4411/2026 =?utf-8?q?=E2=80=93_zru=C5=A1enie?= jednej noci
+Date: Fri, 20 Nov 2026 08:45:00 +0100
+Message-ID: <r5c-c02b-46@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Ruší sa výluka v noci 24./25.11.2026. Výluky v ostatných nociach sa uskutočnia podľa ROV 4411/2026.

@@ -1,0 +1,22 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=partner.example; dkim=pass (2048-bit key)
+ header.d=partner.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT
+ dis=NONE) header.from=partner.example
+Received: from mail.partner.example (mail.partner.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Tue, 03 Nov 2026 18:00:00 +0100
+From:
+ =?utf-8?q?Dispe=C4=8Dink_=E2=80=93?= Partner CZ <dispecink@partner.example>
+To: agent.dispecing@dopravca.example
+Subject: Avizace vlaku 47812 =?utf-8?q?=E2=80=93_PPS_K=C3=BAty?=
+Date: Tue, 03 Nov 2026 18:00:00 +0100
+Message-ID: <r4-g02.fiktivne@partner.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Dobrý večer,
+
+avizujeme vlak č. 47812 (prázdné vozy Sgnss, 20 ks) z Břeclavi.
+Předpokládaný příjezd do PPS Kúty: 04.11.2026 ve 22:05 hod.
+
+Dispečink partnera

@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.85]) by
+ mx.dopravca.example with ESMTPS; Mon, 30 Nov 2026 06:30:00 +0100
+From: =?utf-8?b?S29udHJvbG7DoSBkaXNwZcSNZXJza8OhIHNsdcW+YmEgT1IgS2/FoWlj?=
+ =?utf-8?q?e?= <kd@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: MU =?utf-8?b?4oCTIMW+c3QuIFBsZcWhaXZlYw==?=
+Date: Mon, 30 Nov 2026 06:30:00 +0100
+Message-ID: <r5c-e04a-75@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Od 06:20 hod. je v žst. Plešivec porucha staničného zabezpečovacieho zariadenia, stanica je neprejazdná. Predpokladaný koniec nie je známy.

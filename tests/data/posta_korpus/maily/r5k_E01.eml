@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.81]) by
+ mx.dopravca.example with ESMTPS; Fri, 27 Nov 2026 06:10:00 +0100
+From: KD OR Zvolen <kd@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: MU =?utf-8?b?4oCTIHZ5a2/EvmFqZW5pZSB2IMW+c3QuIEx1xI1lbmVj?=
+Date: Fri, 27 Nov 2026 06:10:00 +0100
+Message-ID: <r5c-e01-71@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dňa 27.11.2026 o 05:40 hod. došlo v žst. Lučenec k vykoľajeniu nákladného vozňa na koľaji č. 3. Stanica je neprejazdná. Predpokladané obnovenie prevádzky 27.11.2026 o 14:00 hod.
+Pre cestujúcich je zabezpečená NAD v úseku Lučenec – Fiľakovo.
+
+KD OR Zvolen

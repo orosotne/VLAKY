@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orza.zsr.example; dkim=pass header.d=orza.zsr.example;
+ dmarc=pass header.from=orza.zsr.example
+Received: from mail.orza.zsr.example (mail.orza.zsr.example [192.0.2.58]) by
+ mx.dopravca.example with ESMTPS; Thu, 26 Nov 2026 10:15:00 +0100
+From: =?utf-8?b?xb1TUiBPUiDFvWlsaW5hIOKAkyByaWFkZW5pZSBwcmV2w6Fkemt5?=
+ <vyluky@orza.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 2971/2026 =?utf-8?b?4oCTIG7DoWhyYWRuw70gdGVybcOtbg==?=
+Date: Thu, 26 Nov 2026 10:15:00 +0100
+Message-ID: <r5c-c03b-48@orza.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Výluka Žilina – Rajec plánovaná na 01.12.2026 sa ruší a nahrádza sa náhradným termínom 03.12.2026 v rovnakom čase (08:00 – 14:00).

@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.68]) by
+ mx.dopravca.example with ESMTPS; Mon, 07 Dec 2026 09:10:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5340/2026 =?utf-8?b?4oCTIMO6cHJhdmEgdGVybcOtbm92?=
+Date: Mon, 07 Dec 2026 09:10:00 +0100
+Message-ID: <r5c-c08b-58@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Termín 15.12.2026 sa ruší. Výluka sa doplňuje o termín 17.12.2026 od 8:00 do 14:00 hod. Ostatné termíny platia bez zmeny.

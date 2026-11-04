@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.79]) by
+ mx.dopravca.example with ESMTPS; Tue, 24 Nov 2026 09:00:00 +0100
+From:
+ =?utf-8?q?=C5=BDSR_OR_Zvolen_=E2=80=93_v=C3=BDluky?= <vyluky@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 6130/2026 Zvolen =?utf-8?b?4oCT?= Krupina
+Date: Tue, 24 Nov 2026 09:00:00 +0100
+Message-ID: <rov-6130-2026@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka Zvolen osobná stanica – Krupina dňa 04.12.2026 od 8:00 do 15:00 hod. (ROV 6130/2026).

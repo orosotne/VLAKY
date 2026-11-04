@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.43]) by
+ mx.dopravca.example with ESMTPS; Fri, 20 Nov 2026 10:30:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5302/2026 Lipany =?utf-8?b?4oCTIFBsYXZlxI0=?=
+Date: Fri, 20 Nov 2026 10:30:00 +0100
+Message-ID: <r5c-b03a-33@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka v úseku Lipany – Plaveč dňa 02.12.2026 od 08:00 do 14:00 hod. podľa ROV 5302/2026.

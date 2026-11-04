@@ -1,0 +1,25 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=zsr.example; dkim=pass header.d=zsr.example; dmarc=pass
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.96]) by
+ mx.dopravca.example with ESMTPS; Wed, 18 Nov 2026 15:00:00 +0100
+From:
+ KIS =?utf-8?b?xb1TUiDigJMgYXV0b21hdGlja8OhIHNwcsOhdmE=?= <kis@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: KIS =?utf-8?q?=E2=80=93_zru=C5=A1enie_trasy_vlaku_Pn_62015_na_de?=
+ =?utf-8?q?=C5=88?= 20.11.2026
+Date: Wed, 18 Nov 2026 15:00:00 +0100
+Message-ID: <r5c-f03-86@zsr.example>
+MIME-Version: 1.0
+Auto-Submitted: auto-generated
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Systém: KIS – Komplexný informačný systém
+Typ správy: Zrušenie trasy
+ID trasy: KIS-2026-512015
+Vlak: Pn 62015
+Deň jazdy: 20.11.2026
+Dôvod zrušenia: na žiadosť dopravcu
+
+Trasa vlaku Pn 62015 na deň 20.11.2026 bola zrušená.

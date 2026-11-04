@@ -1,0 +1,29 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=zsr.example; dkim=pass header.d=zsr.example; dmarc=pass
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.94]) by
+ mx.dopravca.example with ESMTPS; Mon, 16 Nov 2026 11:00:00 +0100
+From:
+ KIS =?utf-8?b?xb1TUiDigJMgYXV0b21hdGlja8OhIHNwcsOhdmE=?= <kis@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: KIS =?utf-8?q?=E2=80=93_pridelenie_trasy_vlaku_Nex_62014_na_de?=
+ =?utf-8?q?=C5=88?= 19.11.2026
+Date: Mon, 16 Nov 2026 11:00:00 +0100
+Message-ID: <r5c-f01-84@zsr.example>
+MIME-Version: 1.0
+Auto-Submitted: auto-generated
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Systém: KIS – Komplexný informačný systém
+Typ správy: Pridelenie trasy
+ID trasy: KIS-2026-512014
+Vlak: Nex 62014
+Deň jazdy: 19.11.2026
+Relácia: Košice – Čierna nad Tisou
+
+Dopravňa                 Príchod   Odchod
+Košice                      –       05:40
+Slanec                    06:05     06:06
+Michaľany                 06:21     06:30
+Čierna nad Tisou          07:12       –

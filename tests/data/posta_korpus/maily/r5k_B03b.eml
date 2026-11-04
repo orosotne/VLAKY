@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.44]) by
+ mx.dopravca.example with ESMTPS; Fri, 27 Nov 2026 12:00:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5302/2026 =?utf-8?b?4oCTIHptZW5hIHphxI1pYXRrdSB2w71sdWt5?=
+Date: Fri, 27 Nov 2026 12:00:00 +0100
+Message-ID: <r5c-b03b-34@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Výluka Lipany – Plaveč dňa 02.12.2026 začne až o 10:00 hod., koniec výluky o 14:00 hod. sa nemení.

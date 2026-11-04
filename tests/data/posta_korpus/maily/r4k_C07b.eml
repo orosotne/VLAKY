@@ -1,0 +1,24 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Fri, 13 Nov 2026 12:00:00 +0100
+From:
+ =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWt5?= <vyluky.orke@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: Storno =?utf-8?b?dsO9bHVreSBST1YgxI0u?= 1340/2026
+Date: Fri, 13 Nov 2026 12:00:00 +0100
+Message-ID: <r4-c07b.fiktivne@zsr.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Vážení,
+
+ROV č. 1340/2026 (úplná výluka Spišská Nová Ves – Margecany v noci z 21. na 22.11.2026) sa z dôvodu
+nepriaznivého počasia nekoná. Náhradný termín oznámime.
+
+S pozdravom
+OR Košice – prevádzkový odbor, skupina výluk
+(FIKTÍVNE)

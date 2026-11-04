@@ -1,0 +1,23 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=zsr.example; dkim=pass header.d=zsr.example; dmarc=pass
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.32]) by
+ mx.dopravca.example with ESMTPS; Fri, 27 Nov 2026 06:30:00 +0100
+From: KIS =?utf-8?b?xb1TUiDigJMgdsO9bHVreQ==?= <kis-vyluky@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: KIS =?utf-8?b?4oCTIG96bsOhbWVuaWUgbyB2w71sdWvDoWNoLA==?= trate 190 a
+ 191
+Date: Fri, 27 Nov 2026 06:30:00 +0100
+Message-ID: <r5c-a22-22@zsr.example>
+MIME-Version: 1.0
+Auto-Submitted: auto-generated
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Typ správy: Oznámenie o výlukách
+
+Číslo ROV	Úsek	Od	Do	Koľaj	Druh
+5270/2026	Michaľany – Čierna nad Tisou	05.12.2026 06:00	05.12.2026 14:00	1	výluka koľaje
+5271/2026	Strážske – Humenné	06.12.2026 07:00	06.12.2026 12:00	-	úplná výluka
+
+Správa bola vygenerovaná automaticky, neodpovedajte na ňu.

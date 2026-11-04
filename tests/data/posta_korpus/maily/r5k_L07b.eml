@@ -1,0 +1,15 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.130]) by
+ mx.dopravca.example with ESMTPS; Sat, 05 Dec 2026 11:50:00 +0100
+From: KD OR Zvolen <kd@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?VWtvbsSNZW5pZSBNVSDigJMgxb5zdC4gRmnEvmFrb3Zv?=
+Date: Sat, 05 Dec 2026 11:50:00 +0100
+Message-ID: <r5c-l07b-120@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Mimoriadna udalosť v žst. Fiľakovo bola ukončená o 11:40 hod. Nákladné vlaky môžu stanicou prechádzať až od 18:00 hod.

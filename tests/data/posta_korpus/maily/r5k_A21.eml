@@ -1,0 +1,51 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.31]) by
+ mx.dopravca.example with ESMTPS; Mon, 30 Nov 2026 10:10:00 +0100
+From:
+ =?utf-8?q?=C5=BDSR_OR_Zvolen_=E2=80=93_v=C3=BDluky?= <vyluky@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV =?utf-8?b?xI0uIDYwNzUvMjAyNiDigJMgQmFuc2vDoSBCeXN0cmljYSDigJM=?=
+ Brezno
+Date: Mon, 30 Nov 2026 10:10:00 +0100
+Message-ID: <r5c-a21-21@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============7675995685435615335=="
+
+--===============7675995685435615335==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň, v prílohe Vám zasielame ROV č. 6075/2026 vo formáte Word.
+OR Zvolen
+
+--===============7675995685435615335==
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="ROV_6075_2026.docx"
+MIME-Version: 1.0
+
+UEsDBBQAAAAIAFR/ZF3MVIwQ4AAAAJwBAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbH2Qy07DMBBF
+f8XyFsUTukAIJekCyhJYlA+w7Eli4Zc8bil/z6QtXaDC0r6PM7rd+hC82GMhl2Ivb1UrBUaTrItT
+L9+3z829XA/d9isjCbZG6uVca34AIDNj0KRSxsjKmErQlZ9lgqzNh54QVm17BybFirE2demQQ/eE
+o975KjYH/j5hC3qS4vFkXFi91Dl7Z3RlHfbR/qI0Z4Li5NFDs8t0wwYJVwmL8jfgnHvlHYqzKN50
+qS86sAs+U7Fgk9kFTqr/a67cmcbRGbzkl7ZckkEiHjh4dVGCdvHnfjjOPXwDUEsDBBQAAAAIAFR/
+ZF02V97cogAAABgBAAALAAAAX3JlbHMvLnJlbHONzzsOwjAMBuCrRN6pCwNCqGkXhNQVlQNEiZtG
+NA8l4XV7MjBQxMBo+/dnuekedmY3isl4x2Fd1cDISa+M0xzOw3G1g65tTjSLXBJpMiGxsuIShynn
+sEdMciIrUuUDuTIZfbQilzJqDEJehCbc1PUW46cBS5P1ikPs1RrY8Az0j+3H0Ug6eHm15PKPE1+J
+IouoKXO4+6hQvdtVYQHbBhcvti9QSwMEFAAAAAgAVH9kXawIM/OrAQAAngMAABEAAAB3b3JkL2Rv
+Y3VtZW50LnhtbJ1TPY8TMRD9KyPXx36hS5CV5EQENIcUifso0jnr4bJZr8eynQ1LRUkBFd1JFBQU
+FHRUSHfNJn+EX4J9B6IBCa1kje3x6L2Zp+fJyatGQYvWVaSnLE8yBqhLkpW+mrKL82cPHjFwXmgp
+FGmcsg4dO5lNdlxSuW1QewgA2vHdlK29NzxNXbnGRriEDOrw9pJsI3y42qt0R1YaSyU6F/AblRZZ
+NkobUWkWIVcku7ibGGwMd+jcGVEGamPRoW2RzQ43qPC1rkqEM0UtalfjBiya7UpVdXcEi5USzuv+
+C9hKyMrj/tb5lmDZkkI9SQPyLEZ7F81/kb5YLE8fL2EBl/3H5xenT2H/PoFRNj4OUxSjYZjnVhw+
+c8jHBcxFmKL/BPPOeVuVAn68+QD7d7FOh/RZLZQYRtJfO6z53wnmNuhIA5tH2/RfdWg/S/IiiSoA
+SRjzhxlIgvw4HtYkk2HwT+x2DW1/o7Z1x6H/blTU4T4hoKb9rdjgEfgoIWwwLKnpPh0KB3L231qS
+PLIEbwswJNtg/HYY2uUvvyHIw1sBxTjJ8+QfZkl/2z/987VmPwFQSwECFAMUAAAACABUf2RdzFSM
+EOAAAACcAQAAEwAAAAAAAAAAAAAAgAEAAAAAW0NvbnRlbnRfVHlwZXNdLnhtbFBLAQIUAxQAAAAI
+AFR/ZF02V97cogAAABgBAAALAAAAAAAAAAAAAACAAREBAABfcmVscy8ucmVsc1BLAQIUAxQAAAAI
+AFR/ZF2sCDPzqwEAAJ4DAAARAAAAAAAAAAAAAACAAdwBAAB3b3JkL2RvY3VtZW50LnhtbFBLBQYA
+AAAAAwADALkAAAC2AwAAAAA=
+
+--===============7675995685435615335==--

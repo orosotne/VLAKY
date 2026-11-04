@@ -1,0 +1,19 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.16]) by
+ mx.dopravca.example with ESMTPS; Mon, 16 Nov 2026 11:30:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_pl=C3=A1novanie_v=C3=BDluk?=
+ <vyluky@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Denn=C3=A9_v=C3=BDluky_2=2E_TK_Ilava_=E2=80=93_Dubnica_na?=
+ =?utf-8?q?d_V=C3=A1hom?=
+Date: Mon, 16 Nov 2026 11:30:00 +0100
+Message-ID: <r5c-a06-6@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Oznamujeme, že v pracovných dňoch od 23.11. do 27.11.2026 bude vždy od 7:45 do 15:15 hod. vylúčená 2. traťová koľaj v úseku Ilava – Dubnica nad Váhom (ROV č. 3315/2026). Doprava bude vedená po 1. TK.
+
+OR Trnava

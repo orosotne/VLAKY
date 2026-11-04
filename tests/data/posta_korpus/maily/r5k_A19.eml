@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.29]) by
+ mx.dopravca.example with ESMTPS; Sat, 28 Nov 2026 09:30:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_pl=C3=A1novanie_v=C3=BDluk?=
+ <vyluky@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?VsO9bHVrYSB2w71oeWJpZWsgxb5zdC4=?= Leopoldov
+Date: Sat, 28 Nov 2026 09:30:00 +0100
+Message-ID: <r5c-a19-19@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dňa 06.12.2026 od 07:00 do 15:00 hod. bude výluka výhybiek č. 3, 5 a 7 v žst. Leopoldov (ROV č. 3340/2026). Vlaky budú vedené po koľajach č. 1 a 2 so zníženou rýchlosťou.

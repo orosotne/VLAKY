@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orza.zsr.example; dkim=pass header.d=orza.zsr.example;
+ dmarc=pass header.from=orza.zsr.example
+Received: from mail.orza.zsr.example (mail.orza.zsr.example [192.0.2.25]) by
+ mx.dopravca.example with ESMTPS; Fri, 27 Nov 2026 13:05:00 +0100
+From: =?utf-8?b?xb1TUiBPUiDFvWlsaW5hIOKAkyByaWFkZW5pZSBwcmV2w6Fkemt5?=
+ <vyluky@orza.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 2760/2026 L. =?utf-8?b?TWlrdWzDocWhIOKAkyBMLiBIcsOhZG9r?=
+Date: Fri, 27 Nov 2026 13:05:00 +0100
+Message-ID: <r5c-a15-15@orza.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Výluka 1. TK v úseku L. Mikuláš – L. Hrádok dňa 09.12.2026 od 8:00 do 15:00 hod. Vlaky po 2. TK.
+
+OR Žilina

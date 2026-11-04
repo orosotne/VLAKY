@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.48]) by
+ mx.dopravca.example with ESMTPS; Thu, 26 Nov 2026 15:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: Doplnenie ROV 4240/2026
+Date: Thu, 26 Nov 2026 15:00:00 +0100
+Message-ID: <r5c-b05b-38@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Doplnenie ROV 4240/2026: výluka bude rozšírená aj na 2. traťovú koľaj, úsek Senec – Galanta bude dňa 30.11.2026 v čase 8:00 – 15:00 neprejazdný.

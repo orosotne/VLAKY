@@ -1,0 +1,32 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.70]) by
+ mx.dopravca.example with ESMTPS; Wed, 02 Dec 2026 11:05:00 +0100
+From: =?utf-8?q?Ing=2E_Peter_Hronec_=E2=80=93?= OR Zvolen
+ <peter.hronec@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: RE: ROV =?utf-8?q?=C4=8D=2E_6120/2026_Bansk=C3=A1_Bystrica_?=
+ =?utf-8?b?4oCT?= Brezno
+Date: Wed, 02 Dec 2026 11:05:00 +0100
+Message-ID: <r5c-d01b-60@orzv.zsr.example>
+MIME-Version: 1.0
+In-Reply-To: <rov-6120-2026@orzv.zsr.example>
+References: <rov-6120-2026@orzv.zsr.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+
+na základe požiadavky dopravcov sa výluka presúva na 10.12.2026, čas výluky ostáva 07:00 – 15:00.
+
+S pozdravom
+Ing. Peter Hronec
+OR Zvolen
+
+Od: ŽSR OR Zvolen – výluky <vyluky@orzv.zsr.example>
+Odoslané: pondelok 30. novembra 2026 10:12
+Komu: dopravcovia@zsr.example
+Predmet: ROV č. 6120/2026 Banská Bystrica – Brezno
+
+Úplná výluka v úseku Banská Bystrica – Brezno dňa 09.12.2026 od 07:00 do 15:00 hod. (ROV č. 6120/2026).

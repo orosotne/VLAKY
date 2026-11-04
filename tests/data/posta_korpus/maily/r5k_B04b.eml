@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.46]) by
+ mx.dopravca.example with ESMTPS; Tue, 01 Dec 2026 11:20:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5310/2026 =?utf-8?q?=E2=80=93_odklad_v=C3=BDluky?=
+Date: Tue, 01 Dec 2026 11:20:00 +0100
+Message-ID: <r5c-b04b-36@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Výluka podľa ROV 5310/2026 sa odkladá o týždeň, na noc 14./15.12.2026, v rovnakom čase.
+
+OR Košice

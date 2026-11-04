@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.87]) by
+ mx.dopravca.example with ESMTPS; Tue, 01 Dec 2026 07:40:00 +0100
+From: =?utf-8?b?S29udHJvbG7DoSBkaXNwZcSNZXJza8OhIHNsdcW+YmEgT1IgS2/FoWlj?=
+ =?utf-8?q?e?= <kd@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: MU =?utf-8?b?UHJlxaFvdiDigJM=?= Lipany
+Date: Tue, 01 Dec 2026 07:40:00 +0100
+Message-ID: <r5c-e05a-77@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dňa 01.12.2026 o 07:15 hod. došlo na priecestí v km 12,3 medzi stanicami Prešov a Veľký Šariš k zrážke vlaku s osobným automobilom. Doprava v úseku Prešov – Lipany je prerušená, predpoklad obnovenia o 11:00 hod.

@@ -1,0 +1,20 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.23]) by
+ mx.dopravca.example with ESMTPS; Thu, 26 Nov 2026 10:30:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_pl=C3=A1novanie_v=C3=BDluk?=
+ <vyluky@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?V=C3=BDluka_trate_116_Trnava_=E2=80=93_K=C3=BAty?=
+Date: Thu, 26 Nov 2026 10:30:00 +0100
+Message-ID: <r5c-a13-13@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+
+oznamujeme výluku trate medzi stanicami Trnava a Senica dňa 05.12.2026 od 06:30 do 14:30 hod. Úsek bude neprejazdný. (ROV č. 3330/2026)
+
+OR Trnava

@@ -1,0 +1,42 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Wed, 18 Nov 2026 08:00:00 +0100
+From:
+ =?utf-8?b?xb1TUiBPUiDFvWlsaW5hIOKAkyB2w71sdWt5?= <vyluky.orza@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 1205/2026 =?utf-8?q?=E2=80=93_v_pr=C3=ADlohe?=
+Date: Wed, 18 Nov 2026 08:00:00 +0100
+Message-ID: <r4-a16.fiktivne@zsr.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============7853590272162674298=="
+
+--===============7853590272162674298==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+
+v prílohe zasielame ROV č. 1205/2026.
+
+S pozdravom
+
+Ing. Fiktívny Výlukár
+ŽSR, Oblastné riaditeľstvo Žilina, oddelenie GVD a výluk
+tel.: +421 900 000 123
+
+--===============7853590272162674298==
+Content-Type: text/plain
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="ROV_1205_2026.txt"
+MIME-Version: 1.0
+
+Uk9aS0FaIE8gVsOdTFVLRSDEjS4gMTIwNS8yMDI2Ck9ibGFzdG7DqSByaWFkaXRlxL5zdHZvIMW9
+aWxpbmEKClRyYcWlOiAxODAgxb1pbGluYSDigJMgS2/FoWljZQrDmnNlazogTGlwdG92c2vDvSBN
+aWt1bMOhxaEg4oCTIMWgdHJiYQpLb8S+YWo6IDEuIHRyYcWlb3bDoSBrb8S+YWoKWmHEjWlhdG9r
+IHbDvWx1a3k6IDA3LjEyLjIwMjYgMDc6MDAKS29uaWVjIHbDvWx1a3k6IDA3LjEyLjIwMjYgMTY6
+MDAKRG9wcmF2YTogcG8gMi4gVEssIGplZG5va2/EvmFqbsOhIHByZXbDoWR6a2EK
+
+--===============7853590272162674298==--

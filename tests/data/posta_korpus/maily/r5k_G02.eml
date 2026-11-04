@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=cz.partner.example; dkim=pass header.d=cz.partner.example;
+ dmarc=pass header.from=cz.partner.example
+Received: from mail.cz.partner.example (mail.cz.partner.example [192.0.2.101])
+ by mx.dopravca.example with ESMTPS; Sat, 21 Nov 2026 03:50:00 +0100
+From: =?utf-8?b?RGlzcGXEjWluayDigJMgQ2FyZ28gQ1ogKGZpa3Rpdm7DrSk=?=
+ <dispecink@cz.partner.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Av=C3=ADzo_vlaku_41711_=E2=80=93_priechod_=C4=8Cadca?=
+Date: Sat, 21 Nov 2026 03:50:00 +0100
+Message-ID: <r5c-g02-91@cz.partner.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+posielame avízo: vlak 41711 (prázdne vozne Falns, 25 ks), priechod Čadca – Mosty u Jablunkova, predpokladaný príchod do Čadce 21.11.2026 o 06:15 hod.

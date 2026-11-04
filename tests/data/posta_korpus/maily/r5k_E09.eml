@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.92]) by
+ mx.dopravca.example with ESMTPS; Fri, 04 Dec 2026 06:45:00 +0100
+From: =?utf-8?b?S29udHJvbG7DoSBkaXNwZcSNZXJza8OhIHNsdcW+YmEgT1IgS2/FoWlj?=
+ =?utf-8?q?e?= <kd@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?WsOha2F6IGphemR5IHZsYWtvdiBSSUQg4oCTIMW+c3QuIMSMaWVybmE=?=
+ nad Tisou
+Date: Fri, 04 Dec 2026 06:45:00 +0100
+Message-ID: <r5c-e09-82@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+V žst. Čierna nad Tisou platí dnes od 07:00 do 15:00 hod. zákaz jazdy vlakov s nebezpečným tovarom (RID) z dôvodu opravy záchytnej vane.

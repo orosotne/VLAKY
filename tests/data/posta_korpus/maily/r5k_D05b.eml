@@ -1,0 +1,23 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.76]) by
+ mx.dopravca.example with ESMTPS; Fri, 27 Nov 2026 08:30:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: Re: ROV 5360/2026 =?utf-8?b?U3BpxaFza8OhIE5vdsOhIFZlcyDigJM=?=
+ Poprad-Tatry
+Date: Fri, 27 Nov 2026 08:30:00 +0100
+Message-ID: <r5c-d05b-66@orke.zsr.example>
+MIME-Version: 1.0
+In-Reply-To: <rov-5360-2026@orke.zsr.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý deň,
+potvrdzujeme, že výluka podľa ROV 5360/2026 sa uskutoční bez zmeny.
+OR Košice
+
+Dňa st 25. 11. 2026 o 14:02 ŽSR OR Košice – výlukové pracovisko <vyluky@orke.zsr.example> napísal(a):
+> Úplná výluka Spišská Nová Ves – Poprad-Tatry dňa 03.12.2026 od 7:00 do 15:00 hod. (ROV 5360/2026).

@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orba.zsr.example; dkim=pass header.d=orba.zsr.example;
+ dmarc=pass header.from=orba.zsr.example
+Received: from mail.orba.zsr.example (mail.orba.zsr.example [192.0.2.133]) by
+ mx.dopravca.example with ESMTPS; Wed, 02 Dec 2026 12:00:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Bratislava_=E2=80=93_oddelenie_GVD_a_v=C3=BDluk?=
+ <vyluky@orba.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 4260/2026 N. =?utf-8?b?WsOhbWt5IOKAkyDFoHVyYW55?=
+Date: Wed, 02 Dec 2026 12:00:00 +0100
+Message-ID: <r5c-l09-123@orba.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka N. Zámky – Šurany dňa 11.12.2026 od 8:00 do 12:00 hod.

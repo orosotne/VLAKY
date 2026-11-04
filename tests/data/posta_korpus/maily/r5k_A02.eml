@@ -1,0 +1,27 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=ortt.zsr.example; dkim=pass header.d=ortt.zsr.example;
+ dmarc=pass header.from=ortt.zsr.example
+Received: from mail.ortt.zsr.example (mail.ortt.zsr.example [192.0.2.12]) by
+ mx.dopravca.example with ESMTPS; Thu, 12 Nov 2026 13:40:00 +0100
+From: =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_pl=C3=A1novanie_v=C3=BDluk?=
+ <vyluky@ortt.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?T3puw6FtZW5pZSDigJMgbm/EjW7DqSB2w71sdWt5IFBpZcWhxaVhbnkg?=
+ =?utf-8?q?=E2=80=93_Nov=C3=A9_Mesto_nad_V=C3=A1hom?= (ROV 3207/2026)
+Date: Thu, 12 Nov 2026 13:40:00 +0100
+Message-ID: <r5c-a02-2@ortt.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<html><head><meta charset="utf-8"></head><body>
+<p>Dobrý deň,</p>
+<p>oznamujeme Vám nasledovné výluky na trati 120 Bratislava – Žilina podľa ROV č. 3207/2026:</p>
+<table border="1" cellpadding="3">
+<tr><th>Dátum</th><th>Od</th><th>Do</th><th>Úsek</th><th>Koľaj</th><th>Druh výluky</th></tr>
+<tr><td>24.11.2026</td><td>22:00</td><td>05:00</td><td>Piešťany – Nové Mesto nad Váhom</td><td>1. a 2. TK</td><td>úplná</td></tr>
+<tr><td>25.11.2026</td><td>22:00</td><td>05:00</td><td>Piešťany – Nové Mesto nad Váhom</td><td>1. a 2. TK</td><td>úplná</td></tr>
+</table>
+<p>Výluka končí vždy nasledujúci deň o 05:00 hod. Náhradná autobusová doprava pre cestujúcich je zabezpečená.</p>
+<p>S pozdravom<br>OR Trnava, plánovanie výluk</p>
+</body></html>

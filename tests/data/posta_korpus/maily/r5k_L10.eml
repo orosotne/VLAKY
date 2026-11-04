@@ -1,0 +1,15 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orzv.zsr.example; dkim=pass header.d=orzv.zsr.example;
+ dmarc=pass header.from=orzv.zsr.example
+Received: from mail.orzv.zsr.example (mail.orzv.zsr.example [192.0.2.134]) by
+ mx.dopravca.example with ESMTPS; Sun, 06 Dec 2026 06:20:00 +0100
+From: KD OR Zvolen <kd@orzv.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: MU =?utf-8?b?4oCTIMW+c3QuIEZpxL5ha292bywgcG9ydWNoYSB2w71oeWJreQ==?=
+Date: Sun, 06 Dec 2026 06:20:00 +0100
+Message-ID: <r5c-l10-124@orzv.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Od 06:05 hod. je v žst. Fiľakovo porucha výhybky č. 4, stanica je neprejazdná. Predpokladané obnovenie prevádzky o 10:00 hod.

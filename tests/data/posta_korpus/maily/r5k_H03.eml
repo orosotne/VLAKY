@@ -1,0 +1,21 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=drevo.zakaznik.example; dkim=pass
+ header.d=drevo.zakaznik.example; dmarc=pass
+ header.from=drevo.zakaznik.example
+Received: from mail.drevo.zakaznik.example (mail.drevo.zakaznik.example
+ [192.0.2.105]) by mx.dopravca.example with ESMTPS; Wed, 25 Nov 2026 10:10:00
+ +0100
+From: =?utf-8?b?RMWZZXZvIENaIHMuci5vLiAoZmlrdGl2bsOtKQ==?=
+ <objednavky@drevo.zakaznik.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Popt=C3=A1vka/objedn=C3=A1vka_p=C5=99epravy_d=C5=99eva?=
+ Brezno =?utf-8?b?4oCTIMWgdMO6cm92bw==?=
+Date: Wed, 25 Nov 2026 10:10:00 +0100
+Message-ID: <r5c-h03-95@drevo.zakaznik.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dobrý den,
+prosíme o přepravu 24 vozů dřeva z Brezna do Štúrova. Nakládka nejdříve: 08.12.2026, dodání nejpozději: 10.12.2026.
+Děkujeme

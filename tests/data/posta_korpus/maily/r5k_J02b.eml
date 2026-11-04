@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=zsr.example; dkim=pass header.d=zsr.example; dmarc=pass
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.119]) by
+ mx.dopravca.example with ESMTPS; Tue, 24 Nov 2026 12:00:00 +0100
+From: =?utf-8?b?xb1TUiDigJMgdGxhxI1vdsOp?= oddelenie <tlacove@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?VGxhxI1vdsOhIHNwcsOhdmE6IFbDvWx1a2EgbmEgdHJhdGkgQnJh?=
+ =?utf-8?q?tislava_=E2=80=93?= Trnava
+Date: Tue, 24 Nov 2026 12:00:00 +0100
+Message-ID: <r5c-j02b-109@zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+TLAČOVÁ SPRÁVA
+
+V sobotu 28. novembra 2026 bude medzi Bratislavou-Račou a Pezinkom v čase od 7:00 do 13:00 uzavretá trať. Vlaky osobnej dopravy nahradia autobusy. Cestujúcim sa ospravedlňujeme.

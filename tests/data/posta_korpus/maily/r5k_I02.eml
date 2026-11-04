@@ -1,0 +1,18 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orza.zsr.example; dkim=pass header.d=orza.zsr.example;
+ dmarc=pass header.from=orza.zsr.example
+Received: from mail.orza.zsr.example (mail.orza.zsr.example [192.0.2.107]) by
+ mx.dopravca.example with ESMTPS; Tue, 17 Nov 2026 08:05:00 +0100
+From:
+ Peter =?utf-8?b?TXLDoXog4oCTIE9SIMW9aWxpbmE=?= <peter.mraz@orza.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?b?TmVwcsOtdG9tbm9zxaUgdiBrYW5jZWzDoXJpaTogVsO9bHVrYSDEjGFk?=
+ =?utf-8?q?ca_=E2=80=93_Kr=C3=A1sno_nad_Kysucou=2C_noci_16=2E_=E2=80=93?=
+ 19.11.2026
+Date: Tue, 17 Nov 2026 08:05:00 +0100
+Message-ID: <r5c-i02-97@orza.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Som na dovolenke od 16.11.2026 do 24.11.2026. Vo veciach výluk na trati Žilina – Čadca sa obráťte na dispečera OR Žilina.

@@ -1,0 +1,33 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zakaznik.example; dkim=pass (2048-bit key)
+ header.d=zakaznik.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT
+ dis=NONE) header.from=zakaznik.example
+Received: from mail.zakaznik.example (mail.zakaznik.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Tue, 10 Nov 2026 10:00:00 +0100
+From: =?utf-8?b?T2NlxL4g4oCT?= logistika <objednavky@zakaznik.example>
+To: agent.dispecing@dopravca.example
+Subject: =?utf-8?q?Objedn=C3=A1vka_prepravy_=C4=8D=2E_2026/131_=E2=80=93_oce?=
+ =?utf-8?b?xL5vdsOpIHp2aXRreSBIYW5pc2thIOKGkiDFoHTDunJvdm8=?=
+Date: Tue, 10 Nov 2026 10:00:00 +0100
+Message-ID: <r4-h01.fiktivne@zakaznik.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Dobrý deň,
+
+objednávame prepravu ucelenej zásielky:
+
+Objednávka prepravy č. 2026/131
+Objednávateľ: FIKTÍVNA Oceľ a.s.
+Odosielacia stanica: Haniska pri Košiciach
+Cieľová stanica: Štúrovo
+Tovar: oceľové zvitky, RID: nie
+Počet vozňov: 18
+Hmotnosť: 1 650 t
+Dĺžka vlaku: 420 m
+Pristavenie: 25.11.2026 08:00
+Termín dodania: 26.11.2026 18:00
+
+S pozdravom
+Logistika FIKTÍVNA Oceľ a.s.

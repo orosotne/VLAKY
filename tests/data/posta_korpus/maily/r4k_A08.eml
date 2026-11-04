@@ -1,0 +1,24 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=zsr.example; dkim=pass (2048-bit key)
+ header.d=zsr.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+ header.from=zsr.example
+Received: from mail.zsr.example (mail.zsr.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Thu, 10 Dec 2026 10:00:00 +0100
+From:
+ =?utf-8?q?=C5=BDSR_OR_Trnava_=E2=80=93_v=C3=BDluky?= <vyluky.ortt@zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV =?utf-8?b?xI0uIDEzMDEvMjAyNiDigJMgdsO9bHVrYSAyLiBUSyBOb3bDqSBa?=
+ =?utf-8?b?w6Fta3kg4oCTIMWgdXJhbnk=?= cez prelom roka
+Date: Thu, 10 Dec 2026 10:00:00 +0100
+Message-ID: <r4-a08.fiktivne@zsr.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Vážení,
+
+výluka 2. traťovej koľaje v úseku Nové Zámky – Šurany bude v termíne od 29.12.2026 do 02.01.2027
+denne od 09:00 do 13:00 hod. (ROV č. 1301/2026). Doprava po 1. TK.
+
+S pozdravom
+OR Trnava, oddelenie výluk

@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.45]) by
+ mx.dopravca.example with ESMTPS; Wed, 25 Nov 2026 09:15:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5310/2026 Kysak =?utf-8?b?4oCTIFByZcWhb3YsIG5vxI1uw6EgdsO9bHVr?=
+ =?utf-8?q?a?=
+Date: Wed, 25 Nov 2026 09:15:00 +0100
+Message-ID: <r5c-b04a-35@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Úplná výluka oboch traťových koľají Kysak – Prešov v noci 07./08.12.2026 od 22:00 do 04:00 hod. (ROV 5310/2026).

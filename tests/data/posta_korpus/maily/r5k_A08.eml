@@ -1,0 +1,22 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.18]) by
+ mx.dopravca.example with ESMTPS; Fri, 20 Nov 2026 09:45:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5240/2026 =?utf-8?b?4oCTIHbDvWx1a2EgZG9wcmF2bsO9Y2gga2/EvmFq?=
+ =?utf-8?b?w60gxb5zdC4gUGxlxaFpdmVj?=
+Date: Fri, 20 Nov 2026 09:45:00 +0100
+Message-ID: <r5c-a08-8@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Rozkaz o výluke č. 5240/2026
+
+V sobotu 28.11.2026 od 8:00 do 16:00 hod. bude vykonaná výluka všetkých dopravných koľají v železničnej stanici Plešivec z dôvodu rekonštrukcie zabezpečovacieho zariadenia. Stanica Plešivec bude počas výluky pre všetky vlaky neprejazdná.
+
+S pozdravom
+OR Košice

@@ -1,0 +1,17 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orke.zsr.example; dkim=pass header.d=orke.zsr.example;
+ dmarc=pass header.from=orke.zsr.example
+Received: from mail.orke.zsr.example (mail.orke.zsr.example [192.0.2.128]) by
+ mx.dopravca.example with ESMTPS; Tue, 01 Dec 2026 11:10:00 +0100
+From: =?utf-8?b?xb1TUiBPUiBLb8WhaWNlIOKAkyB2w71sdWtvdsOp?= pracovisko
+ <vyluky@orke.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 5560/2026 Margecany =?utf-8?b?4oCTIEtyb21wYWNoeSwgdsO9bHVr?=
+ =?utf-8?q?a?= TV
+Date: Tue, 01 Dec 2026 11:10:00 +0100
+Message-ID: <r5c-l06-118@orke.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Výluka TV v úseku Margecany – Krompachy dňa 08.12.2026 od 8:00 do 12:00 hod. (ROV 5560/2026). Jazda motorových vlakov nie je možná (práce na koľaji).

@@ -1,0 +1,24 @@
+Authentication-Results: mx.dopravca.example; spf=pass (sender IP is
+ 192.0.2.10) smtp.mailfrom=partner.example; dkim=pass (2048-bit key)
+ header.d=partner.example header.s=s2026; dmarc=pass (p=REJECT sp=REJECT
+ dis=NONE) header.from=partner.example
+Received: from mail.partner.example (mail.partner.example [192.0.2.10]) by
+ mx.dopravca.example with ESMTPS; Tue, 03 Nov 2026 11:00:00 +0100
+From:
+ =?utf-8?q?Dispe=C4=8Dink_=E2=80=93?= Partner CZ <dispecink@partner.example>
+To: agent.dispecing@dopravca.example
+Subject: Aktualizace =?utf-8?b?YXbDrXphIOKAkyB2bGFrIE5leCA0NzI1MCDigJMgxIxh?=
+ =?utf-8?q?dca?=
+Date: Tue, 03 Nov 2026 11:00:00 +0100
+Message-ID: <r4-g06.fiktivne@partner.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Dobrý den,
+
+aktualizace avíza: vlak Nex 47250 má zpoždění, nový předpokládaný příjezd do Čadce 03.11.2026 v 15:10 hod.
+(původně 13:35).
+
+S pozdravem
+Dispečink partnera

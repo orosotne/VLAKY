@@ -1,0 +1,16 @@
+Authentication-Results: mx.dopravca.example; spf=pass
+ smtp.mailfrom=orza.zsr.example; dkim=pass header.d=orza.zsr.example;
+ dmarc=pass header.from=orza.zsr.example
+Received: from mail.orza.zsr.example (mail.orza.zsr.example [192.0.2.132]) by
+ mx.dopravca.example with ESMTPS; Mon, 07 Dec 2026 13:00:00 +0100
+From: =?utf-8?b?xb1TUiBPUiDFvWlsaW5hIOKAkyByaWFkZW5pZSBwcmV2w6Fkemt5?=
+ <vyluky@orza.zsr.example>
+To: agent.dispecing@dopravca.example
+Subject: ROV 2810/2026 =?utf-8?b?4oCTIMSNaWFzdG/EjW7DqSB6cnXFoWVuaWU=?=
+Date: Mon, 07 Dec 2026 13:00:00 +0100
+Message-ID: <r5c-l08b-122@orza.zsr.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Ruší sa výluka v úseku Kraľovany – Ružomberok; v úseku Vrútky – Kraľovany výluka ostáva v platnosti.
