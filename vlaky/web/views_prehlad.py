@@ -188,16 +188,68 @@ def _shown(value: Any) -> str:
     return str(value)
 
 
-def _queue_items(s) -> list:
-    events = list(s.scalars(select(ExtractedEvent).where(ExtractedEvent.needs_confirmation.is_(True),
+QUEUE_PAGE = 50          # udalostí s celým formulárom na stranu fronty
+QUEUE_COMPACT_MAX = 1000  # ďalšie čakajúce udalosti v krátkom zozname (kotva #udalost-N, odkaz na celý formulár)
+
+
+def _pending_ids(s) -> list:
+    """Všetky čakajúce udalosti fronty v poradí fronty (najstaršie prvé) a potvrdené so zlyhaným zápisom."""
+    ids = list(s.scalars(select(ExtractedEvent.id).where(ExtractedEvent.needs_confirmation.is_(True),
                                                          ExtractedEvent.status == "navrh")
-                            .order_by(ExtractedEvent.created_at, ExtractedEvent.id).limit(50)))
-    events += _failed_events(s)
+                         .order_by(ExtractedEvent.created_at, ExtractedEvent.id)))
+    seen = set(ids)
+    return ids + [e.id for e in _failed_events(s, limit=500) if e.id not in seen]
+
+
+def _full_items(s, ids: list) -> list:
+    if not ids:
+        return []
+    events = {e.id: e for e in s.scalars(select(ExtractedEvent).where(ExtractedEvent.id.in_(ids)))}
+    events = [events[i] for i in ids if i in events]
     email_ids = {e.email_id for e in events if e.email_id}
     emails = {m.id: m for m in s.scalars(select(Email).options(selectinload(Email.attachments))
                                          .where(Email.id.in_(email_ids)))} if email_ids else {}
     return [{"event": e, "email": emails.get(e.email_id), "fields": event_fields(e.data or {}),
              "failed": _apply_failed(e), "register": _register_notes(s, e)} for e in events]
+
+
+def _compact_items(s, ids: list) -> list:
+    """Krátke položky ostatných čakajúcich udalostí (popis, e-mail, poznámky) – bez tela e-mailu a formulára polí."""
+    if not ids:
+        return []
+    events = {e.id: e for e in s.scalars(select(ExtractedEvent).where(ExtractedEvent.id.in_(ids)))}
+    events = [events[i] for i in ids if i in events]
+    email_ids = {e.email_id for e in events if e.email_id}
+    emails = {m.id: m for m in s.scalars(select(Email).where(Email.id.in_(email_ids)))} if email_ids else {}
+    try:
+        describe = _posta().describe_event
+    except Exception:  # noqa: BLE001 – bez modulu posta len druh a číslo
+        describe = None
+    out = []
+    for e in events:
+        val = e.validation if isinstance(e.validation, dict) else {}
+        out.append({"event": e, "email": emails.get(e.email_id), "failed": _apply_failed(e),
+                    "summary": describe(e) if describe else f"{EVENT_KIND.get(e.kind, e.kind)} (#{e.id})",
+                    "reasons": list(val.get("confirmation_reasons") or [])[:3]})
+    return out
+
+
+def _queue_items(s, strana: int = 1, udalost: Optional[int] = None) -> dict:
+    """Fronta po stranách: celé formuláre pre stranu ``strana``, udalosť ``udalost`` (odkaz z upozornenia) vždy
+    s celým formulárom navrchu a ostatné čakajúce udalosti v krátkom zozname – každá udalosť fronty je na stránke
+    (kotva #udalost-N) a dá sa potvrdiť či zamietnuť, aj keď je vo fronte viac ako jedna strana."""
+    ids = _pending_ids(s)
+    pages = max(1, -(-len(ids) // QUEUE_PAGE))
+    strana = min(max(1, strana), pages)
+    page_ids = ids[(strana - 1) * QUEUE_PAGE:strana * QUEUE_PAGE]
+    focus = udalost if udalost in ids and udalost not in page_ids else None
+    full = _full_items(s, ([focus] if focus else []) + page_ids)
+    if focus and full:
+        full[0]["focus"] = True
+    on_page = set(page_ids) | {focus}
+    rest = [i for i in ids if i not in on_page]
+    return {"items": full, "compact": _compact_items(s, rest[:QUEUE_COMPACT_MAX]), "compact_more": max(0, len(rest)
+            - QUEUE_COMPACT_MAX), "page": strana, "pages": pages, "pending": len(ids), "per_page": QUEUE_PAGE}
 
 
 def _auto_items(s) -> list:
@@ -214,19 +266,40 @@ def _confirmable(ev: ExtractedEvent) -> bool:
 
 
 @router.get("/fronta", response_class=HTMLResponse)
-def queue_page(request: Request, user=Depends(view)):
+def queue_page(request: Request, strana: int = 1, udalost: Optional[int] = None, user=Depends(view)):
     with session_scope() as s:
-        items = _queue_items(s)
+        queue = _queue_items(s, strana, udalost)
         auto_items = _auto_items(s)
-        total = s.scalar(select(func.count(ExtractedEvent.id)).where(ExtractedEvent.needs_confirmation.is_(True),
-                                                                      ExtractedEvent.status == "navrh")) or 0
-        total += sum(1 for it in items if it["failed"])
         recent = list(s.scalars(select(ExtractedEvent).where(ExtractedEvent.status != "navrh",
                                                              ExtractedEvent.confirmed_at.is_not(None))
                                 .order_by(ExtractedEvent.confirmed_at.desc()).limit(15)))
-        return render(request, "fronta.html", {"items": items, "total": total + len(auto_items), "recent": recent,
+        return render(request, "fronta.html", {**queue, "total": queue["pending"] + len(auto_items), "recent": recent,
                                                "auto_items": auto_items,
                                                "threshold": settings().confirm_threshold}, user=user)
+
+
+@router.get("/fronta/udalost/{event_id}")
+def queue_event(event_id: int, user=Depends(view)):
+    """Odkaz na jednu udalosť (z upozornenia e-mailom): čakajúca udalosť sa ukáže s celým formulárom navrchu fronty
+    (aj keď je vo fronte viac strán), automaticky zapísaná nepotvrdená v časti „Zapísané automaticky“, spracovaná
+    udalosť – fronta s informáciou, ako bola spracovaná."""
+    with session_scope() as s:
+        ev = s.get(ExtractedEvent, event_id)
+        if ev is None:
+            return redirect("/fronta", f"Udalosť #{event_id} neexistuje.", "chyba")
+        if (ev.status == "navrh" and bool(ev.needs_confirmation)) or _apply_failed(ev):
+            return redirect(_event_url(event_id))
+        if ev.status == "aplikovane" and ev.confirmed_at is None:
+            return redirect(f"/fronta#udalost-{event_id}")
+        state = {"aplikovane": "zapísaná do registra", "zamietnute": "zamietnutá", "potvrdene": "potvrdená",
+                 "navrh": "informačná, nevyžaduje potvrdenie"}.get(ev.status, ev.status)
+        who = f" ({ev.confirmed_by})" if ev.confirmed_by else ""
+        return redirect("/fronta", f"Udalosť #{event_id} už bola spracovaná – {state}{who}.", "info")
+
+
+def _event_url(event_id: int) -> str:
+    """Fronta s celým formulárom udalosti (aj keď je udalosť na inej strane fronty) – návrat po chybe potvrdenia."""
+    return f"/fronta?udalost={event_id}#udalost-{event_id}"
 
 
 def _posta():
@@ -253,7 +326,7 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
         else:
             edits["event_kind"] = new_kind
     if errors:
-        return redirect(f"/fronta#udalost-{event_id}", "Opravte polia: " + "; ".join(errors.values()), "chyba")
+        return redirect(_event_url(event_id), "Opravte polia: " + "; ".join(errors.values()), "chyba")
     try:
         posta = _posta()
         with session_scope() as s:
@@ -267,12 +340,12 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
                                    "zostáva vo fronte.", "chyba")
     except Exception as exc:  # noqa: BLE001 – chyba spracovania sa ukáže dispečerovi, udalosť ostáva vo fronte
         log.exception("Potvrdenie udalosti %s zlyhalo", event_id)
-        return redirect(f"/fronta#udalost-{event_id}", f"Udalosť sa nepodarilo potvrdiť: {str(exc)[:300]}", "chyba")
+        return redirect(_event_url(event_id), f"Udalosť sa nepodarilo potvrdiť: {str(exc)[:300]}", "chyba")
     if request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"potvrdená udalosť z e-mailu #{event_id}")
     if result.get("ok") is False:
         # zápis zlyhal (napr. vlak ešte nie je v systéme) – udalosť ostáva vo fronte, po náprave sa potvrdí znova
-        return redirect(f"/fronta#udalost-{event_id}", "Udalosť je potvrdená, ale do registra sa nezapísala: "
+        return redirect(_event_url(event_id), "Udalosť je potvrdená, ale do registra sa nezapísala: "
                         f"{str(result.get('error') or 'neznáma chyba')[:300]} Po odstránení príčiny ju potvrďte znova.",
                         "chyba")
     if result.get("action") == "nahradene":
@@ -290,7 +363,7 @@ def queue_reject(event_id: int, request: Request, background: BackgroundTasks, u
                  form=Depends(csrf_form)):
     reason = str(form.get("dovod") or "").strip()[:1000]
     if not reason:
-        return redirect(f"/fronta#udalost-{event_id}", "Pri zamietnutí uveďte dôvod.", "chyba")
+        return redirect(_event_url(event_id), "Pri zamietnutí uveďte dôvod.", "chyba")
     with session_scope() as s:
         ev = s.get(ExtractedEvent, event_id)
         if ev is None:

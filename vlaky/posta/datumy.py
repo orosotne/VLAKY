@@ -747,7 +747,44 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
                 continue
             out.append(_token_period(e, wa, wb, min(e.start, wa.start), max(e.end, wb.end)))
             used.add(j)
+    out += _labelled_periods(folded, toks, used)
     out.sort(key=lambda p: p.pos)
+    return out
+
+
+# označené riadky začiatku a konca („Začiatok výluky: 08.12.2026 07:00“ / „Koniec výluky: 08.12.2026 16:00“, „Od:“ /
+# „Do:“) – obdobie aj bez „do“ medzi časmi (formulár ROV)
+_START_LINE = re.compile(r"^[\s>*•-]*(?:zaciatok|zacatek|zahajeni\w*|platnost\w*\s+od|platne\s+od|od|start\w*|beginn\w*)"
+                         r"(?:\s+[^\s:]+){0,2}\s*:?\s*$")
+_END_LINE = re.compile(r"^[\s>*•-]*(?:koniec|konec|ukoncen\w*|platnost\w*\s+do|platne\s+do|do|ende\w*)"
+                       r"(?:\s+[^\s:]+){0,2}\s*:?\s*$")
+
+
+def _labelled_periods(folded: str, toks: list[Temporal], used: set[int]) -> list[Period]:
+    out: list[Period] = []
+    for i, a in enumerate(toks):
+        if i in used or a.kind != "datetime" or not _START_LINE.match(folded[folded.rfind("\n", 0, a.start) + 1:a.start]):
+            continue
+        for j in range(i + 1, min(i + 3, len(toks))):
+            b = toks[j]
+            if folded.count("\n", a.end, b.start) > 2:
+                break
+            ls = folded.rfind("\n", 0, b.start) + 1
+            if j in used or b.kind not in ("datetime", "time") or ls <= a.end or \
+                    not _END_LINE.match(folded[ls:b.start]):
+                continue
+            end = b.dt if b.kind == "datetime" else datetime.combine(a.day, b.tm)
+            p = Period(a.dt, end, a.start, b.end)
+            if end <= a.dt and b.kind == "time":
+                p.end = end + timedelta(days=1)
+                p.flags.add("cez_polnoc")
+            if not a.year_given or (b.kind == "datetime" and not b.year_given):
+                p.flags.add("rok_doplneny")
+            if a.unordered or b.unordered:
+                p.flags.add("zle_poradie")
+            out.append(p)
+            used.update((i, j))
+            break
     return out
 
 

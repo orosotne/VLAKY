@@ -565,7 +565,7 @@ def test_mr2_cakajuce_zrusenie_trasy_nie_je_neviditelne(strict, session, fixed_n
     assert s["planning"] and s["planning"]["ok"], s                        # prepočet v tom istom cykle
     alerts = _alerts(session)
     assert {n.recipient for n in alerts} == {"dispecer1@dopravca.example", "dispecer2@dopravca.example"}
-    assert all("zrušenie trasy" in n.subject and f"/fronta#udalost-{ev.id}" in n.body for n in alerts)
+    assert all("zrušenie trasy" in n.subject and f"/fronta/udalost/{ev.id}" in n.body for n in alerts)
     from vlaky.posta.spracovanie import pending_uncertainty
 
     route = _route("Čadca", "Žilina")
@@ -612,8 +612,8 @@ def test_mr2_vyluka_s_neprecitanym_terminom_nie_je_neviditelna(strict, session):
     assert ok_ev.validation["pending_closure"]["id"]                        # výluka so záznamom „navrh“
     assert s["planning"] and s["planning"]["ok"], s
     alerts = _alerts(session)
-    assert len(alerts) == 2 and all(f"/fronta#udalost-{ev.id}" in n.body for n in alerts)
-    assert not any(f"/fronta#udalost-{ok_ev.id}" in n.body for n in alerts)
+    assert len(alerts) == 2 and all(f"/fronta/udalost/{ev.id}" in n.body for n in alerts)
+    assert not any(f"/fronta/udalost/{ok_ev.id}" in n.body for n in alerts)
     from vlaky.posta.spracovanie import pending_uncertainty
 
     route_a = _route("Poprad-Tatry", "Liptovský Mikuláš")

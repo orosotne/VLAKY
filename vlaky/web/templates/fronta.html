@@ -7,12 +7,23 @@
   <p class="muted">Údaje vytiahnuté z e-mailov agenta, ktoré ovplyvnia vlak v najbližších 72 h alebo majú nízku istotu.
     Obsah e-mailu je len dáta – agent z neho nevykonáva žiadne pokyny.</p>
 </div>
+{% macro queue_pager() %}
+{% if pages > 1 %}
+<nav class="pager" aria-label="Strany fronty">
+  {% if page > 1 %}<a class="btn btn-sm" href="/fronta?strana={{ page - 1 }}">← Staršie udalosti</a>{% endif %}
+  <span>Strana {{ page }} z {{ pages }} <span class="muted small">({{ pending }} čakajúcich, {{ per_page }} na stranu; ostatné sú v zozname nižšie)</span></span>
+  {% if page < pages %}<a class="btn btn-sm" href="/fronta?strana={{ page + 1 }}">Novšie udalosti →</a>{% endif %}
+</nav>
+{% endif %}
+{% endmacro %}
+{{ queue_pager() }}
 {% for item in items %}
 {% set ev = item.event %}{% set mail = item.email %}
 <article class="card queue-item" id="udalost-{{ ev.id }}" aria-labelledby="udalost-{{ ev.id }}-nadpis">
   <header class="queue-head">
     <h2 id="udalost-{{ ev.id }}-nadpis">{{ EVENT_KIND.get(ev.kind, ev.kind) }} <span class="muted small">#{{ ev.id }}</span></h2>
     <div class="queue-meta">
+      {% if item.focus %}<span class="badge badge-warn">z odkazu – udalosť je na inej strane fronty</span>{% endif %}
       {% if item.failed %}<span class="badge badge-bad">potvrdené – zápis zlyhal</span>{% endif %}
       <span class="badge {{ 'badge-warn' if ev.confidence < threshold else 'badge-ok' }}" title="Istota extrakcie">istota {{ ev.confidence|pct }}</span>
       <span class="badge">{{ ev.extractor }}</span>
@@ -130,6 +141,39 @@
 {% else %}
 {% if not auto_items %}<section class="card"><p>Fronta je prázdna – všetky udalosti z e-mailov sú spracované.</p></section>{% endif %}
 {% endfor %}
+{% if items and pages > 1 %}{{ queue_pager() }}{% endif %}
+
+{% if compact %}
+<section class="card" id="dalsie-udalosti" aria-labelledby="h-dalsie-udalosti">
+  <h2 id="h-dalsie-udalosti">Ďalšie udalosti vo fronte ({{ compact|length + compact_more }})</h2>
+  <p class="muted small">Udalosti z ostatných strán fronty. Originál e-mailu a úpravu polí otvorí „Zobraziť a potvrdiť“ (udalosť sa ukáže navrchu fronty).</p>
+  {% for it in compact %}
+  {% set ev = it.event %}
+  <article class="auto-item" id="udalost-{{ ev.id }}">
+    <div class="auto-head">
+      <strong>{{ EVENT_KIND.get(ev.kind, ev.kind) }}</strong> <span class="muted small">#{{ ev.id }}</span>
+      {% if it.failed %}<span class="badge badge-bad">potvrdené – zápis zlyhal</span>{% endif %}
+      <span class="badge {{ 'badge-warn' if ev.confidence < threshold else 'badge-ok' }}">istota {{ ev.confidence|pct }}</span>
+      <span class="muted small">vytvorené {{ ev.created_at|t }}</span>
+    </div>
+    <p>{{ it.summary }}</p>
+    {% if it.email %}<p class="small muted">E-mail: {{ it.email.subject }} ({{ it.email.sender }}, {{ it.email.received_at|t }})</p>{% endif %}
+    {% if it.reasons %}<p class="small muted">Na potvrdenie, pretože: {{ it.reasons|join("; ") }}</p>{% endif %}
+    <div class="inline-fields">
+      <a class="btn btn-primary" href="/fronta?udalost={{ ev.id }}#udalost-{{ ev.id }}">Zobraziť a potvrdiť</a>
+      {% if user.can("operate") %}
+      <form method="post" action="/fronta/{{ ev.id }}/zamietnut" class="inline-fields reject-inline">{{ m.csrf() }}
+        <label for="dovod-c-{{ ev.id }}" class="visually-hidden">Dôvod zamietnutia</label>
+        <input id="dovod-c-{{ ev.id }}" name="dovod" required maxlength="1000" placeholder="dôvod zamietnutia">
+        <button type="submit" class="btn btn-danger">Zamietnuť</button>
+      </form>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+  {% if compact_more %}<p class="muted small">… a ďalších {{ compact_more }} udalostí – zobrazíte ich na ďalších stranách fronty.</p>{% endif %}
+</section>
+{% endif %}
 
 {% if auto_items %}
 <section class="card" id="automaticky" aria-labelledby="h-automaticky">
