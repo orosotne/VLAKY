@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from ..cas import ensure_utc, fmt, now_utc
 from ..models import Driver, DriverShift, Recommendation, Train
+from ..notifikacie.texty import hours
 from ..siet.graf import TrainSpec, network
 from .planovac import DONE_STATES, current_params
 
@@ -119,13 +120,13 @@ def propose_driver_assignment(session: Session, now: Optional[datetime] = None, 
         for t in trains:
             s0, e0 = windows[t.id]
             if e0 - s0 > max_duty:
-                reasons[t.id].append(f"jazda dlhšia ako {p.crew_max_duty_min / 60:.0f} h – treba výmenu na trase")
+                reasons[t.id].append(f"jazda dlhšia ako {hours(p.crew_max_duty_min / 60)} h – treba výmenu na trase")
                 continue
             if knows and lines[t.id] and not (lines[t.id] <= knows):
                 reasons[t.id].append(f"{d.name}: chýba znalosť tratí {', '.join(sorted(lines[t.id] - knows))}")
                 continue
             if any(s0 < b1 + rest and b0 < e0 + rest for b0, b1 in busy[d.id]):
-                reasons[t.id].append(f"{d.name}: obsadený alebo bez odpočinku {CREW_MIN_REST_H:.0f} h")
+                reasons[t.id].append(f"{d.name}: obsadený alebo bez odpočinku {hours(CREW_MIN_REST_H)} h")
                 continue
             x[d.id, t.id] = model.NewBoolVar(f"x_{d.id}_{t.id}")
     for t in trains:

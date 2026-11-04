@@ -171,7 +171,7 @@ def test_avizo_v_buducnosti_a_zapisany_prichod(client, session, fixed_now):
                        ).status_code == 303
     session.expire_all()
     after = evaluate_train(session, t.id, fixed_now + timedelta(minutes=1), "príchod na hranicu")
-    assert any(f"Preberanie na {bc.handover_station}: príchod {fmt(arrival)}" in r for r in after.reasons)
+    assert any(f"Preberanie v PPS {bc.handover_station}: príchod {fmt(arrival)}" in r for r in after.reasons)
     assert not any("Vlak ešte neprišiel" in r for r in after.reasons)
     assert after.decision == "VYPRAVIŤ" and after.color == "ZELENÁ"
     # druhý vlak s avízom v budúcnosti: avízo je plán, nie príchod
@@ -462,4 +462,4 @@ def test_limit_18h_uplynie_pred_pripravenostou_nie_uz_uplynul(session, fixed_now
     assert any(r.startswith(f"Vlak stojí od {fmt(arrival)} – limit 18 h státia (PPŽS) uplynie {fmt(limit)}, skôr "
                             f"ako bude vlak pripravený") for r in rec.reasons)
     assert not any("dlhšie ako 18 h" in r for r in rec.reasons)
-    assert "zostáva 0.0 h" not in rec.summary and "na odchod už nezostáva čas" in rec.summary
+    assert "zostáva 0,0 h" not in rec.summary and "na odchod už nezostáva čas" in rec.summary
