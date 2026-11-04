@@ -625,6 +625,11 @@ deploy/scripts/update.sh --ref main      # neskoršia aktualizácia (po rollback
   `sudo apt update && sudo apt full-upgrade` (aktualizuje aj Docker – kontajnery sa krátko reštartujú).
 - Ak `check.sh` hlási „čaká sa na reštart“, naplánuj `sudo reboot` mimo špičky (služby sa spustia samé).
   Automatický reštart v noci zapne `setup.sh --auto-reboot 03:40`.
+- **Synchronizáciu času nevypínaj** (`setup.sh` ponechá bežiaci chrony, inak zapne systemd-timesyncd; stav:
+  `timedatectl`): poradie súbežných prepočtov toho istého vlaku (web a agent) určujú hodiny servera, preto web
+  a agent bežia na tom istom serveri (docker compose), prípadne s hodinami synchronizovanými cez NTP. Skok hodín
+  späť o viac ako 5 s (napr. po obnovení virtuálneho servera zo snímky) aplikácia zvládne – log zapíše „… hodiny
+  servera sa zrejme posunuli späť; výsledok prepočtu sa uloží“.
 
 ### 10.4 PostgreSQL
 
@@ -658,10 +663,10 @@ Podrobný návod: [deploy/monitoring/README.md](../deploy/monitoring/README.md).
 | Web a databáza | externá kontrola `https://agent.dopravca.example/health` | 2 zlyhania po sebe |
 | Server | `check.sh` každých 15 min (disk, vek zálohy, kontajnery alebo služby, HTTPS, certifikát; bez Dockera aj zdravie agenta `python -m vlaky health`; čo sa skontrolovať nedá, je CHYBA) → `CHECK_HEARTBEAT_URL` | `/fail` s dôvodom |
 | Záloha | `backup.sh` → `BACKUP_HEARTBEAT_URL` | `/fail` alebo chýba > 26 h |
-| Doručovanie upozornení | kým ostáva niečo nedoručené, agent v každom cykle hlási chybu „doručenie: N správ sa nepodarilo doručiť (kanály)“ (1 správu, 2 – 4 správy) (heartbeat `/fail`, bez adries príjemcov); `python -m vlaky health` vráti chybu (kontajner agenta je „unhealthy“, `update.sh` a `check.sh` to ohlásia) s detailom `dorucenie` – rovnako stránka `/zdravie` a denná správa. Nedoručené sa počítajú po správe a príjemcovi (odporúčanie podľa odporúčania – po obnovení servera zmiznú, hneď ako odporúčanie príde); denná správa uvádza „nedoručené správy: N (neúspešné pokusy o doručenie za 24 h: M)“ | `/fail` alebo kontajner agenta „unhealthy“ |
+| Doručovanie upozornení | kým ostáva niečo nedoručené, agent v každom cykle hlási chybu „doručenie: N správ sa nepodarilo doručiť (kanály)“ (1 správu, 2 – 4 správy) (heartbeat `/fail`, bez adries príjemcov); `python -m vlaky health` vráti chybu (kontajner agenta je „unhealthy“, `update.sh` a `check.sh` to ohlásia) s detailom `dorucenie` – rovnako stránka `/zdravie` a denná správa (riadok „Doručovanie správ“). Nedoručené sa počítajú po správe a príjemcovi (odporúčanie podľa odporúčania – po obnovení servera zmiznú, hneď ako odporúčanie príde); denná správa uvádza „nedoručené správy: N (neúspešné pokusy o doručenie za 24 h: M)“ | `/fail` alebo kontajner agenta „unhealthy“ |
 | Schránka | `python -m vlaky health` (detail `schranka`) a `/zdravie`: čas poslednej úplnej kontroly („pred N min“). Nahromadená pošta sa dočítava po dávkach 50 e-mailov (ďalšia dávka o 5 s); „dočítava sa (…), posledná úplná kontrola pred N min“ je v poriadku, kým od poslednej úplnej kontroly neuplynulo 30 min, potom je to chyba zdravia aj cyklu „schránka: dočítava sa … (viac ako 30 min!)“ | `/fail` alebo kontajner agenta „unhealthy“ |
 | Nastavenie odosielania | detail `konfiguracia`: kanál s príjemcami bez servera správ (v ostrej prevádzke chyba zdravia aj cyklu „nastavenie odosielania: …“), neznáme premenné `VLAKY_*` (len upozornenie); agent ho vypíše aj pri štarte | `/fail` |
-| Chybné odporúčanie | odporúčanie, ktorého správu sa nedá pripraviť (chyba programu alebo neočakávané údaje), hlási každý cyklus ako „odporúčanie #N: …“ (heartbeat `/fail`, detail so stopou v `/zdravie`, komponent planovanie); ostatné odporúčania sa doručujú normálne | `/fail` |
+| Chybné odporúčanie | odporúčanie, ktorého správu sa nedá pripraviť (chyba programu alebo neočakávané údaje), hlási každý cyklus ako „odporúčanie #N: …“ (heartbeat `/fail`, detail so stopou v `/zdravie`, komponent „Plánovanie (prepočet vlakov)“); ostatné odporúčania sa doručujú normálne | `/fail` |
 
 Externý monitoring musí bežať **mimo tohto servera** a upozorňovať aspoň dvoch ľudí.
 
@@ -680,6 +685,9 @@ Pri každom incidente: (1) informuj dispečing, či má pracovať ručne, (2) za
    dočítavanie, dispečerom neposiela; po dočítaní vlaky hneď prepočíta. Nová výluka z nahromadenej pošty sa
    oznámi hneď. Dočítavanie dlhšie ako 30 min od poslednej úplnej kontroly hlási zdravie aj heartbeat
    („schránka: dočítava sa …“) – častou príčinou je pomalý jazykový model (pozri „LLM nedostupné“).
+   Odovzdávku služby môže dispečing vytvoriť na webe (Odovzdávka → Vytvoriť teraz; uloží sa na webe, e-mailom
+   sa neposiela): počas výpadku začína „POZOR: Údaje agenta nie sú čerstvé (…)“ a zelené vlaky uvedie ako
+   ORANŽOVÉ (príručka, kapitola 11).
 2. `docker compose ps` – stav kontajnera `agent`.
 3. `docker compose logs --tail 200 agent` a `docker compose exec agent python -m vlaky health`
    (DB, posledný cyklus, posledná kontrola schránky).
@@ -696,7 +704,7 @@ Caddy pri nedostupnom webe zobrazí dispečerom správu „webová aplikácia je
 ### Vypršal alebo zlyhal prístup do schránky
 
 Príznaky: chyba cyklu a zdravia „schránka sa nedá čítať: …“ (v logu agenta `docker compose logs agent`, v heartbeate
-aj na `/zdravie`, komponent schranka), `health` hlási starú kontrolu schránky. Text chyby ukáže príčinu so stručným
+aj na `/zdravie`, komponent „Schránka (kontrola e-mailov)“), `health` hlási starú kontrolu schránky. Text chyby ukáže príčinu so stručným
 kódom od servera – kód je v zátvorke, len ak ho server pošle; celý popis servera sa nezapisuje (obsahuje
 identifikátory):
 
