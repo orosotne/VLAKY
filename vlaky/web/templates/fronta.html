@@ -31,7 +31,7 @@
     </div>
   </header>
   {% if item.failed %}
-  <p class="flash flash-chyba" role="alert">Udalosť potvrdil {{ ev.confirmed_by or "dispečer" }} {{ ev.confirmed_at|t }}, ale do registra sa nezapísala: {{ (ev.validation or {}).get("apply_result", {}).get("error") or "neznáma chyba" }} Po odstránení príčiny (napr. založení vlaku) ju potvrďte znova, alebo ju zamietnite.{% if ev.kind == "avizo" and user.can("operate") %} <a href="/vlaky/novy">Založiť vlak</a>{% endif %}</p>
+  <p class="flash flash-chyba" role="alert">Udalosť potvrdil {{ ev.confirmed_by or "dispečer" }} {{ ev.confirmed_at|t }}, ale do registra sa nezapísala: {{ item.failure.error }}{% if item.failure.advice %} {{ item.failure.advice }}{% endif %}{% if ev.kind == "avizo" and user.can("operate") %} <a href="/vlaky/novy">Založiť vlak</a>{% endif %}</p>
   {% endif %}
   {% if item.register %}
   <div class="flash flash-varovanie">Záznam výluky upravil dispečer v registri výluk – potvrdenie tieto úpravy ponechá (nie údaje z e-mailu):
@@ -48,7 +48,7 @@
         <dt>Prijatý</dt><dd>{{ mail.received_at|tfull }}</dd>
         <dt>Overenie</dt><dd>{% if mail.verdict == "ok" %}<span class="badge badge-ok">povolený odosielateľ</span>{% else %}<span class="badge badge-bad">{{ mail.verdict }}</span>{% endif %} {% if mail.verdict_reason %}<span class="small muted">{{ mail.verdict_reason }}</span>{% endif %}</dd>
       </dl>
-      {% if mail.verdict == "podozrivy" %}<p class="flash flash-varovanie">E-mail obsahuje podozrivé pokyny. Údaje over obzvlášť dôkladne.</p>{% endif %}
+      {% if mail.verdict == "podozrivy" %}<p class="flash flash-varovanie">E-mail obsahuje podozrivé pokyny. Údaje overte obzvlášť dôkladne.</p>{% endif %}
       <pre class="email-body" tabindex="0">{{ mail.body_text }}</pre>
       {% for a in mail.attachments %}
       <details class="attachment">
@@ -64,15 +64,15 @@
       <h3>Vytiahnuté údaje</h3>
       {% set val = ev.validation or {} %}
       {% if val is mapping %}
-        {% for key, title in (("errors", "Chyby"), ("chyby", "Chyby"), ("blocking", "Nedá sa zapísať")) if val.get(key) %}
+        {% for key, title in (("errors", "Chyby"), ("chyby", "Chyby"), ("blocking", "Nedá sa zapísať")) if item.issues.get(key) %}
         <p class="issues-title issues-bad">{{ title }}:</p>
-        <ul class="issues issues-bad">{% for e in val.get(key) %}<li>{{ e }}</li>{% endfor %}</ul>
+        <ul class="issues issues-bad">{% for e in item.issues.get(key) %}<li>{{ e }}</li>{% endfor %}</ul>
         {% endfor %}
-        {% for key in ("warnings", "varovania", "issues") if val.get(key) %}
-        <ul class="issues issues-warn">{% for e in val.get(key) %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% for key in ("warnings", "varovania", "issues") if item.issues.get(key) %}
+        <ul class="issues issues-warn">{% for e in item.issues.get(key) %}<li>{{ e }}</li>{% endfor %}</ul>
         {% endfor %}
-        {% if val.get("confirmation_reasons") %}
-        <p class="small muted">Na potvrdenie, pretože: {{ val.get("confirmation_reasons")|join("; ") }}</p>
+        {% if item.issues.get("confirmation_reasons") %}
+        <p class="small muted">Na potvrdenie, pretože: {{ item.issues.get("confirmation_reasons")|join("; ") }}</p>
         {% endif %}
         {% if val.get("notes") %}
         <p class="small muted">Poznámky k rozpoznaniu e-mailu:</p>
@@ -132,7 +132,8 @@
         </div>
       </form>
       {% else %}
-      <dl class="meta">{% for f in item.fields %}<dt>{{ f.label }}</dt><dd>{{ f.original if f.original is not none else "—" }}</dd>{% endfor %}</dl>
+      <dl class="meta">{% for f in item.fields %}<dt>{{ f.label }}</dt><dd>{{ f.display }}</dd>{% endfor %}</dl>
+      <p class="muted small">Časy sú v miestnom čase (Europe/Bratislava).</p>
       <p class="muted small">Potvrdzovať môže len dispečer alebo vedúci dispečingu.</p>
       {% endif %}
     </section>
@@ -220,7 +221,7 @@
     <thead><tr><th scope="col">#</th><th scope="col">Druh</th><th scope="col">Stav</th><th scope="col">Kto</th><th scope="col">Kedy</th></tr></thead>
     <tbody>
     {% for ev in recent %}
-      <tr><td>{{ ev.id }}</td><td>{{ EVENT_KIND.get(ev.kind, ev.kind) }}</td><td>{{ ev.status }}</td><td>{{ ev.confirmed_by or "—" }}</td><td>{{ ev.confirmed_at|t }}</td></tr>
+      <tr><td>{{ ev.id }}</td><td>{{ EVENT_KIND.get(ev.kind, ev.kind) }}</td><td>{{ event_state(ev) }}</td><td>{{ ev.confirmed_by or "—" }}</td><td>{{ ev.confirmed_at|t }}</td></tr>
     {% endfor %}
     </tbody>
   </table>

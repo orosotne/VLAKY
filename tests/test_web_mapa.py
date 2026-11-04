@@ -202,7 +202,7 @@ def test_nepotvrdena_vyluka_z_emailu_vo_fronte_a_na_mape(client, monkeypatch):
     calls = []
     mod = types.ModuleType("vlaky.posta.spracovanie")
 
-    def confirm_event(session, event_id, actor, edits=None):
+    def confirm_event(session, event_id, actor, edits=None, **_kw):  # pending_only (web)
         calls.append((event_id, actor))
         ev = session.get(ExtractedEvent, event_id)
         ev.confirmed_by, ev.status = actor, "aplikovane"

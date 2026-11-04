@@ -229,8 +229,8 @@ def test_qc0_end_to_end_formular_rov_blokuje_vlak(env, session):
 
 
 def test_qc4_end_to_end_ruseny_den_v_predmete_nezrusi_celu_vyluku(env, session):
-    """End to end: zrušenie s rušeným dňom len v predmete nezruší celú výluku 23. – 27.11. (zápis sa odmietne
-    s vysvetlením, výluka ostáva)."""
+    """End to end: zrušenie s rušeným dňom len v predmete nezruší celú výluku 23. – 27.11. (od 5. revízie sa výluka
+    rozdelí – zruší sa len 25.11., ostatné dni ostávajú)."""
     from vlaky.models import Closure
     from vlaky.posta.spracovanie import confirm_event
 
@@ -246,8 +246,8 @@ def test_qc4_end_to_end_ruseny_den_v_predmete_nezrusi_celu_vyluku(env, session):
     ev = confirm_event(session, ev.id, "dispecer1")
     session.commit()
     session.refresh(c)
-    assert ev.validation["apply_result"]["ok"] is False and c.status == "overene"
-    assert session.get(Closure, c.id).end_utc is not None
+    assert ev.validation["apply_result"]["action"] == "rozdelene" and c.status == "overene"
+    assert c.end_utc.replace(tzinfo=None) == utc(2026, 11, 24, 13).replace(tzinfo=None)
     assert _decide(session, "77531", "Ružomberok", "Liptovský Mikuláš", utc(2026, 11, 24, 9),
                    utc(2026, 11, 24, 5)).decision != "VYPRAVIŤ"
 

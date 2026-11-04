@@ -97,14 +97,14 @@ def _fake_posta(monkeypatch):
     calls: list = []
     mod = types.ModuleType("vlaky.posta.spracovanie")
 
-    def confirm_event(session, event_id, actor, edits=None):
+    def confirm_event(session, event_id, actor, edits=None, **_kw):  # pending_only (web)
         from vlaky.models import ExtractedEvent
 
         calls.append(("confirm", event_id, actor, edits))
         ev = session.get(ExtractedEvent, event_id)
         ev.status, ev.confirmed_by = "potvrdene", actor
 
-    def reject_event(session, event_id, actor, reason=""):
+    def reject_event(session, event_id, actor, reason="", **_kw):
         from vlaky.models import ExtractedEvent
 
         calls.append(("reject", event_id, actor, reason))

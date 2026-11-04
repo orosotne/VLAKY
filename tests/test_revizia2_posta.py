@@ -211,7 +211,8 @@ def test_r12_nova_vyluka_preklasifikovana_na_zrusenie_zrusi_vyluku_v_registri(en
     """[12d] E-mail sa extrahoval ako nová výluka (s vlastným návrhom), dispečer však vie, že ide o zrušenie. Opraví
     ho na zrušenie 1600/2026 – zruší sa výluka 1600/2026, nie len návrh tejto udalosti. (Text „… sa nekoná“ pravidlá
     od 4. revízie rozpoznajú ako zrušenie sami – e-mail preto zrušenie nespomína.)"""
-    c = registered(session, utc(2026, 11, 20, 5), "1600/2026", hours=10)
+    # výluka v registri leží celá v termíne z e-mailu (užší termín zrušenia by zrušil len uvedenú časť – 5. revízia)
+    c = registered(session, utc(2026, 11, 20, 8, 30), "1600/2026", hours=3)
     drop_raw(env, "d.eml", mail("d1", "Vyluka 1. TK Poprad-Tatry - Liptovsky Mikulas 20.11.",
                                 "Výluka 1. TK v úseku Poprad-Tatry – Liptovský Mikuláš dňa 20.11.2026 od 08:00 do "
                                 "14:00.\n"))
