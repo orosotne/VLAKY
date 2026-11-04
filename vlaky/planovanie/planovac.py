@@ -688,18 +688,22 @@ def _unmapped_windows(net: Network, windows: list, groute: GRoute, ready: dateti
     return out
 
 
-def _unverified_email(affecting: list, lo: datetime, hi: datetime) -> list:
+def _unverified_email(affecting: list, lo: datetime, hi: datetime, first: bool = True) -> list:
     """Výluky z e-mailu na trase (``affecting`` z build_segments), ktoré dispečer ešte neoveril – záznam „navrh“ so
     zdrojovou udalosťou (čaká vo fronte na potvrdenie alebo ju agent zapísal automaticky) – a platia v období možnej
     jazdy vlaku [lo, hi]. Údaje prečítané z e-mailu (druh, termín, úsek) môžu byť nesprávne – kým ich dispečer
     neoverí, vlak nesmie byť ZELENÝ. Ručne zadaná výluka (bez udalosti) ani overená výluka sem nepatria.
-    Vracia jedno okno za výluku (prvé v čase)."""
+    Vracia jedno okno za výluku (prvé v čase); ``first=False`` – všetky jej okná v období (denná výluka má okno
+    na každý deň: dnešné mohlo skončiť a zajtrajšie zasahuje plán vlaku)."""
     out: dict = {}
     for w, _a, _b in affecting:
         if w.status != "navrh" or w.source_event_id is None or w.end < lo or w.start > hi:
             continue
-        if w.closure_id not in out or w.start < out[w.closure_id].start:
-            out[w.closure_id] = w
+        if first:
+            if w.closure_id not in out or w.start < out[w.closure_id].start:
+                out[w.closure_id] = w
+        else:
+            out.setdefault((w.closure_id, w.start, w.end), w)
     return sorted(out.values(), key=lambda w: (w.start, w.closure_id))
 
 
@@ -1026,9 +1030,10 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
     #  - čakajúca udalosť z e-mailu, s ktorou plánovač nevie počítať (posta.spracovanie.pending_uncertainty),
     #  - výluka z e-mailu, ktorú dispečer ešte neoveril, v období možnej jazdy vlaku
     period_lo = min(now, ready) - timedelta(hours=2)
+    period_hi_of = {name: ready + timedelta(minutes=horizon_min + g.minutes * 2 + 120) for name, g in groute_of.items()}
     unmapped_of = {name: _unmapped_windows(net, windows, g, ready, horizon_min) for name, g in groute_of.items()}
-    unverified_of = {name: _unverified_email(affecting_of.get(name, []), period_lo, ready + timedelta(
-        minutes=horizon_min + g.minutes * 2 + 120)) for name, g in groute_of.items()}
+    unverified_of = {name: _unverified_email(affecting_of.get(name, []), period_lo, period_hi_of[name])
+                     for name in groute_of}
     from ..posta.spracovanie import pending_uncertainty_routes
 
     path_notes, pending_of = pending_uncertainty_routes(
@@ -1141,16 +1146,27 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
     # nie je nové odporúčanie pri každom vlaku – dispečer o udalosti dostane jedno upozornenie DÔLEŽITÉ (fronta)
     fleet_notes = [n for n in pending_notes if getattr(n, "fleet", False)]
     # neoverená výluka z e-mailu: ZELENÁ nie (termín mohol byť prečítaný nesprávne); ak podľa prečítaného termínu
-    # leží mimo plánu vlaku – začína viac ako 2 h po jeho príchode, alebo skončila viac ako 2 h pred jeho možným
-    # odchodom (pripravenosť; idúci vlak teraz) –, zmena farby len z tohto dôvodu nie je nové odporúčanie: jedna
-    # výluka by inak poslala správu o každom vlaku na trati (aj o vlakoch na ďalšie dni). Výluka, ktorá skončila pred
-    # min(teraz, pripravenosť) − 2 h, vlak neobmedzí vôbec (_unverified_email).
-    unverified = unverified_of[route_name]
+    # leží mimo plánu vlaku – každé jej okno začína viac ako 2 h po jeho príchode, alebo skončilo viac ako 2 h pred
+    # jeho možným odchodom (pripravenosť; idúci vlak teraz) –, zmena farby len z tohto dôvodu nie je nové
+    # odporúčanie: jedna výluka by inak poslala správu o každom vlaku na trati (aj o vlakoch na ďalšie dni). Denná
+    # výluka, ktorej dnešné okno skončilo, ale zajtrajšie zasahuje plán vlaku, je v pláne (tvrdá poistka; v dôvode
+    # okno, ktoré plán zasahuje). Výluka, ktorá skončila pred min(teraz, pripravenosť) − 2 h, vlak neobmedzí vôbec
+    # (_unverified_email).
     plan_end = _dt(now, chosen.arrival_p90) + timedelta(hours=2) if chosen is not None else None
     plan_start = ready - timedelta(hours=2)
-    unverified_later = [w for w in unverified
-                        if (plan_end is not None and w.start > plan_end) or w.end < plan_start]
-    unverified_plan = [w for w in unverified if w not in unverified_later]
+
+    def outside_plan(w: Window) -> bool:
+        return (plan_end is not None and w.start > plan_end) or w.end < plan_start
+
+    unverified_all = _unverified_email(affecting_of.get(route_name, []), period_lo, period_hi_of[route_name],
+                                       first=False)
+    in_plan = {}  # výluka → prvé jej okno, ktoré plán vlaku zasahuje
+    for w in unverified_all:
+        if not outside_plan(w):
+            in_plan.setdefault(w.closure_id, w)
+    unverified = [in_plan.get(w.closure_id, w) for w in unverified_of[route_name]]
+    unverified_later = [w for w in unverified if w.closure_id not in in_plan]
+    unverified_plan = [w for w in unverified if w.closure_id in in_plan]
 
     # bez čerstvých a použiteľných dát nikdy zelená (10.3); poloha, ktorá len práve zostarla, je mäkká poistka
     stale = (position_unusable and not position_soft) or crew_unknown or bool(unmapped)
@@ -1170,7 +1186,8 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
         color = ORANZOVA
     affecting_chosen = affecting_of.get(route_name, affecting)
     # nepotvrdená výluka bez poistky (ručne zadaná ako návrh, alebo z e-mailu mimo obdobia možnej jazdy) – len informácia
-    unconfirmed = {w.closure_id for w, _, _ in affecting_chosen if w.status == "navrh"} - \
+    # (nie okno, ktoré skončilo viac ako 2 h pred možným odchodom vlaku – plán vlaku sa ho netýka)
+    unconfirmed = {w.closure_id for w, _, _ in affecting_chosen if w.status == "navrh" and w.end >= plan_start} - \
         {w.closure_id for w in unverified}
     if unconfirmed:
         n_unc = len(unconfirmed)
@@ -1188,6 +1205,10 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
         if key in seen_w:
             continue
         seen_w.add(key)
+        if w.end < plan_start:
+            # okno skončilo viac ako 2 h pred možným odchodom vlaku (napr. dnešná výluka a vlak zajtra): plán vlaku sa
+            # ho netýka – nie „na trase vlaku“ (neoverenú výluku z e-mailu uvádza poistka vyššie)
+            continue
         state = "" if w.status == "overene" else " – NEPOTVRDENÁ"
         reasons.append(f"{_kind_label(w.kind)} {w.from_station} – {w.to_station} "
                        f"{fmt(w.start)} – {fmt(w.end)} na trase vlaku{state}.")
@@ -1310,8 +1331,14 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
             # a pevný (napr. po konci výluky) sa porovnáva s odchodom, ktorý dispečer dostal.
             chosen_d["floating"] = True
             chosen_d["compare_arrival"] = True
-    if chosen is not None and running and arrival_floating:
-        chosen_d["arrival_floating"] = True  # bez polohy a času odchodu sa posúva aj predpokladaný príchod
+    # bez polohy a času odchodu (alebo zo starej polohy) sa predpokladaný príchod posúva s časom – pri pokračovaní
+    # hneď, nie však pri čakaní pred výlukou (POČKAŤ, pokračovať o …): čas pokračovania aj príchod vtedy určuje koniec
+    # výluky (pevný bod mriežky odchodov), nie „teraz“, a príchod sa porovnáva aj pri starej polohe (vlak stojí pred
+    # výlukou a hlásenia TIS neposiela) – predĺženie výluky je nové odporúčanie, aj keď dispečer doterajšie POČKAŤ
+    # prijal. Výnimkou je čakanie pred zatvoreným cieľom po hranicu výpočtu (until_entry), ktorá sa posúva s časom.
+    holds = decision == POCKAT and not until_entry
+    if chosen is not None and running and arrival_floating and not holds:
+        chosen_d["arrival_floating"] = True
     if chosen is not None and chosen.needs_new_path and not running:
         # pridelené trasy v čase odporúčania: po prijatí je nová pridelená (zmenená) trasa odpoveďou ŽSR na objednávku
         chosen_d["paths"] = sorted(ensure_utc(p.departure_utc).isoformat() for p in paths)
@@ -2384,8 +2411,9 @@ def _store(session: Session, train: Train, now: datetime, trigger: str, decision
     Odchod sa porovnáva s tým, čo dispečer dostal (baseline), posun o 30 min a viac je nové odporúčanie.
     Plávajúci odchod („čo najskôr“ – idúci vlak, najskoršia nová trasa, eskalácia; ``chosen["floating"]``) sa
     s časom posúva sám: ak je plávajúci baseline aj nový odchod, posun nie je zmena (pri idúcom vlaku sa namiesto
-    odchodu porovnáva predpokladaný príchod – nie však príchod idúceho vlaku bez polohy aj času odchodu
-    ``chosen["arrival_floating"]``, ten sa posúva s časom; prvý skutočný odhad príchodu je nový základ porovnania).
+    odchodu porovnáva predpokladaný príchod – nie však príchod idúceho vlaku, ktorý pokračuje hneď zo starej polohy
+    alebo bez polohy aj času odchodu ``chosen["arrival_floating"]``, ten sa posúva s časom; prvý skutočný odhad
+    príchodu je nový základ porovnania. Pri čakaní pred výlukou určuje príchod jej koniec – porovnáva sa vždy).
     ``failure`` – záznam o chybe výpočtu (_store_failure) má vlastný odtlačok: skutočná eskalácia bez varianty
     (rovnaké rozhodnutie, farba aj prázdny rušňovodič) sa s ním nezlúči a naopak. Vyššia priorita (napr. KRITICKÉ
     oproti doterajšiemu DÔLEŽITÉ) je vždy nové odporúčanie – tiché zlúčenie by nové upozornenie (SMS) nevyvolalo.

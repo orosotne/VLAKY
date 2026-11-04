@@ -107,7 +107,9 @@ def test_stara_poloha_nezahodi_vyluku_pred_meskajucim_vlakom(session, fixed_now)
         assert rec.decision != "POKRAČOVAŤ"
     assert stale.color != "ZELENÁ"
     assert any("posledná poloha pred 16 min" in x and "poslednej známej polohy" in x for x in stale.reasons)
-    assert stale.chosen.get("arrival_floating")  # príchod zo starej polohy sa posúva s časom – nie je zmena situácie
+    # vlak čaká pred mimoriadnosťou: čas pokračovania aj príchod určuje jej koniec, nie „teraz“ – príchod sa ani zo
+    # starej polohy s časom neposúva a porovnáva sa (predĺženie mimoriadnosti je nové odporúčanie; 5. revízia, R5P2)
+    assert stale.decision == "POČKAŤ" and not stale.chosen.get("arrival_floating"), stale.summary
 
 
 def test_stara_poloha_nezmeni_varovanie_rusnovodica(session, fixed_now):
