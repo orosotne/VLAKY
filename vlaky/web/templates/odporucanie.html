@@ -6,7 +6,12 @@
 {% set chosen = rec.chosen or {} %}
 {% set crew = rec.crew or {} %}
 {% set proposal = rec.path_proposal or {} %}
-<div class="page-head">
+{# výslovné potvrdenie rozhodnutia, keď agent nemá čerstvé dáta a zelené odporúčanie sa ukazuje ako ORANŽOVÉ #}
+{% macro stale_confirm() -%}
+<label class="stale-confirm"><input type="checkbox" name="potvrdit_neaktualne" value="1" required> Údaje agenta nie sú čerstvé – rozhodujem až po overení aktuálneho stavu (výluky, poloha, rušňovodič)</label>
+{%- endmacro %}
+{# data-zivy-stav: odtlačok stavu – otvorená stránka sa každú minútu pýta na zmenu a obnoví si obsah (static/js/app.js) #}
+<div class="page-head" data-zivy-stav="{{ page_state }}" data-tz="{{ tz }}">
   <p class="crumbs"><a href="/odporucania">Odporúčania</a> › {% if train %}<a href="/vlaky/{{ train.id }}">vlak {{ train.number }}</a>{% endif %}</p>
   <h1>Vlak {{ train.number if train else "?" }}{% if train %} <span class="muted">{{ train.origin }} → {{ train.destination }}</span>{% endif %}</h1>
 </div>
@@ -43,13 +48,14 @@
     {% set mail_calc = age.get("mailbox_min") if age.get("mailbox_min") is number else none %}
     {# aktuálne odporúčanie: vek dát k teraz, hodnota z prepočtu len doplnkovo – agent mohol prestať prepočítavať #}
     <dl class="meta">
-      <dt>Poloha vlaku</dt>
+      {# data-vek: vek údaja sa na otvorenej stránke priebežne dopočítava (static/js/app.js) #}
+      <dt{% if current and position_at %} data-vek="{{ position_at }}"{% endif %}>Poloha vlaku</dt>
       {% set pos_age = position_age if current else pos_calc %}
       <dd>{% if pos_age is not none %}stará {{ [pos_age, 0]|max|minutes }}{% if pos_age > stale_minutes %} <span class="badge badge-warn">neistá – staršia ako {{ stale_minutes }} min</span>{% endif %}{% else %}<span class="badge badge-warn">bez polohy</span>{% endif %}{% if pos_calc is not none and (not current or pos_age is none or (pos_age - pos_calc)|abs >= 1) %} <span class="muted small">(pri prepočte {{ [pos_calc, 0]|max|minutes }})</span>{% endif %}</dd>
-      <dt>Posledná kontrola schránky</dt>
+      <dt{% if current and mailbox_at %} data-vek="{{ mailbox_at }}"{% endif %}>Posledná kontrola schránky</dt>
       {% if current %}
       <dd>{% if fresh.mailbox_min is not none %}pred {{ [fresh.mailbox_min, 0]|max|minutes }}{% if fresh.mailbox_min > 30 %} <span class="badge badge-warn">staršia ako 30 min</span>{% endif %}{% else %}<span class="badge badge-warn">zatiaľ žiadna úspešná</span>{% endif %}{% if mail_calc is not none %} <span class="muted small">(pri prepočte pred {{ [mail_calc, 0]|max|minutes }})</span>{% endif %}</dd>
-      <dt>Posledný cyklus agenta</dt>
+      <dt{% if cycle_at %} data-vek="{{ cycle_at }}"{% endif %}>Posledný cyklus agenta</dt>
       <dd>{% if fresh.agent_cycle_min is not none %}pred {{ [fresh.agent_cycle_min, 0]|max|minutes }}{% else %}<span class="badge badge-warn">agent zatiaľ neprebehol</span>{% endif %}</dd>
       {% else %}
       <dd>{% if mail_calc is not none %}pri prepočte pred {{ [mail_calc, 0]|max|minutes }}{% else %}—{% endif %}</dd>
@@ -104,10 +110,14 @@
     <tbody>
     {% for v in variants %}
       {% set is_chosen = chosen and v.get("route") == chosen.get("route") and v.get("depart") == chosen.get("depart") and v.get("kind") == chosen.get("kind") %}
+      {# idúci vlak: pokračovanie v jazde nie je vypravenie (jeho „odchod“ je len čas prepočtu); čakanie pred vjazdom
+         do zatvoreného cieľa nemá čas odchodu – je to len hranica výpočtu, posúva sa s každým prepočtom #}
+      {% set continues = running and v.get("kind") == "VYPRAVIŤ" %}
+      {% set until_entry = is_chosen and chosen.get("until_entry") %}
       <tr{% if is_chosen %} class="chosen" aria-current="true"{% endif %}>
         <td>{{ v.get("route") }}{% if is_chosen %} <span class="badge {{ 'badge-ok' if v.shown_status == 'ZELENÁ' else 'badge-warn' }}">odporúčaná</span>{% endif %}</td>
-        <td class="nowrap">{{ v.get("depart")|t }}</td>
-        <td>{{ v.get("kind") }}</td>
+        <td class="nowrap">{% if until_entry %}po uvoľnení vjazdu{% elif continues %}v jazde{% else %}{{ v.get("depart")|t }}{% endif %}</td>
+        <td>{{ "POKRAČOVAŤ" if continues else v.get("kind") }}</td>
         <td>{{ m.semafor(v.shown_status) }}</td>
         <td>{{ v.get("p_on_time")|pct }}</td>
         <td>{{ v.get("p_hold")|pct }}</td>
@@ -194,17 +204,21 @@
   <p>{{ REC_STATE.get(rec.state, rec.state)|capitalize }} – {{ rec.decided_by }}, {{ rec.decided_at|tfull }}{% if rec.dispatcher_note %}: „{{ rec.dispatcher_note }}“{% endif %}</p>
   {% endif %}
   {% if user.can("operate") and rec.state != "zastarane" %}
+  {% if downgraded %}<p class="small stale-note">Agent nemá čerstvé dáta – odporúčanie sa ukazuje ako {{ color }} (pri prepočte {{ rec.color }}). Prijať alebo upraviť ho možno len s výslovným potvrdením; v audite sa zaznamená ako {{ color }}.</p>{% endif %}
+  {# farba: semafor, ktorý dispečer pri rozhodnutí videl – server rozhodnutie odmietne, ak sa medzitým zhoršil #}
   <div class="decide-forms">
     <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
-      {{ m.csrf() }}<input type="hidden" name="akcia" value="prijat">
+      {{ m.csrf() }}<input type="hidden" name="akcia" value="prijat"><input type="hidden" name="farba" value="{{ color }}">
       <label for="pozn-prijat">Poznámka (nepovinná)</label>
       <input id="pozn-prijat" name="poznamka" maxlength="2000">
+      {% if downgraded %}{{ stale_confirm() }}{% endif %}
       <button type="submit" class="btn btn-primary">Prijať</button>
     </form>
     <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
-      {{ m.csrf() }}<input type="hidden" name="akcia" value="upravit">
+      {{ m.csrf() }}<input type="hidden" name="akcia" value="upravit"><input type="hidden" name="farba" value="{{ color }}">
       <label for="pozn-upravit">Úprava (čo meníte)</label>
       <input id="pozn-upravit" name="poznamka" required maxlength="2000" placeholder="napr. odchod o 30 min neskôr">
+      {% if downgraded %}{{ stale_confirm() }}{% endif %}
       <button type="submit" class="btn">Upraviť</button>
     </form>
     <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">

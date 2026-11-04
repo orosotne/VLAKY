@@ -19,7 +19,8 @@ from ..cas import ensure_utc, local, local_naive_to_utc, now_utc
 from ..db import session_scope
 from ..models import BorderCrossing, Email, ExtractedEvent, Handover, Notification, Recommendation, Train
 from .auth import csrf_form, require
-from .common import EVENT_KIND, REC_STATE, log, redirect, render
+from .common import (EVENT_KIND, EVENT_STATUS, EXTRACTOR, HANDOVER_DIRECTION, HANDOVER_STATUS, REC_STATE, log, redirect,
+                     render)
 
 router = APIRouter()
 reports = require("reports")
@@ -173,11 +174,18 @@ def calibration_apply(request: Request, user=Depends(params_perm), form=Depends(
 
 # ---------------------------------------------------------------- export CSV (Excel: UTF-8 s BOM, oddeľovač ;)
 def _cell(value) -> str:
-    """Hodnota bunky; text začínajúci znakom vzorca sa neutralizuje (ochrana pred CSV injection)."""
+    """Hodnota bunky; text začínajúci znakom vzorca sa neutralizuje (ochrana pred CSV injection). Čísla
+    s desatinnou čiarkou bez oddeľovača tisícov (Excel v slovenskom prostredí ich prečíta ako čísla), áno/nie."""
     if value is None:
         return ""
     if isinstance(value, datetime):
         return local(value).strftime("%Y-%m-%d %H:%M")
+    if isinstance(value, bool):
+        return "áno" if value else "nie"
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return ""
+        return (f"{value:.2f}".rstrip("0").rstrip(".") or "0").replace(".", ",")
     text = str(value)
     if text.lstrip(" \t\r\n")[:1] in ("=", "+", "-", "@", "＝", "＋", "－", "＠") or text[:1] in ("\t", "\r", "\n"):
         return "'" + text
@@ -239,8 +247,9 @@ def export_csv(typ: str, od: str = "", do: str = "", user=Depends(reports)):
                 dur = ""
                 if h.arrived_utc and h.taken_over_utc:
                     dur = round((ensure_utc(h.taken_over_utc) - ensure_utc(h.arrived_utc)).total_seconds() / 60.0)
-                rows.append([h.id, number, border or "", h.direction, h.avizo_eta_utc, h.arrived_utc, h.taken_over_utc,
-                             dur, h.status, h.findings])
+                rows.append([h.id, number, border or "", HANDOVER_DIRECTION.get(h.direction, h.direction),
+                             h.avizo_eta_utc, h.arrived_utc, h.taken_over_utc, dur,
+                             HANDOVER_STATUS.get(h.status, h.status), h.findings])
         else:
             header = ["id", "vytvorené", "druh", "istota %", "extraktor", "stav", "potvrdil", "potvrdené",
                       "počet úprav dispečera", "odosielateľ", "predmet e-mailu"]
@@ -250,7 +259,10 @@ def export_csv(typ: str, od: str = "", do: str = "", user=Depends(reports)):
                  .where(ExtractedEvent.created_at >= start, ExtractedEvent.created_at < end)
                  .order_by(ExtractedEvent.id))
             for e, sender, subject in s.execute(q):
-                rows.append([e.id, e.created_at, EVENT_KIND.get(e.kind, e.kind), _pct(e.confidence), e.extractor,
-                             e.status, e.confirmed_by, e.confirmed_at, len((e.validation or {}).get("edits") or []),
-                             sender or "", subject or ""])
+                state = EVENT_STATUS.get(e.status, e.status)
+                if e.status == "navrh":
+                    state = "čaká na potvrdenie" if e.needs_confirmation else "informačná (bez potvrdenia)"
+                rows.append([e.id, e.created_at, EVENT_KIND.get(e.kind, e.kind), _pct(e.confidence),
+                             EXTRACTOR.get(e.extractor, e.extractor), state, e.confirmed_by, e.confirmed_at,
+                             len((e.validation or {}).get("edits") or []), sender or "", subject or ""])
     return _csv(typ, header, rows, d_od, d_do)

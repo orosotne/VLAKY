@@ -33,6 +33,7 @@ class RouteInfo:
     name: str = ""
     variant: str = "hlavna"            # hlavna | obchadzka
     via: list = field(default_factory=list)
+    edge_last: dict = field(default_factory=dict)  # hrana → index posledného bodu jej posledného výskytu v coords
 
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -45,6 +46,7 @@ def build_route_info(net, r, name: str = "", variant: str = "hlavna", via: Optio
     """RouteInfo z trasy grafu (geometria v smere jazdy + kumulatívne vzdialenosti a poloha hrán)."""
     coords: list = []
     spans: dict = {}
+    last: dict = {}
     for i, ei in enumerate(r.edges):
         e = net.edges[ei]
         g = e.geom if e.u == r.nodes[i] else list(reversed(e.geom))
@@ -52,12 +54,13 @@ def build_route_info(net, r, name: str = "", variant: str = "hlavna", via: Optio
         start = len(coords) - 1 if coords else 0
         coords.extend(pts if not coords else pts[1:])
         spans.setdefault(ei, (start, len(coords) - 1))
+        last[ei] = len(coords) - 1
     cum = [0.0]
     for a, b in zip(coords, coords[1:], strict=False):
         cum.append(cum[-1] + _haversine(a[1], a[0], b[1], b[0]))
     return RouteInfo(frozenset(r.edges), coords, cum, spans, round(r.length_m / 1000.0, 1), round(r.minutes, 1),
                      [{"name": st.name, "type": st.type, "km": km, "min": mins} for st, km, mins in r.stations],
-                     name, variant, list(via or []))
+                     name, variant, list(via or []), last)
 
 
 # ---------------------------------------------------------------- poloha na trase

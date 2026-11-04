@@ -24,6 +24,7 @@ from .data import (closure_edges, closure_spans, crew_matches_shift, current_shi
                    latest_recommendations)
 from .prepocet import evaluate_all_bg, evaluate_train_bg, evaluate_train_now
 from .rusnovodic import driver_link, end_future_running, revoke_driver_links, token_version
+from .common import page_state, state_response, wants_state
 
 router = APIRouter()
 view = require("view")
@@ -128,9 +129,15 @@ def trains_page(request: Request, filter: str = "aktivne", q: str = "", user=Dep
         trains = list(s.scalars(query.order_by(Train.run_date.desc(), Train.number).limit(300)))
         ids = [t.id for t in trains]
         recs = latest_recommendations(s, ids) if ids else {}
-        # bez čerstvých dát agenta sa posledná ZELENÁ ukáže ako ORANŽOVÁ (rovnako ako mapa a /api/vlaky)
+        # bez čerstvých dát agenta sa posledná ZELENÁ ukáže ako ORANŽOVÁ (rovnako ako mapa a /api/vlaky); otvorený
+        # zoznam sa pri zmene (výpadok agenta, nové odporúčanie, stav vlaku) obnoví sám (static/js/app.js)
+        fresh = data_freshness(s)
+        state = page_state(fresh["stale"], *[(t.id, t.status, *((recs[t.id].id, recs[t.id].color, recs[t.id].decision)
+                                                                if t.id in recs else ())) for t in trains])
+        if wants_state(request):
+            return state_response(state)
         return render(request, "vlaky.html", {"trains": trains, "recs": recs, "filter": filter, "q": q,
-                                              "fresh": data_freshness(s)}, user=user)
+                                              "fresh": fresh, "page_state": state}, user=user)
 
 
 @router.get("/vlaky/novy", response_class=HTMLResponse)
@@ -228,10 +235,20 @@ def _train_detail(request: Request, train_id: int, user, link: str = "") -> HTML
         history.extend(a for a in extra if a.id not in seen)
         history.sort(key=lambda a: (ensure_utc(a.ts), a.id), reverse=True)
         params = current_params(s)
+        fresh = data_freshness(s)
+        # odtlačok stavu (static/js/app.js): pri výpadku agenta, novom odporúčaní, rozhodnutí dispečera alebo zmene
+        # stavu vlaku či rušňovodiča si otvorená stránka obnoví obsah – ZELENÁ bez čerstvých dát agenta neostane
+        state = page_state(
+            t.status, fresh["stale"], *((rec.id, rec.state, rec.decision, rec.color, rec.priority,
+                                         (rec.data_age or {}).get("computed_at"), iso(rec.decided_at))
+                                        if rec is not None else ()),
+            *[(sh.id, sh.status, iso(sh.start_utc)) for sh in shifts])
+        if wants_state(request):
+            return state_response(state)
         return render(request, "vlak.html", {"t": t, "rec": rec, "positions": positions, "shifts": shifts,
                                              "handovers": handovers, "paths": paths, "history": history,
-                                             "driver_link": link, "params": params,
-                                             "fresh": data_freshness(s)}, user=user)
+                                             "driver_link": link, "params": params, "fresh": fresh,
+                                             "page_state": state}, user=user)
 
 
 @router.get("/vlaky/{train_id}/upravit", response_class=HTMLResponse)

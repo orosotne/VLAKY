@@ -2,7 +2,8 @@
 {% import "_makra.html" as m with context %}
 {% block title %}Vlaky{% endblock %}
 {% block content %}
-<div class="page-head">
+{# data-zivy-stav: zoznam sa pri zmene (výpadok agenta, nové odporúčanie) obnoví sám (static/js/app.js) #}
+<div class="page-head" data-zivy-stav="{{ page_state }}" data-tz="{{ tz }}">
   <h1>Vlaky</h1>
   <div class="head-actions">
     {% if user.can("operate") %}<a class="btn btn-primary" href="/vlaky/novy">Nový vlak</a>{% endif %}
@@ -28,7 +29,7 @@
     {% set r = recs.get(t.id) %}
     <tr>
       <td><a href="/vlaky/{{ t.id }}"><strong>{{ t.number }}</strong></a>{% if t.rid %} <span class="badge badge-warn" title="Nebezpečný tovar">RID</span>{% endif %}</td>
-      <td class="nowrap">{{ t.run_date or "—" }}</td>
+      <td class="nowrap">{{ t.run_date|datum }}</td>
       <td>{{ t.origin }} → {{ t.destination }}</td>
       <td>{{ t.customer or "—" }}</td>
       <td class="small">{{ t.entry_border.name if t.entry_border else "—" }}<br>{{ t.exit_border.name if t.exit_border else "—" }}</td>

@@ -4,7 +4,7 @@ from __future__ import annotations
 import importlib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -23,6 +23,8 @@ from .common import (DONE_TRAIN_STATES, EVENT_KIND, FormReader, REC_STATE, TRAIN
 from .data import (alerts, auto_applied_unconfirmed, borders_list, capped_variants, crew_live, data_freshness,
                    display_color, is_current, latest_positions, semafor_cap, train_rows)
 from .prepocet import evaluate_all_bg
+from .common import iso, page_state, state_response, wants_state
+from .data import recommendation_status, worse_color
 
 router = APIRouter()
 view = require("view")
@@ -412,10 +414,17 @@ def recommendations_page(request: Request, stav: str = "", farba: str = "", vlak
             if train_ids:
                 current = set(s.scalars(select(func.max(Recommendation.id)).where(
                     Recommendation.train_id.in_(train_ids)).group_by(Recommendation.train_id)))
+        # odtlačok zoznamu pre živú obnovu (static/js/app.js): po výpadku agenta sa zelené aktuálne odporúčania
+        # zmenia na ORANŽOVÉ aj v otvorenom zozname, rovnako nové odporúčanie či rozhodnutie iného dispečera
+        state = page_state(total, fresh["stale"], *[
+            (r.id, r.state, r.color, r.priority, iso(r.decided_at), (r.data_age or {}).get("computed_at"),
+             r.id in current) for r in recs])
+        if wants_state(request):
+            return state_response(state)
         return render(request, "odporucania.html", {"recs": recs, "stav": stav, "farba": farba, "vlak": vlak,
                                                     "strana": strana, "pages": max(1, -(-total // per_page)),
-                                                    "total": total, "fresh": fresh, "current_ids": current},
-                      user=user)
+                                                    "total": total, "fresh": fresh, "current_ids": current,
+                                                    "page_state": state}, user=user)
 
 
 def _next_steps(rec: Recommendation, color: Optional[str] = None) -> list:
@@ -463,6 +472,21 @@ def _next_steps(rec: Recommendation, color: Optional[str] = None) -> list:
     return steps
 
 
+def _running_rec(rec: Recommendation, current: bool) -> bool:
+    """Odporúčanie pre idúci vlak: pokračovanie v jazde nie je vypravenie (POKRAČOVAŤ, nie VYPRAVIŤ) a jeho čas
+    „odchodu“ je len čas prepočtu. Plánovač idúcemu vlaku VYPRAVIŤ nedáva (mení ho na POKRAČOVAŤ) – odporúčanie
+    VYPRAVIŤ vzniklo pred odchodom; iné rozhodnutie (POČKAŤ, ODSTAVIŤ, ESKALOVAŤ) je pre idúci vlak, ak je aktuálne
+    a vlak je v jazde."""
+    chosen = rec.chosen or {}
+    return rec.decision == "POKRAČOVAŤ" or bool(chosen.get("until_entry")) or (
+        current and rec.decision != "VYPRAVIŤ" and rec.train is not None and rec.train.status == "v_jazde")
+
+
+def _ago_iso(now: datetime, minutes: Any) -> Optional[str]:
+    """Čas pred „minutes“ minútami (ISO) – pre živý údaj „pred … min“ na stránke (data-vek, static/js/app.js)."""
+    return iso(now - timedelta(minutes=float(minutes))) if isinstance(minutes, (int, float)) else None
+
+
 @router.get("/odporucania/{rec_id}", response_class=HTMLResponse)
 def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
     cfg = settings()
@@ -472,15 +496,13 @@ def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
                        .where(Recommendation.id == rec_id))
         if rec is None:
             raise HTTPException(404, "Odporúčanie neexistuje.")
-        latest = s.scalar(select(Recommendation.id).where(Recommendation.train_id == rec.train_id)
-                          .order_by(Recommendation.id.desc()))
         history = list(s.scalars(select(Recommendation).where(Recommendation.train_id == rec.train_id)
                                  .order_by(Recommendation.id.desc()).limit(10)))
-        fresh = data_freshness(s, now)
-        current = is_current(rec, latest)
+        status = recommendation_status(s, rec, now)
+        latest, fresh, current = status["latest"], status["fresh"], status["current"]
         # aktuálne odporúčanie vlaku bez čerstvých dát agenta: ZELENÁ sa ukáže ako ORANŽOVÁ (PROMPT 12); varianty
         # a okná obmedzeného semaforu (plánovač alebo web) sa nikde neukážu ako ZELENÉ
-        color = display_color(rec, fresh, current)
+        color = status["color"]
         cap = semafor_cap(rec, fresh, current, cfg.position_stale_minutes)
         newest = next((h for h in history if h.id == latest), None)
         newest_color = display_color(newest, fresh, is_current(newest, latest))
@@ -495,27 +517,50 @@ def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
         crew_waiting = bool(crew) and not crew.get("unknown_start") and (
             not crew.get("driver") or (crew_start is not None and crew_start > crew_ref))
         position_age = None
+        position_at = None
         if current:
             rows = latest_positions(s, [rec.train_id]).get(rec.train_id)
             if rows:
+                position_at = iso(rows[0].ts_utc)
                 position_age = round((now - ensure_utc(rows[0].ts_utc)).total_seconds() / 60.0, 1)
+        # odtlačok toho, čo stránka ukazuje: otvorená stránka sa ho každú minútu pýta a pri zmene (agent prestal
+        # prepočítavať a ZELENÁ je teraz ORANŽOVÁ, nové odporúčanie, rozhodnutie iného dispečera, tichá aktualizácia
+        # odporúčania plánovačom) si obsah obnoví – nikdy neukazuje ZELENÚ bez čerstvých dát agenta
+        state = page_state(
+            rec.id, rec.state, rec.decision, rec.color, rec.priority, (rec.data_age or {}).get("computed_at"),
+            rec.decided_by, iso(rec.decided_at), color, current, latest, fresh["stale"],
+            rec.train.status if rec.train else "", (crew_now or {}).get("status"),
+            position_age is not None and position_age > cfg.position_stale_minutes)
+        if wants_state(request):
+            return state_response(state)
         return render(request, "odporucanie.html", {
             "rec": rec, "train": rec.train, "latest_id": latest, "history": history,
             "history_colors": history_colors, "steps": _next_steps(rec, color),
             "stale_minutes": cfg.position_stale_minutes, "fresh": fresh, "current": current,
             "agent_stale": bool(current and fresh["stale"]), "color": color, "downgraded": color != rec.color,
             "cap": cap, "variants": capped_variants(rec, cap), "crew_now": crew_now, "crew_waiting": crew_waiting,
-            "position_age": position_age}, user=user)
+            "position_age": position_age, "position_at": position_at, "page_state": state,
+            "mailbox_at": _ago_iso(now, fresh.get("mailbox_min")),
+            "cycle_at": _ago_iso(now, fresh.get("agent_cycle_min")), "running": _running_rec(rec, current)},
+            user=user)
 
 
 DECISION_STATE = {"prijat": "prijate", "upravit": "upravene", "zamietnut": "zamietnute"}
 
 
+SEMAFOR_COLORS = ("ZELENÁ", "ORANŽOVÁ", "ČERVENÁ")
+
+
 @router.post("/odporucania/{rec_id}/rozhodnutie")
 def recommendation_decide(rec_id: int, request: Request, user=Depends(operate), form=Depends(csrf_form)):
+    """Rozhodnutie dispečera. Prijať a Upraviť sa vzťahujú na odporúčanie tak, ako ho web ukazuje teraz: bez čerstvých
+    dát agenta nie je ZELENÉ (rozhodnutie vyžaduje výslovné potvrdenie a v audite je zobrazená farba, nie ZELENÁ)
+    a ak sa semafor od zobrazenia stránky zhoršil (farba v skrytom poli „farba“), rozhodnutie sa neuloží."""
     reader = FormReader(form)
     action = reader.choice("akcia", "Akcia", DECISION_STATE.keys())
     note = reader.text("poznamka", "Poznámka", maxlen=2000)
+    shown = reader.raw("farba")  # farba semaforu, ktorú stránka ukazovala pri odoslaní
+    confirmed_stale = reader.flag("potvrdit_neaktualne")
     back = f"/odporucania/{rec_id}"
     if not reader.ok:
         return redirect(back, "Neplatná akcia.", "chyba")
@@ -524,20 +569,49 @@ def recommendation_decide(rec_id: int, request: Request, user=Depends(operate), 
     if action == "upravit" and not note:
         return redirect(back, "Pri úprave popíšte, čo meníte (napr. iný čas odchodu).", "chyba")
     with session_scope() as s:
-        rec = s.get(Recommendation, rec_id)
+        rec = s.scalar(select(Recommendation).options(selectinload(Recommendation.train))
+                       .where(Recommendation.id == rec_id))
         if rec is None:
             raise HTTPException(404, "Odporúčanie neexistuje.")
         if rec.state == "zastarane":
             return redirect(back, "Odporúčanie je zastarané – rozhodnite o aktuálnom odporúčaní pre vlak.", "chyba")
+        status = recommendation_status(s, rec)
+        color, fresh, downgraded = status["color"], status["fresh"], status["downgraded"]
+        if action != "zamietnut":
+            if downgraded and not confirmed_stale:
+                # agent nemá čerstvé dáta: zelené odporúčanie sa ukazuje ako ORANŽOVÉ – prijať ho možno len vedome
+                return redirect(back + "#h-rozhodnutie",
+                                f"{fresh['text']} Odporúčanie sa preto ukazuje ako {color} (pri prepočte {rec.color}) "
+                                "a rozhodnutie sa neuložilo. Overte aktuálny stav (výluky, polohu, rušňovodiča); ak "
+                                "odporúčanie napriek tomu prijímate, potvrďte to políčkom pri tlačidle a odošlite znova.",
+                                "varovanie")
+            if shown in SEMAFOR_COLORS and worse_color(color, shown) != shown:
+                # semafor sa od zobrazenia stránky zhoršil (tichá aktualizácia odporúčania, výpadok agenta)
+                return redirect(back + "#h-rozhodnutie",
+                                f"Semafor odporúčania sa od zobrazenia stránky zhoršil (bol {shown}, teraz {color}) – "
+                                "rozhodnutie sa neuložilo. Skontrolujte aktuálne odporúčanie a rozhodnite znova.",
+                                "varovanie")
         previous = rec.state
         rec.state = DECISION_STATE[action]
         rec.decided_by = user.username
         rec.decided_at = now_utc()
         rec.dispatcher_note = note
-        audit(s, user.username, f"recommendation_{action}", "recommendation", rec.id, train_id=rec.train_id,
-              decision=rec.decision, color=rec.color, previous_state=previous, state=rec.state, note=note)
+        detail: dict = {"train_id": rec.train_id, "decision": rec.decision, "color": color,
+                        "previous_state": previous, "state": rec.state, "note": note}
+        if downgraded:
+            # v audite farba, ako ju dispečer videl (nikdy ZELENÁ bez čerstvých dát agenta), a farba pri prepočte;
+            # prijať či upraviť sa dalo len s výslovným potvrdením neaktuálnych údajov
+            detail["computed_color"] = rec.color
+            if action != "zamietnut":
+                detail["stale_confirmed"] = True
+        if fresh["stale"]:
+            detail["data_freshness"] = fresh["text"]
+        audit(s, user.username, f"recommendation_{action}", "recommendation", rec.id, **detail)
+        computed = rec.color
     text = {"prijat": "Odporúčanie prijaté.", "upravit": "Úprava odporúčania uložená.",
             "zamietnut": "Odporúčanie zamietnuté."}[action]
+    if downgraded and action != "zamietnut":
+        text += f" Zaznamenané ako {color} – údaje agenta neboli čerstvé (pri prepočte {computed})."
     return redirect(back, text)
 
 

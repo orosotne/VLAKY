@@ -2,7 +2,9 @@
 {% import "_makra.html" as m with context %}
 {% block title %}Vlak {{ t.number }}{% endblock %}
 {% block content %}
-<div class="page-head">
+{# data-zivy-stav: pri zmene stavu (výpadok agenta, nové odporúčanie, rozhodnutie) sa stránka obnoví sama; stránka
+   s jednorazovým odkazom pre rušňovodiča sa neprepíše – len upozorní (static/js/app.js) #}
+<div class="page-head" data-zivy-stav="{{ page_state }}" data-tz="{{ tz }}"{% if driver_link %} data-zivy-url="/vlaky/{{ t.id }}" data-zivy-len-upozornit="1"{% endif %}>
   <p class="crumbs"><a href="/vlaky">Vlaky</a> › {{ t.number }}</p>
   <h1>Vlak {{ t.number }} <span class="muted">{{ t.origin }} → {{ t.destination }}</span></h1>
   <div class="head-actions">
@@ -34,7 +36,7 @@
     <h2>Údaje vlaku</h2>
     <dl class="meta">
       <dt>Stav</dt><dd>{{ TRAIN_STATUS.get(t.status, t.status) }}</dd>
-      <dt>Dátum jazdy</dt><dd>{{ t.run_date or "—" }}</dd>
+      <dt>Dátum jazdy</dt><dd>{{ t.run_date|datum }}</dd>
       <dt>Zákazník</dt><dd>{{ t.customer or "—" }}</dd>
       <dt>Vstupný priechod</dt><dd>{% if t.entry_border %}{{ t.entry_border.name }} <span class="muted small">PPS: {{ t.entry_border.handover_station }}</span>{% else %}—{% endif %}</dd>
       <dt>Výstupný priechod</dt><dd>{% if t.exit_border %}{{ t.exit_border.name }} <span class="muted small">PPS: {{ t.exit_border.handover_station }}</span>{% else %}—{% endif %}</dd>

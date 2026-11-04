@@ -1,4 +1,5 @@
-/* Spoločné správanie stránok: téma, navigácia, potvrdenia, kopírovanie, našepkávanie staníc, odpočet 13 h. */
+/* Spoločné správanie stránok: téma, navigácia, potvrdenia, kopírovanie, našepkávanie staníc, odpočet 13 h,
+   vek údajov a živý stav otvorenej stránky (odporúčanie, vlak, zoznam odporúčaní). */
 (function () {
   'use strict';
 
@@ -143,8 +144,148 @@
       el.setAttribute('title', 'Do limitu pracovného času (' + String(Math.round(limit / 60 * 10) / 10).replace('.', ',') + ' h)');
     });
   }
-  if (document.querySelector('[data-countdown]')) {
+  var countdownTimer = null;
+  function startCountdowns() {  // aj po obnove obsahu stránky (nové prvky s odpočtom)
+    if (!document.querySelector('[data-countdown]')) { return; }
     updateCountdowns();
-    setInterval(updateCountdowns, 30000);
+    if (!countdownTimer) { countdownTimer = setInterval(updateCountdowns, 30000); }
+  }
+  startCountdowns();
+
+  // ------------------------------------------------------------ vek údajov na otvorenej stránke („pred 12 min“)
+  // data-vek="<čas ISO>" na <dt> (alebo priamo na prvku): prvý text dvojice <dd> sa priebežne dopočítava k teraz
+  var DURATION_RE = /\d+ h \d{2} min|\d+ min/;
+  function updateAges() {
+    var now = Date.now();
+    document.querySelectorAll('[data-vek]').forEach(function (el) {
+      var ts = Date.parse(el.getAttribute('data-vek'));
+      var target = el.tagName === 'DT' ? el.nextElementSibling : el;
+      var node = target ? target.firstChild : null;
+      if (isNaN(ts) || !node || node.nodeType !== 3 || !DURATION_RE.test(node.nodeValue)) { return; }
+      node.nodeValue = node.nodeValue.replace(DURATION_RE, fmtMinutes(Math.max(0, (now - ts) / 60000)));
+    });
+  }
+
+  // ------------------------------------------------------------ živý stav otvorenej stránky (odporúčanie, vlak)
+  // Stránka s data-zivy-stav (odtlačok toho, čo ukazuje) sa každú minútu a po návrate na kartu opýta servera na
+  // odtlačok (hlavička X-Vlaky-Stav). Pri zmene – agent prestal prepočítavať a ZELENÁ je teraz ORANŽOVÁ, nové
+  // odporúčanie, rozhodnutie iného dispečera – si obsah obnoví (rozpísané poznámky a fokus ostanú; potvrdenie
+  // neaktuálnych údajov nie), takže otvorená stránka nikdy neukazuje ZELENÚ bez čerstvých dát agenta. Bez spojenia so
+  // serverom (alebo po odhlásení) upozorní, že stav nie je overený.
+  var LIVE_MS = 60000;
+  var live = { fails: 0, lastOk: Date.now(), busy: false };
+
+  function liveBox() { return document.querySelector('[data-zivy-stav]'); }
+  function liveUrl(box) {
+    return (box && box.getAttribute('data-zivy-url')) || (window.location.pathname + window.location.search);
+  }
+  function hhmm(ms) {
+    var box = liveBox();
+    var opts = { hour: '2-digit', minute: '2-digit', timeZone: (box && box.getAttribute('data-tz')) || 'Europe/Bratislava' };
+    try { return new Date(ms).toLocaleTimeString('sk-SK', opts); } catch (e) { delete opts.timeZone; return new Date(ms).toLocaleTimeString('sk-SK', opts); }
+  }
+  function liveNotice(kind, text, reloadUrl) {
+    var main = document.getElementById('obsah');
+    if (!main) { return; }
+    var p = document.getElementById('zivy-stav-sprava');
+    if (!p) {
+      p = document.createElement('p');
+      p.id = 'zivy-stav-sprava';
+      main.insertBefore(p, main.firstChild);
+    }
+    p.className = 'flash flash-' + kind;
+    p.setAttribute('role', kind === 'chyba' ? 'alert' : 'status');
+    p.textContent = text + ' ';
+    if (reloadUrl) {
+      var a = document.createElement('a');
+      a.href = reloadUrl;
+      a.textContent = 'Obnoviť stránku';
+      p.appendChild(a);
+    }
+  }
+  function clearNotice(kind) {
+    var p = document.getElementById('zivy-stav-sprava');
+    if (p && p.classList.contains('flash-' + kind)) { p.parentNode.removeChild(p); }
+  }
+  function fieldKey(el) {
+    if (el.id) { return '#' + el.id; }
+    return (el.form ? (el.form.getAttribute('action') || '') + '|' : '') + (el.name || '');
+  }
+  function keepable(el) {  // rozpísaný text a výbery; nie skryté polia, tlačidlá ani zaškrtávacie políčka (potvrdenia)
+    var type = (el.type || '').toLowerCase();
+    return !el.readOnly && !el.disabled && ['hidden', 'submit', 'button', 'checkbox', 'radio', 'file'].indexOf(type) < 0;
+  }
+  function swapContent(box) {
+    var url = liveUrl(box);
+    var opts = { credentials: 'same-origin', cache: 'no-store', headers: { 'X-Vlaky-Obnova': '1', Accept: 'text/html' } };
+    return fetch(url, opts).then(function (r) {
+      if (!r.ok || r.redirected) { throw new Error('obnova ' + r.status); }
+      return r.text();
+    }).then(function (html) {
+      var fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('obsah');
+      var main = document.getElementById('obsah');
+      if (!fresh || !main || !fresh.querySelector('[data-zivy-stav]')) { throw new Error('obnova: bez obsahu'); }
+      var saved = {};
+      main.querySelectorAll('input, textarea, select').forEach(function (el) {
+        if (keepable(el)) { saved[fieldKey(el)] = el.value; }
+      });
+      var active = document.activeElement;
+      var focusKey = active && main.contains(active) && keepable(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? fieldKey(active) : null;
+      var range = null;
+      try { if (focusKey && typeof active.selectionStart === 'number') { range = [active.selectionStart, active.selectionEnd]; } } catch (e) { range = null; }
+      main.innerHTML = fresh.innerHTML;
+      var focusEl = null;
+      main.querySelectorAll('input, textarea, select').forEach(function (el) {
+        var key = fieldKey(el);
+        if (!keepable(el) || !Object.prototype.hasOwnProperty.call(saved, key)) { return; }
+        el.value = saved[key];
+        if (key === focusKey) { focusEl = el; }
+      });
+      if (focusEl) {
+        focusEl.focus({ preventScroll: true });
+        try { if (range) { focusEl.setSelectionRange(range[0], range[1]); } } catch (e) { /* pole bez výberu textu */ }
+      }
+      updateAges();
+      startCountdowns();
+      liveNotice('info', 'Stav sa zmenil – údaje na stránke sú obnovené (' + hhmm(Date.now()) + ').');
+    });
+  }
+  function pollLive() {
+    var box = liveBox();
+    if (!box || live.busy || document.hidden) { return; }
+    live.busy = true;
+    var opts = { credentials: 'same-origin', cache: 'no-store', headers: { 'X-Vlaky-Stav': '1', Accept: 'application/json' } };
+    fetch(liveUrl(box), opts).then(function (r) {
+      if (!r.ok || r.redirected) { throw new Error('stav ' + r.status); }
+      return r.json();
+    }).then(function (d) {
+      live.fails = 0;
+      live.lastOk = Date.now();
+      clearNotice('chyba');
+      var cur = liveBox();
+      if (!d || !d.stav || !cur || d.stav === cur.getAttribute('data-zivy-stav')) { return null; }
+      if (cur.hasAttribute('data-zivy-len-upozornit')) {
+        // stránku s jednorazovým obsahom (odkaz pre rušňovodiča) neprepisovať – len upozorniť
+        cur.setAttribute('data-zivy-stav', d.stav);
+        liveNotice('varovanie', 'Stav vlaku sa medzitým zmenil (odporúčanie alebo čerstvosť údajov agenta).', liveUrl(cur));
+        return null;
+      }
+      return swapContent(cur);
+    }).catch(function () {
+      live.fails += 1;
+      if (live.fails >= 2) {
+        liveNotice('chyba', 'Stav stránky sa nepodarilo overiť od ' + hhmm(live.lastOk) + ' (bez spojenia so serverom ' +
+          'alebo ste boli odhlásení) – semafor a údaje nemusia byť aktuálne. Pred rozhodnutím stránku obnovte.',
+          liveUrl(liveBox()));
+      }
+    }).then(function () { live.busy = false; });
+  }
+  if (liveBox()) {
+    setInterval(pollLive, LIVE_MS);
+    setInterval(updateAges, 30000);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) { updateAges(); pollLive(); }
+    });
+    window.addEventListener('pageshow', function (ev) { if (ev.persisted) { pollLive(); } });
   }
 }());

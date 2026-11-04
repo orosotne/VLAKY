@@ -258,6 +258,8 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 .decide-forms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
 .decide { display: flex; flex-direction: column; gap: .35rem; padding: .7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); }
 .decide label { font-weight: 600; font-size: .86rem; }
+.decide .stale-confirm { display: flex; gap: .4rem; align-items: flex-start; font-weight: 700; color: var(--orange); }
+.decide .stale-confirm input { margin-top: .2rem; flex: none; }
 .report { white-space: pre-wrap; font-family: var(--mono); font-size: .88rem; background: var(--panel-2); padding: .8rem; border-radius: 6px; border: 1px solid var(--border); overflow-x: auto; }
 .link-card { border-left: 6px solid var(--accent); }
 .health-summary.health-ok { border-left: 6px solid var(--dot-green); }

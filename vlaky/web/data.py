@@ -16,7 +16,7 @@ from ..models import (AgentHealth, BorderCrossing, Closure, DriverShift, Extract
                       Notification, PositionReport, Recommendation, Train)
 from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, POSITION_SOURCE, TRAIN_STATUS, crew_color,
                      current_params, iso, log, parse_iso)
-from .trasy import RouteInfo, build_route_info, detour_info, estimate_position, hours_window, trail_feature
+from .trasy import RouteInfo, build_route_info, detour_info, estimate_position, hours_window, locate, trail_feature
 
 URGENCY = {"ČERVENÁ": 0, "ORANŽOVÁ": 1, None: 2, "ZELENÁ": 3}
 PRIORITY_RANK = {"KRITICKÉ": 0, "DÔLEŽITÉ": 1, "INFO": 2}
@@ -147,6 +147,39 @@ def closure_edges(c: Closure) -> set:
     except Exception:  # noqa: BLE001
         log.exception("Úsek výluky %s sa nepodarilo nájsť", c.id)
         return set()
+
+
+OFFICIAL_SOURCES = ("zsr", "tis", "taf")  # hlásenia ŽSR/TIS z dopravne (bod dopravne, nie GPS) – ako plánovač
+PASSED_MARGIN_M = 1000.0  # výluka je za vlakom, až keď ju prešiel aspoň o 1 km (presnosť polohy, dĺžka vlaku)
+
+
+def route_progress_m(info: Optional[RouteInfo], report: Optional[PositionReport]) -> Optional[float]:
+    """Kde je idúci vlak na svojej trase (m od jej začiatku) podľa poslednej správy o polohe – aj staršej: vlak je
+    aspoň tam, kde bol naposledy (rovnako počíta plánovač). Hlásenie ŽSR/TIS z dopravne podľa km dopravne na trase
+    (bod dopravne môže ležať mimo koľají trasy). None – poloha nie je na trase (odklon, chybná poloha) alebo chýba."""
+    if info is None or report is None:
+        return None
+    lat = report.snapped_lat if report.snapped_lat is not None else report.lat
+    lon = report.snapped_lon if report.snapped_lon is not None else report.lon
+    along = None
+    if lat is not None and lon is not None:
+        try:
+            along = locate(info, lat, lon, report.matched_edge)
+        except Exception:  # noqa: BLE001 – poloha je len doplnok, bez nej sa ukážu všetky výluky na trase
+            log.exception("Polohu vlaku %s na trase sa nepodarilo určiť", report.train_number)
+    if along is None and (report.source or "") in OFFICIAL_SOURCES and report.nearest_station:
+        kms = [st["km"] for st in info.stations if st.get("name") == report.nearest_station]
+        if kms:
+            along = min(kms) * 1000.0  # dopravňa na trase viackrát: prvý výskyt (vlak nie je ďalej, než ukazuje)
+    return along
+
+
+def closure_behind(info: RouteInfo, edges: set, progress_m: Optional[float]) -> bool:
+    """Leží výluka (jej koľaje na trase vlaku, aj pri opakovanom prejazde) celá za vlakom – vlak ju už prešiel?"""
+    if progress_m is None:
+        return False
+    ends = [info.cum_m[info.edge_last.get(e, info.edge_span[e][1])] for e in edges & info.edges if e in info.edge_span]
+    return bool(ends) and max(ends) + PASSED_MARGIN_M < progress_m
 
 
 def closure_geometry(c: Closure) -> Optional[dict]:
@@ -476,6 +509,20 @@ def display_color(rec: Optional[Recommendation], fresh: Optional[dict], current:
     return rec.color
 
 
+def recommendation_status(s: Session, rec: Recommendation, now: Optional[datetime] = None) -> dict:
+    """Odporúčanie tak, ako ho web ukazuje k teraz – jedno pravidlo pre detail odporúčania, jeho živú obnovu
+    a kontrolu rozhodnutia dispečera (Prijať, Upraviť): posledné odporúčanie vlaku („latest“), čerstvosť dát agenta
+    („fresh“), aktuálne odporúčanie („current“), zobrazená farba („color“ – aktuálne odporúčanie bez čerstvých dát
+    agenta nikdy ZELENÁ) a či je znížená oproti farbe pri prepočte („downgraded“)."""
+    now = now or now_utc()
+    latest = s.scalar(select(Recommendation.id).where(Recommendation.train_id == rec.train_id)
+                      .order_by(Recommendation.id.desc()))
+    fresh = data_freshness(s, now)
+    current = is_current(rec, latest)
+    color = display_color(rec, fresh, current)
+    return {"latest": latest, "fresh": fresh, "current": current, "color": color, "downgraded": color != rec.color}
+
+
 def semafor_cap(rec: Optional[Recommendation], fresh: Optional[dict] = None, current: bool = False,
                 stale_minutes: Optional[float] = None) -> Optional[dict]:
     """Obmedzenie semaforu odporúčania: {"color": farba, "reason": dôvod} alebo None (bez obmedzenia).
@@ -609,8 +656,10 @@ def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = 
         route = route_info(t) if closure_sets else None
         route_closures = []
         if route is not None:
+            # idúci vlak: výluky, ktoré už prešiel, nie sú riziko ani konflikt (najbližšie riziko, okno mapy, časová os)
+            progress = route_progress_m(route, last) if t.status == "v_jazde" else None
             for c, spans, edges in closure_sets:
-                if edges and route.edges & edges:
+                if edges and route.edges & edges and not closure_behind(route, edges, progress):
                     nxt = next(((a, b) for a, b in spans if b >= now), None)
                     if nxt is None:
                         continue
