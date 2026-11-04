@@ -1180,7 +1180,10 @@
       var a90 = Date.parse(t.plan.arr_p90);
       if (!isNaN(a50)) {
         var bar = svg('rect', { x: x(dep), y: y + 5, width: Math.max(2, x(a50) - x(dep)), height: rowH - 10, rx: 2, class: 'g-bar-' + cls });
-        bar.appendChild(svg('title', {}, 'Vlak ' + t.number + ': odchod ' + fmt(t.plan.depart, true) + ', príchod P50 ' + fmt(t.plan.arr_p50, true) + (t.plan.arr_p90 ? ', P90 ' + fmt(t.plan.arr_p90, true) : '')));
+        // idúci vlak sa nevypravuje (jeho „odchod“ je len čas prepočtu); pred zatvoreným cieľom čaká na uvoľnenie vjazdu
+        var ch = (t.recommendation && t.recommendation.chosen) || {};
+        var start = ch.until_entry ? 'čaká pred vjazdom do cieľa' : (t.status === 'v_jazde' ? 'v jazde' : 'odchod ' + fmt(t.plan.depart, true));
+        bar.appendChild(svg('title', {}, 'Vlak ' + t.number + ': ' + start + ', príchod P50 ' + fmt(t.plan.arr_p50, true) + (t.plan.arr_p90 ? ', P90 ' + fmt(t.plan.arr_p90, true) : '')));
         s.appendChild(bar);
       }
       if (!isNaN(a90) && !isNaN(a50) && a90 > a50) {

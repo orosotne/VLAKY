@@ -100,6 +100,79 @@ def _is_api(request: Request) -> bool:
     return p.startswith("/api/") or p == "/health"
 
 
+# chyby overenia údajov (pydantic) po slovensky – text pre dispečera, rušňovodiča (PWA) aj správcu brány polôh
+_VALIDATION_TEXT = {
+    "missing": "chýba",
+    "int_parsing": "musí byť celé číslo", "int_type": "musí byť celé číslo", "int_from_float": "musí byť celé číslo",
+    "float_parsing": "musí byť číslo", "float_type": "musí byť číslo", "finite_number": "musí byť konečné číslo",
+    "bool_parsing": "musí byť áno alebo nie (true/false)", "bool_type": "musí byť áno alebo nie (true/false)",
+    "string_type": "musí byť text", "list_type": "musí byť zoznam", "dict_type": "musí byť objekt (JSON)",
+    "model_type": "musí byť objekt (JSON)", "model_attributes_type": "musí byť objekt (JSON)",
+    "json_invalid": "nie je platný JSON", "json_type": "nie je platný JSON",
+    "datetime_parsing": "musí byť dátum a čas (ISO 8601)", "datetime_type": "musí byť dátum a čas (ISO 8601)",
+    "datetime_from_date_parsing": "musí byť dátum a čas (ISO 8601)",
+    "date_parsing": "musí byť dátum (RRRR-MM-DD)", "date_type": "musí byť dátum (RRRR-MM-DD)",
+    "date_from_datetime_parsing": "musí byť dátum (RRRR-MM-DD)",
+    "literal_error": "má nepovolenú hodnotu", "enum": "má nepovolenú hodnotu",
+    "extra_forbidden": "nie je povolené",
+}
+_CHARS = ("znak", "znaky", "znakov")
+_ITEMS = ("položku", "položky", "položiek")
+_VALIDATION_LIMIT = {
+    "string_too_short": ("min_length", "musí mať aspoň {}", _CHARS),
+    "string_too_long": ("max_length", "môže mať najviac {}", _CHARS),
+    "too_short": ("min_length", "musí mať aspoň {}", _ITEMS),
+    "too_long": ("max_length", "môže mať najviac {}", _ITEMS),
+    "greater_than_equal": ("ge", "musí byť najmenej {}", None), "less_than_equal": ("le", "musí byť najviac {}", None),
+    "greater_than": ("gt", "musí byť viac ako {}", None), "less_than": ("lt", "musí byť menej ako {}", None),
+}
+_LOCATION = {"query": "parameter adresy", "path": "časť adresy", "body": "pole", "form": "pole formulára",
+             "header": "hlavička", "cookie": "cookie"}
+_SHAPE_ERRORS = {"list_type", "dict_type", "model_type", "model_attributes_type"}
+
+
+def _union_tag(part) -> bool:
+    """Časť umiestnenia chyby, ktorá je typ alternatívy (napr. „PositionIn“, „list[PositionIn]“), nie názov poľa."""
+    return isinstance(part, str) and (part[:1].isupper() or "[" in part or "-" in part)
+
+
+def validation_errors(errors: list) -> list:
+    """Chyby overenia bez šumu alternatív: pri tele „objekt alebo zoznam objektov“ chyba „musí byť zoznam“ nepomôže,
+    ak je k dispozícii chyba konkrétneho poľa."""
+    specific = [e for e in errors if str(e.get("type") or "") not in _SHAPE_ERRORS]
+    return specific or list(errors)
+
+
+def validation_text(error: dict) -> str:
+    """Jedna chyba overenia (RequestValidationError.errors()) po slovensky: „Parameter adresy „strana“: musí byť celé
+    číslo.“, „Položka 2, pole „lat“: musí byť najviac 90.“ Vlastné texty validátorov (ValueError v slovenčine) sa
+    prevezmú bez anglického „Value error,“."""
+    from .common import fmt_num_short
+
+    loc = list(error.get("loc") or [])
+    kind = str(error.get("type") or "")
+    parts = [x for x in loc[1:] if not _union_tag(x)]
+    index = [int(x) + 1 for x in parts if isinstance(x, int) or str(x).isdigit()]
+    names = [str(x) for x in parts if not (isinstance(x, int) or str(x).isdigit()) and str(x)]
+    where = _LOCATION.get(str(loc[0]), "pole") if loc else "pole"
+    field = f"{where} „{'.'.join(names)}“" if names else ""
+    items = ", ".join(f"položka {i}" for i in index) if kind != "json_invalid" else ""  # pri JSON je to pozícia znaku
+    place = ", ".join(p for p in (items, field) if p) or "údaje"
+    ctx = error.get("ctx") or {}
+    if kind in ("value_error", "assertion_error") and ctx.get("error"):
+        what = str(ctx["error"])
+    elif kind in _VALIDATION_LIMIT and _VALIDATION_LIMIT[kind][0] in ctx:
+        key, text, words = _VALIDATION_LIMIT[kind]
+        limit = fmt_num_short(ctx[key])
+        if words:
+            n = int(ctx[key]) if str(ctx[key]).isdigit() else 5
+            limit += " " + (words[0] if n == 1 else words[1] if 2 <= n <= 4 else words[2])
+        what = text.format(limit)
+    else:
+        what = _VALIDATION_TEXT.get(kind, "má neplatnú hodnotu")
+    return f"{place[:1].upper()}{place[1:]}: {what}."
+
+
 def _startup() -> None:
     from ..db import init_db, session_scope
     from ..models import BorderCrossing
@@ -195,12 +268,15 @@ def create_app(auto_evaluate: bool = True) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def _validation(request: Request, exc: RequestValidationError):
-        errors = [{"loc": list(e.get("loc", [])), "msg": e.get("msg", ""), "type": e.get("type", "")}
-                  for e in exc.errors()]
+        # „msg“ ostáva pôvodný (pre vývojárov brány polôh), „text“ a stránka sú po slovensky
+        errors = [{"loc": list(e.get("loc", [])), "msg": e.get("msg", ""), "type": e.get("type", ""),
+                   "text": validation_text(e)} for e in validation_errors(exc.errors())]
+        texts = list(dict.fromkeys(e["text"] for e in errors))
         if _is_api(request):
-            return JSONResponse({"detail": "Neplatné údaje.", "errors": errors}, status_code=422)
-        return render(request, "chyba.html", {"title": "Neplatné údaje",
-                                              "message": "; ".join(e["msg"] for e in errors)[:500]},
+            return JSONResponse({"detail": ("Neplatné údaje – " + " ".join(texts))[:500] if texts else "Neplatné údaje.",
+                                 "errors": errors}, status_code=422)
+        message = " ".join(texts)[:500] + " Skontrolujte adresu alebo formulár a skúste to znova."
+        return render(request, "chyba.html", {"title": "Neplatné údaje", "message": message.strip()},
                       user=optional_user(request), status_code=422)
 
     @app.exception_handler(Exception)

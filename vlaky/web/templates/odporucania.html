@@ -2,7 +2,8 @@
 {% import "_makra.html" as m with context %}
 {% block title %}Odporúčania{% endblock %}
 {% block content %}
-<div class="page-head">
+{# data-zivy-stav: zoznam sa pri zmene (výpadok agenta, nové odporúčanie, rozhodnutie) obnoví sám (static/js/app.js) #}
+<div class="page-head" data-zivy-stav="{{ page_state }}" data-zivy-hlavne="{{ page_summary }}" data-teraz="{{ now|iso }}" data-tz="{{ tz }}">
   <h1>Odporúčania agenta <span class="muted">({{ total }})</span></h1>
   <form method="get" class="filters" role="search" aria-label="Filter odporúčaní">
     <label>Stav

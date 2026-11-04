@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
 from fastapi import Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -86,6 +86,11 @@ REC_STATE = {"nove": "nové", "prijate": "prijaté", "upravene": "upravené", "z
 SHIFT_STATUS = {"planovana": "plánovaná", "prebieha": "prebieha", "ukoncena": "ukončená"}
 HANDOVER_STATUS = {"ocakavany": "očakávaný", "prisiel": "prišiel na hranicu", "prevzaty": "prevzatý",
                    "odovzdany": "odovzdaný"}
+HANDOVER_DIRECTION = {"vstup": "vstup", "vystup": "výstup"}
+# stav udalosti z e-mailu („navrh“ je čakajúca na potvrdenie, alebo len informačná – needs_confirmation)
+EVENT_STATUS = {"navrh": "návrh", "aplikovane": "zapísaná do registra", "potvrdene": "potvrdená",
+                "zamietnute": "zamietnutá"}
+EXTRACTOR = {"pravidla": "pravidlá", "llm": "jazykový model (LLM)"}
 POSITION_SOURCE = {"gps": "GPS", "zsr": "ŽSR", "tis": "RNE TIS", "manual": "ručne", "driver": "rušňovodič",
                    "sim": "simulácia"}
 PATH_KIND = {"gvd": "trasa podľa GVD", "ad_hoc": "ad hoc trasa", "navrh": "návrh trasy"}
@@ -243,6 +248,22 @@ def fmt_full(value: Any) -> str:
     return local(d).strftime("%d.%m.%Y %H:%M") if d else "—"
 
 
+def fmt_date(value: Any) -> str:
+    """Dátum po slovensky („2026-11-04“ → „04.11.2026“); dátum s časom v miestnom čase, iný text bez zmeny."""
+    if value is None or value == "":
+        return "—"
+    if isinstance(value, datetime):
+        return local(ensure_utc(value)).strftime("%d.%m.%Y")
+    if isinstance(value, date):
+        return value.strftime("%d.%m.%Y")
+    text = str(value).strip()
+    try:
+        return date.fromisoformat(text).strftime("%d.%m.%Y")
+    except ValueError:
+        d = parse_iso(text)
+        return local(d).strftime("%d.%m.%Y") if d else text
+
+
 def fmt_minutes(value: Any) -> str:
     """Minúty → „3 h 05 min“ (záporné so znamienkom mínus)."""
     if value is None or value == "":
@@ -398,7 +419,7 @@ def build_templates() -> Jinja2Templates:
                       autoescape=select_autoescape(["html", "xml"], default_for_string=True, default=True),
                       trim_blocks=True, lstrip_blocks=True)
     env.filters.update({
-        "t": fmt_any, "tt": lambda v: fmt_any(v, False), "tfull": fmt_full, "dtinput": input_dt,
+        "t": fmt_any, "tt": lambda v: fmt_any(v, False), "tfull": fmt_full, "dtinput": input_dt, "datum": fmt_date,
         "minutes": fmt_minutes, "pct": fmt_pct, "eur": fmt_eur, "num": fmt_num, "ago": ago, "duty_h": fmt_duty_h,
         "numg": fmt_num_short,
         "color_class": _color_class, "jsonpretty": _json_pretty, "iso": lambda v: iso(parse_iso(v)) or "",
@@ -409,7 +430,8 @@ def build_templates() -> Jinja2Templates:
     env.globals.update({
         "TRAIN_STATUS": TRAIN_STATUS, "CLOSURE_KIND": CLOSURE_KIND, "CLOSURE_STATUS": CLOSURE_STATUS,
         "EVENT_KIND": EVENT_KIND, "REC_STATE": REC_STATE, "SHIFT_STATUS": SHIFT_STATUS,
-        "HANDOVER_STATUS": HANDOVER_STATUS, "POSITION_SOURCE": POSITION_SOURCE, "ROLE_LABEL": ROLE_LABEL,
+        "HANDOVER_STATUS": HANDOVER_STATUS, "HANDOVER_DIRECTION": HANDOVER_DIRECTION, "EVENT_STATUS": EVENT_STATUS,
+        "POSITION_SOURCE": POSITION_SOURCE, "ROLE_LABEL": ROLE_LABEL,
         "ORDER_STATUS": ORDER_STATUS, "DEADLINE_TYPE": DEADLINE_TYPE, "PATH_KIND": PATH_KIND,
         "PATH_STATUS": PATH_STATUS, "EMAIL_STATUS": EMAIL_STATUS, "NOTIFY_STATUS": NOTIFY_STATUS,
         "NOTIFY_CHANNEL": NOTIFY_CHANNEL, "HEALTH_STATUS": HEALTH_STATUS, "HEALTH_DETAIL": HEALTH_DETAIL,
@@ -493,9 +515,49 @@ def asset_version() -> str:
     return _ASSET_VERSION["v"]
 
 
+# ---------------------------------------------------------------- živá obnova otvorenej stránky (static/js/app.js)
+STATE_HEADER = "x-vlaky-stav"      # prehliadač sa pýta len na odtlačok stavu stránky (JSON namiesto HTML)
+REFRESH_HEADER = "x-vlaky-obnova"  # obnova obsahu stránky na pozadí – flash správu nečíta ani nemaže
+
+
+def page_state(*parts: Any) -> str:
+    """Odtlačok toho, čo stránka ukazuje (farba semaforu, stav odporúčania, čerstvosť dát agenta…). Otvorená stránka
+    sa naň každú minútu opýta (hlavička X-Vlaky-Stav) a pri zmene si obsah obnoví – napr. ZELENÁ sa po výpadku
+    agenta zmení na ORANŽOVÚ aj bez opätovného načítania stránky."""
+    import hashlib
+
+    text = "|".join("" if p is None else str(p) for p in parts)
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+def page_summary(*items: Any) -> str:
+    """Hlavné údaje stránky ako JSON [[popis, hodnota], …] (atribút data-zivy-hlavne). Pri živej obnove ich stránka
+    porovná so svojimi: zmenu (semafor, rozhodnutie, stav odporúčania, čerstvosť dát agenta…) ohlási výrazným
+    upozornením s pomenovaním zmeny, obnovu bez takej zmeny (bežný prepočet s rovnakým výsledkom) len nenápadne.
+    Položky bez hodnoty (None) sa vynechajú."""
+    return json.dumps([[str(label), str(value)] for label, value in items if value is not None and value != ""],
+                      ensure_ascii=False)
+
+
+def wants_state(request: Request) -> bool:
+    return request.headers.get(STATE_HEADER) == "1"
+
+
+def state_response(state: str, ages: Optional[Mapping[str, Optional[str]]] = None) -> JSONResponse:
+    """Odpoveď na dopyt otvorenej stránky (X-Vlaky-Stav): odtlačok stavu („stav“), čas servera („teraz“ – vek údajov
+    a odpočet pracovného času sa na stránke počítajú k nemu, nie k hodinám počítača dispečera) a aktuálne časy údajov
+    („vek“: kľúč data-vek-kluc → čas ISO), ku ktorým stránka „pred N min“ znova ukotví – vek inak rástol od načítania
+    stránky, hoci agent medzitým schránku skontroloval."""
+    body: dict = {"stav": state, "teraz": iso(now_utc())}
+    if ages is not None:
+        body["vek"] = {k: v for k, v in ages.items() if v}
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+
 def render(request: Request, template: str, ctx: Optional[dict] = None, user=None,
            status_code: int = 200) -> HTMLResponse:
-    flash = read_flash(request)
+    # obnova na pozadí nesmie „zjesť“ flash správu, ktorá patrí stránke po presmerovaní (napr. v inej karte)
+    flash = None if request.headers.get(REFRESH_HEADER) == "1" else read_flash(request)
     cfg = settings()
     base = {
         "request": request, "user": user, "csrf_token": getattr(user, "csrf", ""), "flash": flash,
