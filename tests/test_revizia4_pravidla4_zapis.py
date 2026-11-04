@@ -139,21 +139,20 @@ def test_i2_iny_termin_s_rovnakym_cislom_je_dalsi_termin(env, session):
      "Výluka podľa ROV č. 1315/2026 dňa 25.11.2026 sa nekoná. Náhradný termín: 28.11.2026 od 08:00 do 14:00 hod.\n"),
 ])
 def test_i2_presun_jedneho_dna_nepresunie_celu_vyluku(env, session, subject, body):
-    """[2] Viacdenná výluka 23. – 27.11.; e-mail presúva len deň 25.11. na 28.11. Po potvrdení všetkého ostáva výluka
-    23. – 27.11. (zrušenie dňa sa odmietne – dispečer upraví termín), 28.11. je ďalšia výluka – vlaky 24. aj 28.11.
-    nedostanú VYPRAVIŤ (predtým sa celá výluka presunula na 28.11.)."""
-    from vlaky.posta.spracovanie import apply_failed
-
+    """[2] Viacdenná výluka 23. – 27.11.; e-mail presúva len deň 25.11. na 28.11. Po potvrdení všetkého sa výluka
+    rozdelí (5. revízia – zruší sa len 25.11.: 23. – 24.11. a 26. – 27.11. ostávajú), 28.11. je ďalšia výluka – vlaky
+    24. aj 28.11. nedostanú VYPRAVIŤ (predtým sa celá výluka presunula na 28.11.)."""
     c = _registered_1315(session)
     drop(env, "z.eml", raw_mail(subject, body, "z1315", sender=ROV_ZA, date="Mon, 16 Nov 2026 10:00:00 +0100"))
     _process(session, utc(2026, 11, 16, 9, 2))
     _confirm_all(session)
     session.refresh(c)
-    assert (as_utc(c.start_utc), as_utc(c.end_utc), c.status) == (utc(2026, 11, 23, 7), utc(2026, 11, 27, 13),
+    assert (as_utc(c.start_utc), as_utc(c.end_utc), c.status) == (utc(2026, 11, 23, 7), utc(2026, 11, 24, 13),
                                                                   "overene")
-    assert sorted(as_utc(x.start_utc) for x in _active(session)) == [utc(2026, 11, 23, 7), utc(2026, 11, 28, 7)]
+    assert sorted(as_utc(x.start_utc) for x in _active(session)) == [utc(2026, 11, 23, 7), utc(2026, 11, 26, 7),
+                                                                     utc(2026, 11, 28, 7)]
     cancel = next(e for e in events(session) if e.kind == "vyluka_zrusenie")
-    assert apply_failed(cancel) and "len časti" in cancel.validation["apply_result"]["error"]
+    assert cancel.validation["apply_result"]["action"] == "rozdelene", cancel.validation["apply_result"]
     for i, day in enumerate((24, 28)):
         r = _decide(session, f"7762{i}", "Ružomberok", "Liptovský Mikuláš", utc(2026, 11, day, 9),
                     utc(2026, 11, day, 4))

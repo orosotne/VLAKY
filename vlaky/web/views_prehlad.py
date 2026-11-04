@@ -89,6 +89,53 @@ def _field_kind(value: Any) -> str:
     return "text"
 
 
+_SHOWN_DT = "%d.%m.%Y %H:%M"
+
+
+def _point_text(p: Any) -> str:
+    """Bod trasy na čítanie: „Žilina (príchod 14.11. 08:05, odchod 14.11. 08:10)“ v miestnom čase."""
+    if not isinstance(p, dict):
+        return str(p)
+    times = [f"{label} {local(dt).strftime('%d.%m. %H:%M')}" for label, dt in
+             (("príchod", parse_iso(p.get("arr"))), ("odchod", parse_iso(p.get("dep")))) if dt is not None]
+    return str(p.get("station") or "?") + (f" ({', '.join(times)})" if times else "")
+
+
+def _display(key: str, value: Any, kind: str) -> str:
+    """Hodnota poľa udalosti na čítanie (rola, ktorá nepotvrdzuje): miestny čas ako vo formulári dispečera,
+    slovenské názvy druhov, áno/nie – nie UTC ISO, interné kľúče či „True“."""
+    from datetime import date
+
+    from .common import CLOSURE_KIND, PATH_KIND
+
+    if value is None or value == "" or value == []:
+        return "—"
+    if kind == "bool":
+        return "áno" if value else "nie"
+    if kind == "datetime_aware":
+        dt = parse_iso(value)
+        return local(dt).strftime(_SHOWN_DT) if dt else str(value)
+    if kind == "datetime_naive":
+        try:
+            return datetime.strptime(value.strip().replace(" ", "T")[:16], "%Y-%m-%dT%H:%M").strftime(_SHOWN_DT)
+        except ValueError:
+            return str(value)
+    if kind == "date":
+        try:
+            return date.fromisoformat(value.strip()).strftime("%d.%m.%Y")
+        except ValueError:
+            return str(value)
+    if kind == "number":
+        return f"{value:g}".replace(".", ",") if isinstance(value, float) else str(value)
+    if key == "kind":
+        return CLOSURE_KIND.get(str(value)) or PATH_KIND.get(str(value)) or str(value)
+    if key == "points" and isinstance(value, list):
+        return "; ".join(_point_text(p) for p in value)
+    if kind == "json":
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
 def event_fields(data: dict) -> list:
     out = []
     for key, value in (data or {}).items():
@@ -106,8 +153,21 @@ def event_fields(data: dict) -> list:
         else:
             shown = value
         out.append({"key": str(key), "label": FIELD_LABELS.get(str(key), str(key)), "kind": kind, "value": shown,
-                    "original": value})
+                    "original": value, "display": _display(str(key), value, kind)})
     return out
+
+
+_ISO_DAY = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b(?![T:\d])")
+
+
+def local_dates(text: Any) -> str:
+    """Dátumy „RRRR-MM-DD“ v texte upozornenia ako „DD.MM.RRRR“ (aj v staršie uložených upozorneniach)."""
+    return _ISO_DAY.sub(lambda m: f"{m.group(3)}.{m.group(2)}.{m.group(1)}", str(text))
+
+
+# stav spracovanej udalosti (tabuľka „Naposledy spracované“)
+EVENT_STATE = {"aplikovane": "zapísaná do registra", "zamietnute": "zamietnutá", "potvrdene": "potvrdená",
+               "navrh": "čaká na potvrdenie"}
 
 
 def parse_event_edits(form, data: dict) -> tuple:
@@ -212,7 +272,31 @@ def _full_items(s, ids: list) -> list:
     emails = {m.id: m for m in s.scalars(select(Email).options(selectinload(Email.attachments))
                                          .where(Email.id.in_(email_ids)))} if email_ids else {}
     return [{"event": e, "email": emails.get(e.email_id), "fields": event_fields(e.data or {}),
-             "failed": _apply_failed(e), "register": _register_notes(s, e)} for e in events]
+             "failed": _apply_failed(e), "register": _register_notes(s, e), "issues": _issues(e),
+             "failure": _failure(e)} for e in events]
+
+
+def _issues(ev: ExtractedEvent) -> dict:
+    """Chyby a upozornenia udalosti na zobrazenie – dátumy v slovenskom zápise (aj v starších uložených textoch)."""
+    val = ev.validation if isinstance(ev.validation, dict) else {}
+    return {key: [local_dates(x) for x in val.get(key) or []]
+            for key in ("errors", "chyby", "blocking", "warnings", "varovania", "issues", "confirmation_reasons")}
+
+
+def _failure(ev: ExtractedEvent) -> dict:
+    """Potvrdená udalosť so zlyhaným zápisom: chyba a rada pre dispečera (odmietnutý zápis čiastočného zrušenia hovorí
+    sám, čo robiť – nie „po odstránení príčiny ju potvrďte znova“; „založenie vlaku“ len pri avíze)."""
+    if not _apply_failed(ev):
+        return {}
+    result = (ev.validation or {}).get("apply_result") or {}
+    error = local_dates(result.get("error") or "neznáma chyba")
+    if result.get("retry") is False:
+        advice = ""
+    elif ev.kind == "avizo":
+        advice = "Po odstránení príčiny (napr. založení vlaku) ju potvrďte znova, alebo ju zamietnite."
+    else:
+        advice = "Po odstránení príčiny ju potvrďte znova, alebo ju zamietnite."
+    return {"error": error, "advice": advice}
 
 
 def _compact_items(s, ids: list) -> list:
@@ -232,7 +316,7 @@ def _compact_items(s, ids: list) -> list:
         val = e.validation if isinstance(e.validation, dict) else {}
         out.append({"event": e, "email": emails.get(e.email_id), "failed": _apply_failed(e),
                     "summary": describe(e) if describe else f"{EVENT_KIND.get(e.kind, e.kind)} (#{e.id})",
-                    "reasons": list(val.get("confirmation_reasons") or [])[:3]})
+                    "reasons": [local_dates(x) for x in list(val.get("confirmation_reasons") or [])[:3]]})
     return out
 
 
@@ -276,15 +360,30 @@ def queue_page(request: Request, strana: int = 1, udalost: Optional[int] = None,
                                                              ExtractedEvent.confirmed_at.is_not(None))
                                 .order_by(ExtractedEvent.confirmed_at.desc()).limit(15)))
         return render(request, "fronta.html", {**queue, "total": queue["pending"] + len(auto_items), "recent": recent,
-                                               "auto_items": auto_items,
+                                               "auto_items": auto_items, "event_state": _recent_state,
                                                "threshold": settings().confirm_threshold}, user=user)
+
+
+def _recent_state(ev: ExtractedEvent) -> str:
+    """Stav spracovanej udalosti po slovensky (tabuľka „Naposledy spracované“), aj s rozdelením či nahradením."""
+    result = (ev.validation or {}).get("apply_result") if isinstance(ev.validation, dict) else None
+    action = result.get("action") if isinstance(result, dict) else None
+    if ev.status == "aplikovane" and action == "nahradene":
+        return "potvrdená – nič sa nezapísalo (nahradila ju novšia)"
+    if ev.status == "aplikovane" and action == "rozdelene":
+        return "zapísaná do registra (výluka rozdelená)"
+    if ev.status == "aplikovane" and action == "bez_zmeny":
+        return "potvrdená – register bez zmeny"
+    if _apply_failed(ev):
+        return "potvrdená – zápis zlyhal"
+    return EVENT_STATE.get(ev.status, ev.status)
 
 
 @router.get("/fronta/udalost/{event_id}")
 def queue_event(event_id: int, user=Depends(view)):
     """Odkaz na jednu udalosť (z upozornenia e-mailom): čakajúca udalosť sa ukáže s celým formulárom navrchu fronty
     (aj keď je vo fronte viac strán), automaticky zapísaná nepotvrdená v časti „Zapísané automaticky“, spracovaná
-    udalosť – fronta s informáciou, ako bola spracovaná."""
+    udalosť – fronta s informáciou, ako bola spracovaná (kto ju potvrdil či zamietol, či ju nahradila novšia)."""
     with session_scope() as s:
         ev = s.get(ExtractedEvent, event_id)
         if ev is None:
@@ -293,10 +392,16 @@ def queue_event(event_id: int, user=Depends(view)):
             return redirect(_event_url(event_id))
         if ev.status == "aplikovane" and ev.confirmed_at is None:
             return redirect(f"/fronta#udalost-{event_id}")
-        state = {"aplikovane": "zapísaná do registra", "zamietnute": "zamietnutá", "potvrdene": "potvrdená",
-                 "navrh": "informačná, nevyžaduje potvrdenie"}.get(ev.status, ev.status)
-        who = f" ({ev.confirmed_by})" if ev.confirmed_by else ""
-        return redirect("/fronta", f"Udalosť #{event_id} už bola spracovaná – {state}{who}.", "info")
+        return redirect("/fronta", _processed_text(ev), "info")
+
+
+def _processed_text(ev: ExtractedEvent) -> str:
+    """„Udalosť #N už bola spracovaná – zamietnutá (disp2, 16.11. 10:30).“ – kto a ako ju spracoval."""
+    try:
+        state = _posta().processed_state(ev)
+    except Exception:  # noqa: BLE001 – bez modulu posta len stav
+        state = EVENT_STATE.get(ev.status, ev.status)
+    return f"Udalosť #{ev.id} už bola spracovaná – {state}."
 
 
 def _event_url(event_id: int) -> str:
@@ -316,7 +421,7 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
         if ev is None:
             raise HTTPException(404, "Udalosť neexistuje.")
         if not _confirmable(ev):
-            return redirect("/fronta", "Udalosť už bola spracovaná.", "info")
+            return redirect("/fronta", _processed_text(ev), "info")
         data = dict(ev.data or {})
         kind = ev.kind
     with_edits = str(form.get("akcia") or "") == "upravit"
@@ -332,7 +437,7 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
     try:
         posta = _posta()
         with session_scope() as s:
-            ev = posta.confirm_event(s, event_id, user.username, edits=edits or None)
+            ev = posta.confirm_event(s, event_id, user.username, edits=edits or None, pending_only=True)
             val = ev.validation if isinstance(ev.validation, dict) else {}
             result = val.get("apply_result") or {}
             kept = confirmed_register_edits(val)
@@ -341,23 +446,39 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
         return redirect("/fronta", "Spracovanie e-mailov (modul posta) zatiaľ nie je k dispozícii – udalosť "
                                    "zostáva vo fronte.", "chyba")
     except Exception as exc:  # noqa: BLE001 – chyba spracovania sa ukáže dispečerovi, udalosť ostáva vo fronte
+        if _processed(exc):
+            # súbežne ju potvrdil alebo zamietol iný dispečer – nič sa nezmenilo
+            return redirect("/fronta", str(exc)[:400], "info")
         log.exception("Potvrdenie udalosti %s zlyhalo", event_id)
         return redirect(_event_url(event_id), f"Udalosť sa nepodarilo potvrdiť: {str(exc)[:300]}", "chyba")
     if request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"potvrdená udalosť z e-mailu #{event_id}")
     if result.get("ok") is False:
-        # zápis zlyhal (napr. vlak ešte nie je v systéme) – udalosť ostáva vo fronte, po náprave sa potvrdí znova
-        return redirect(_event_url(event_id), "Udalosť je potvrdená, ale do registra sa nezapísala: "
-                        f"{str(result.get('error') or 'neznáma chyba')[:300]} Po odstránení príčiny ju potvrďte znova.",
+        # zápis zlyhal (napr. vlak ešte nie je v systéme) – udalosť ostáva vo fronte; odmietnutý zápis (napr. zrušenie
+        # len časti výluky, ktorú nemožno rozdeliť) sám hovorí, čo robiť – bez rady „potvrďte znova“
+        error = local_dates(str(result.get("error") or "neznáma chyba"))[:600]
+        tail = "" if result.get("retry") is False else " Po odstránení príčiny ju potvrďte znova."
+        return redirect(_event_url(event_id), f"Udalosť je potvrdená, ale do registra sa nezapísala: {error}{tail}",
                         "chyba")
     if result.get("action") == "nahradene":
         # staršia udalosť – záznam medzitým zmenila (napr. zrušila) novšia udalosť, ktorá má prednosť
         return redirect("/fronta", "Udalosť potvrdená, ale nič sa nezapísalo: "
                         f"{str(result.get('note') or 'záznam medzitým zmenila novšia udalosť.')[:300]}", "varovanie")
     msg = "Udalosť potvrdená" + (f" s úpravami ({', '.join(edits)})" if edits else "")
+    if result.get("action") == "rozdelene":
+        parts = ", ".join(f"#{t.get('id')}" for t in result.get("terms") or [])
+        msg += f"; výluka #{result.get('id')} je rozdelená ({parts}) – zmena či zrušenie sa týka len uvedenej časti"
+    elif result.get("action") == "bez_zmeny":
+        note = str(result.get("note") or "")[:300]
+        msg += f"; register sa nezmenil – {note[:1].lower() + note[1:]}".rstrip(" –")
     if kept:
         msg += f"; ponechané úpravy z registra výluk ({', '.join(kept)})"
-    return redirect("/fronta", msg + ".")
+    return redirect("/fronta", msg + ("" if msg.endswith(".") else "."))
+
+
+def _processed(exc: Exception) -> bool:
+    """Výnimka hovorí, že udalosť medzitým spracoval niekto iný (posta.spracovanie.EventProcessed)."""
+    return type(exc).__name__ == "EventProcessed"
 
 
 @router.post("/fronta/{event_id}/zamietnut")
@@ -371,14 +492,16 @@ def queue_reject(event_id: int, request: Request, background: BackgroundTasks, u
         if ev is None:
             raise HTTPException(404, "Udalosť neexistuje.")
         if not _confirmable(ev):
-            return redirect("/fronta", "Udalosť už bola spracovaná.", "info")
+            return redirect("/fronta", _processed_text(ev), "info")
     try:
         posta = _posta()
         with session_scope() as s:
-            posta.reject_event(s, event_id, user.username, reason=reason)
+            posta.reject_event(s, event_id, user.username, reason=reason, pending_only=True)
     except (ImportError, NotImplementedError, AttributeError):
         return redirect("/fronta", "Spracovanie e-mailov (modul posta) zatiaľ nie je k dispozícii.", "chyba")
     except Exception as exc:  # noqa: BLE001
+        if _processed(exc):
+            return redirect("/fronta", str(exc)[:400], "info")
         log.exception("Zamietnutie udalosti %s zlyhalo", event_id)
         return redirect("/fronta", f"Udalosť sa nepodarilo zamietnuť: {str(exc)[:300]}", "chyba")
     if request.app.state.auto_evaluate:

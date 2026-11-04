@@ -473,8 +473,9 @@ def test_qc4_zrusenie_jedneho_dna_ma_rusny_termin(cfg, body):
 
 
 def test_qc4_end_to_end_potvrdenie_nezrusi_celu_vyluku(env, session):
-    """QC4 end to end: potvrdenie zrušenia jedného dňa nezruší celú výluku 23. – 27.11. (zápis sa odmietne s
-    vysvetlením, výluka ostáva overená a vlak 24.11. nejde); zrušenie celej jednodňovej výluky funguje."""
+    """QC4 end to end: potvrdenie zrušenia jedného dňa nezruší celú výluku 23. – 27.11. – od 5. revízie sa výluka
+    rozdelí (zruší sa len 25.11., ostatné dni ostanú overené a vlak 24.11. nejde); zrušenie celej jednodňovej výluky
+    funguje."""
     from vlaky.posta.spracovanie import confirm_event
 
     c = Closure(kind="uplna", from_station="Ružomberok", to_station="Liptovský Mikuláš", start_utc=utc(2026, 11, 23, 7),
@@ -492,12 +493,13 @@ def test_qc4_end_to_end_potvrdenie_nezrusi_celu_vyluku(env, session):
     _process(session, utc(2026, 11, 16, 9, 5))
     evs = {e.data.get("external_ref"): e for e in events(session)}
     part, full = evs["1315/2026"], evs["2241/2026"]
-    assert any("len časti výluky" in w for w in part.validation["warnings"]), part.validation["warnings"]
+    assert any("len časť výluky" in w for w in part.validation["warnings"]), part.validation["warnings"]
     ev = confirm_event(session, part.id, "dispecer1")
     session.commit()
-    assert ev.validation["apply_result"]["ok"] is False and "len časti" in ev.validation["apply_result"]["error"]
+    assert ev.validation["apply_result"]["ok"] is True and ev.validation["apply_result"]["action"] == "rozdelene"
     session.refresh(c)
-    assert c.status == "overene"
+    assert c.status == "overene" and (c.start_utc.replace(tzinfo=None), c.end_utc.replace(tzinfo=None)) == (
+        datetime(2026, 11, 23, 7), datetime(2026, 11, 24, 13))
     assert full.kind == "vyluka_zrusenie"
     confirm_event(session, full.id, "dispecer1")
     session.commit()

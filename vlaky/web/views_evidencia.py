@@ -636,11 +636,12 @@ def closure_verify(closure_id: int, request: Request, background: BackgroundTask
             c.status = "overene"
             c.version = (c.version or 1) + 1
             audit(s, user.username, "closure_verify", "closure", c.id, version=c.version)
+    split = ""
     if event_id is not None:
         try:
             posta = importlib.import_module("vlaky.posta.spracovanie")
             with session_scope() as s:
-                ev = posta.confirm_event(s, event_id, user.username)
+                ev = posta.confirm_event(s, event_id, user.username, pending_only=True)
                 result = (ev.validation or {}).get("apply_result") or {}
                 kept = bool((ev.validation or {}).get("register_kept"))
                 c = s.get(Closure, closure_id)
@@ -652,19 +653,26 @@ def closure_verify(closure_id: int, request: Request, background: BackgroundTask
                                     f"{str(result.get('note') or 'záznam medzitým zmenila novšia udalosť.')[:300]}",
                                     "varovanie")
                 if result.get("ok") is False or (c is not None and c.status != "overene"):
+                    # odmietnutý zápis (napr. zrušenie len časti výluky, ktorú nemožno rozdeliť) hovorí sám, čo robiť
                     error = result.get("error") or "výluka zostala v stave návrh"
                     return redirect(f"/fronta?udalost={event_id}#udalost-{event_id}",
                                     f"Výluku sa nepodarilo potvrdiť: {error}", "chyba")
+                if result.get("action") == "rozdelene":
+                    parts = ", ".join(f"#{t.get('id')}" for t in result.get("terms") or [])
+                    split = f" Výluka je rozdelená ({parts}) – zmena sa týka len časti výluky, ostatné dni ostali."
                 audit(s, user.username, "closure_verify", "closure", closure_id, event_id=event_id)
         except (ImportError, NotImplementedError, AttributeError):
             return redirect(back, "Spracovanie e-mailov (modul posta) zatiaľ nie je k dispozícii.", "chyba")
         except Exception as exc:  # noqa: BLE001
+            if type(exc).__name__ == "EventProcessed":
+                # súbežne ju potvrdil či zamietol iný dispečer – nič sa nezmenilo
+                return redirect(back, str(exc)[:400], "info")
             log.exception("Potvrdenie výluky %s zlyhalo", closure_id)
             return redirect(back, f"Výluku sa nepodarilo potvrdiť: {str(exc)[:300]}", "chyba")
     if request.app.state.auto_evaluate:
         background.add_task(evaluate_all_bg, f"overená výluka #{closure_id}")
     return redirect(back, "Výluka potvrdená (overené)" + (" – vaše úpravy v registri výluk ostali zachované."
-                                                         if kept else "."))
+                                                         if kept else ".") + split)
 
 
 # ================================================================ HRANICE A PREBERANIE (M6)
