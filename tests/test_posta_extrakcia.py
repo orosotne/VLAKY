@@ -144,7 +144,8 @@ def test_ine_for_unrecognised_mail_and_agent_replies(cfg):
 # ---------------------------------------------------------------------- formulácie SK / CZ
 def test_closure_without_diacritics_and_hyphen_section(cfg):
     (it,) = rules("Vyluka kolaje v useku Kralovany-Ruzomberok dna 12.11.2026 od 8.00 do 14.00 hod.")
-    assert it.kind == "vyluka_nova" and it.data["kind"] == "kolaj"
+    # výluka koľaje bez čísla koľaje: na jednokoľajnej trati je to celá trať – prísnejší prípad s poznámkou (revízia 4)
+    assert it.kind == "vyluka_nova" and it.data["kind"] == "uplna"
     check(it, dict(from_station="Kraľovany", to_station="Ružomberok", start="2026-11-12T07:00:00" + Z,
                    end="2026-11-12T13:00:00" + Z))
 

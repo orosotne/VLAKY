@@ -118,7 +118,8 @@ class Period:
     daily_from: Optional[str] = None
     daily_to: Optional[str] = None
     flags: set = field(default_factory=set)
-    # flagy: cely_den, cez_polnoc, rok_doplneny, do_odvolania, bez_konca, denne, zle_poradie
+    # flagy: cely_den, cez_polnoc, rok_doplneny, do_odvolania, bez_konca, bez_casu_zaciatku, bez_casu_konca, denne,
+    # zle_poradie
 
 
 def _year(y: Optional[str]) -> Optional[int]:
@@ -267,10 +268,17 @@ def _add_bare(folded: str, toks: list[Temporal], taken: list, pos: int, first: d
         taken.append((t.start, t.end))
 
 
+# číslo položky zoznamu na začiatku riadku pred dátumom („1. 01.12.2026 od 08:00“, „2. 03.12.2026“) – nie je to deň
+_ENUM_BEFORE_DATE = re.compile(r"(?m)^([ \t>*•-]*)(\d{1,2}\.)(?=[ \t]+\d{1,2}\s?\.\s?\d{1,2}\s?\.)")
+
+
 def scan(folded: str, ref: date) -> list[Temporal]:
-    """Nájde dátumy a časy, spojí dátum + čas do dátumu s časom. Výsledok je zoradený podľa pozície."""
+    """Nájde dátumy a časy, spojí dátum + čas do dátumu s časom. Výsledok je zoradený podľa pozície.
+
+    Číslo položky zoznamu pred dátumom („1. 01.12.2026“) sa za deň nepovažuje."""
     toks: list[Temporal] = []
     taken: list[tuple[int, int]] = []
+    folded = _ENUM_BEFORE_DATE.sub(lambda m: m.group(1) + " " * len(m.group(2)), folded)
 
     for m in _ISO_RE.finditer(folded):
         d = _mkdate(int(m.group(1)), int(m.group(2)), int(m.group(3)))
@@ -656,6 +664,16 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
                 used.update((i, i + 1))
                 i += 2
                 continue
+            if a.kind == "datetime" and b.kind == "date" and b.day >= a.day:
+                # „od 20.11.2026 14:00 do 30.11.2026“ – koniec bez času platí do konca uvedeného dňa (prísnejší prípad)
+                p = Period(a.dt, datetime.combine(b.day, time(0, 0)) + timedelta(days=1), a.start, b.end,
+                           flags={"bez_casu_konca"})
+                if not (a.year_given and b.year_given):
+                    p.flags.add("rok_doplneny")
+                out.append(p)
+                used.update((i, i + 1))
+                i += 2
+                continue
             if a.kind == "date" and b.kind == "date":
                 date_ranges.append((a, b))
                 used.update((i, i + 1))
@@ -747,7 +765,44 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
                 continue
             out.append(_token_period(e, wa, wb, min(e.start, wa.start), max(e.end, wb.end)))
             used.add(j)
+    out += _labelled_periods(folded, toks, used)
     out.sort(key=lambda p: p.pos)
+    return out
+
+
+# označené riadky začiatku a konca („Začiatok výluky: 08.12.2026 07:00“ / „Koniec výluky: 08.12.2026 16:00“, „Od:“ /
+# „Do:“) – obdobie aj bez „do“ medzi časmi (formulár ROV)
+_START_LINE = re.compile(r"^[\s>*•-]*(?:zaciatok|zacatek|zahajeni\w*|platnost\w*\s+od|platne\s+od|od|start\w*|beginn\w*)"
+                         r"(?:\s+[^\s:]+){0,2}\s*:?\s*$")
+_END_LINE = re.compile(r"^[\s>*•-]*(?:koniec|konec|ukoncen\w*|platnost\w*\s+do|platne\s+do|do|ende\w*)"
+                       r"(?:\s+[^\s:]+){0,2}\s*:?\s*$")
+
+
+def _labelled_periods(folded: str, toks: list[Temporal], used: set[int]) -> list[Period]:
+    out: list[Period] = []
+    for i, a in enumerate(toks):
+        if i in used or a.kind != "datetime" or not _START_LINE.match(folded[folded.rfind("\n", 0, a.start) + 1:a.start]):
+            continue
+        for j in range(i + 1, min(i + 3, len(toks))):
+            b = toks[j]
+            if folded.count("\n", a.end, b.start) > 2:
+                break
+            ls = folded.rfind("\n", 0, b.start) + 1
+            if j in used or b.kind not in ("datetime", "time") or ls <= a.end or \
+                    not _END_LINE.match(folded[ls:b.start]):
+                continue
+            end = b.dt if b.kind == "datetime" else datetime.combine(a.day, b.tm)
+            p = Period(a.dt, end, a.start, b.end)
+            if end <= a.dt and b.kind == "time":
+                p.end = end + timedelta(days=1)
+                p.flags.add("cez_polnoc")
+            if not a.year_given or (b.kind == "datetime" and not b.year_given):
+                p.flags.add("rok_doplneny")
+            if a.unordered or b.unordered:
+                p.flags.add("zle_poradie")
+            out.append(p)
+            used.update((i, j))
+            break
     return out
 
 

@@ -32,7 +32,9 @@ SCHEMAS: dict[str, list[str]] = {
     "vyluka_nova": _CLOSURE_KEYS,
     "vyluka_zmena": _CLOSURE_KEYS,
     "pomala_jazda": _CLOSURE_KEYS,
-    "vyluka_zrusenie": ["external_ref", "from_station", "to_station", "start"],
+    # start/end – rušený termín (zrušenie len časti viacdennej výluky celú výluku nezruší); kind = pomala_jazda –
+    # ruší sa pomalá jazda (POTR), nie výluka iného druhu s rovnakým číslom
+    "vyluka_zrusenie": ["external_ref", "from_station", "to_station", "start", "end", "kind"],
     # offer/accept_by: ponuka trasy zo systému KIS (ešte nie je pridelená, treba ju akceptovať)
     "trasa_pridelena": ["train_number", "date", "kind", "points", "external_ref", "offer", "accept_by"],
     "trasa_zmena": ["train_number", "date", "kind", "points", "external_ref", "offer", "accept_by"],
@@ -98,6 +100,8 @@ class MailDocument:
     sender: str = ""
     sender_name: str = ""
     received_at: Optional[datetime] = None            # UTC
+    # e-mail nie je prevádzkovým oznámením podľa hlavičiek (automatická odpoveď, pozvánka text/calendar) – dôvod
+    auto_reason: str = ""
 
     def full_text(self) -> tuple[str, int]:
         """Celý text na extrakciu a pozícia konca predmetu."""

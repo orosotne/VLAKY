@@ -220,12 +220,17 @@ def combine(rule_items: list[ExtractedItem], llm_items: Optional[list[ExtractedI
 
 
 def extract(doc: MailDocument, *, use_llm: bool = True, llm: Optional[LLMExtractor] = None) -> ExtractionResult:
-    """Celá extrakcia jedného e-mailu: pravidlá, voliteľne LLM, porovnanie. Nikdy nevráti prázdny zoznam."""
+    """Celá extrakcia jedného e-mailu: pravidlá, voliteľne LLM, porovnanie. Nikdy nevráti prázdny zoznam.
+
+    Automatická odpoveď či pozvánka (:func:`vlaky.posta.pravidla.non_operational`) nie je prevádzkové oznámenie –
+    LLM sa nevolá (nesmie z nej „nájsť“ výluku), výsledok je jedna udalosť „iné“ s vysvetlením."""
     rule_items = RuleExtractor().extract(doc)
     llm_items: Optional[list[ExtractedItem]] = None
     err = ""
     model = ""
     llm_notes: list[str] = []
+    if any("neprevadzkovy_email" in (it.evidence or {}) for it in rule_items):
+        use_llm = False
     if use_llm and LLMExtractor.enabled():
         ex = llm or LLMExtractor()
         try:

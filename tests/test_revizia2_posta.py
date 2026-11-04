@@ -208,12 +208,13 @@ def test_r12_nepriradena_zmena_s_doplnenym_cislom_nezaklada_duplicitu(env, sessi
 
 
 def test_r12_nova_vyluka_preklasifikovana_na_zrusenie_zrusi_vyluku_v_registri(env, session):
-    """[12d] E-mail „sa nekoná“ sa extrahoval ako nová výluka (s vlastným návrhom). Dispečer ho opraví na zrušenie
-    1600/2026 – zruší sa výluka 1600/2026, nie len návrh tejto udalosti."""
+    """[12d] E-mail sa extrahoval ako nová výluka (s vlastným návrhom), dispečer však vie, že ide o zrušenie. Opraví
+    ho na zrušenie 1600/2026 – zruší sa výluka 1600/2026, nie len návrh tejto udalosti. (Text „… sa nekoná“ pravidlá
+    od 4. revízie rozpoznajú ako zrušenie sami – e-mail preto zrušenie nespomína.)"""
     c = registered(session, utc(2026, 11, 20, 5), "1600/2026", hours=10)
     drop_raw(env, "d.eml", mail("d1", "Vyluka 1. TK Poprad-Tatry - Liptovsky Mikulas 20.11.",
                                 "Výluka 1. TK v úseku Poprad-Tatry – Liptovský Mikuláš dňa 20.11.2026 od 08:00 do "
-                                "14:00 sa nekoná.\n"))
+                                "14:00.\n"))
     process_mailbox(session)
     (ev,) = events(session)
     own_id = ev.validation["pending_closure"]["id"]
@@ -229,7 +230,7 @@ def test_r12_zrusenie_bez_cielovej_vyluky_navrh_ponecha(env, session):
     """[12d] Ak sa výluka na zrušenie nenájde, zápis zlyhá a návrh pôvodnej udalosti ostane (nič sa nestratí)."""
     drop_raw(env, "d.eml", mail("d2", "Vyluka 1. TK Poprad-Tatry - Liptovsky Mikulas 20.11.",
                                 "Výluka 1. TK v úseku Poprad-Tatry – Liptovský Mikuláš dňa 20.11.2026 od 08:00 do "
-                                "14:00 sa nekoná.\n"))
+                                "14:00.\n"))
     process_mailbox(session)
     (ev,) = events(session)
     own_id = ev.validation["pending_closure"]["id"]
@@ -888,7 +889,7 @@ def test_r43_avizo_pre_nezalozeny_vlak_mozno_potvrdit_znova(env, session, client
     login_as(client, "dispecer")
     r = client.post(f"/fronta/{ev_id}/potvrdit", data={"csrf_token": csrf(client, "/fronta"), "akcia": "potvrdit"},
                     follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == f"/fronta#udalost-{ev_id}"
+    assert r.status_code == 303 and r.headers["location"] == f"/fronta?udalost={ev_id}#udalost-{ev_id}"
     page = client.get(r.headers["location"])
     assert "nezapísala" in flash(page) and "nenájdený" in flash(page)
     assert f'id="udalost-{ev_id}"' in page.text and "potvrdené – zápis zlyhal" in page.text

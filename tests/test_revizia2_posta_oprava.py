@@ -76,7 +76,8 @@ def test_r12_zmena_preklasifikovana_na_novu_vyluku_prida_termin(env, session):
     """Zmena bez čísla sa voľne (± 3 dni) priradila k 1600/2026 (20.11.). Dispečer ju pri potvrdení preklasifikuje
     na novú výluku (ďalší termín 22.11., nie presun) – 1600/2026 na 20.11. ostane, 22.11. je nový záznam.
 
-    Preklasifikácia s rovnakým číslom je podľa pravidiel tá istá výluka – priradenie platí (bez duplicitného čísla)."""
+    Aj s rovnakým číslom je nová výluka v inom termíne ďalším termínom toho istého ROV (4. revízia: ROV môže mať viac
+    termínov – potvrdenie novej výluky nesmie presunúť pôvodný termín); pôvodná výluka ostane."""
     x = registered(session, utc(2026, 11, 20, 7), "1600/2026")
     ev = _change_pinned(env, session, 22, "zmena-n")
     assert ev.validation["pending_closure"]["proposed_change_of"] == x.id
@@ -88,12 +89,14 @@ def test_r12_zmena_preklasifikovana_na_novu_vyluku_prida_termin(env, session):
     assert sorted(as_utc(c.start_utc) for c in rows) == [utc(2026, 11, 20, 7), utc(2026, 11, 22, 7)]
     new = next(c for c in rows if c.id != x.id)
     assert new.proposed_change_of is None and new.status == "overene" and new.source_event_id == ev.id
-    # iný úsek: preklasifikácia na novú výluku s číslom priradenej výluky – zmení sa tá istá výluka
+    # iný úsek: preklasifikácia na novú výluku s číslom priradenej výluky – ďalší termín, pôvodný termín ostane
     z = _manual(session, utc(2026, 11, 20, 7), "1650/2026", sec="zv")
     ev2 = _change_pinned(env, session, 22, "zmena-r", sec="zv")
     confirm_event(session, ev2.id, "dispecer1", edits={"event_kind": "vyluka_nova", "external_ref": "1650/2026"})
     session.commit()
-    assert _section_rows(session, "zv") == [(z.id, "1650/2026", utc(2026, 11, 22, 7))]
+    rows = sorted(_section_rows(session, "zv"), key=lambda r: r[2])
+    assert [(r[1], r[2]) for r in rows] == [("1650/2026", utc(2026, 11, 20, 7)), ("1650/2026", utc(2026, 11, 22, 7))]
+    assert rows[0][0] == z.id
 
 
 # ====================================================================== [16] skrátené zoznamy dní a nocí

@@ -225,6 +225,11 @@ def is_reply_subject(subject: str) -> bool:
     return bool(_REPLY_SUBJECT.match(subject or ""))
 
 
+def is_forward_subject(subject: str) -> bool:
+    """Predmet preposlania („FW:“, „Fwd:“, „TR:“, „WG:“)."""
+    return bool(_FWD_SUBJECT.match(subject or ""))
+
+
 def reply_quote_spans(subject: str, folded: str, start: int, end: int) -> list[tuple[int, int]]:
     """Úseky citovanej pôvodnej správy v odpovedi v ``folded[start:end]`` (text z :func:`vlaky.posta.text.fold`).
 
