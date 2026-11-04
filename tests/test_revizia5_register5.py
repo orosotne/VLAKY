@@ -91,7 +91,8 @@ def test_r5r_zrusenie_dna_nocnej_vyluky_neotvori_inu_noc(env, session, body):
     ev = _confirm(session, ev.id)
     res = ev.validation["apply_result"]
     assert res["ok"] is True and res["action"] == "rozdelene", res
-    assert "noc patrí dňu, ktorým začína" in res["note"]
+    # zrušenie dňa: noc patrí dňu, ktorým začína; zrušenie noci („v noci z 25.11. na 26.11.“) má termín noci
+    assert "noc patrí dňu, ktorým začína" in res["note"] or "25.11. 22:00 – 26.11. 06:00" in res["note"], res["note"]
     for d, h in ((24, 23), (25, 2), (26, 23), (27, 2), (23, 23), (28, 2)):      # noci, ktoré ŽSR neruší
         assert _closed_at(session, loc(2026, 11, d, h)), f"{d}.11. {h}:00 má byť uzavreté"
     for d, h in ((25, 23), (26, 2)):                                             # zrušená noc 25./26.
