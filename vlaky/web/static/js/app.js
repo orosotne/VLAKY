@@ -133,12 +133,14 @@
       var limit = parseFloat(el.getAttribute('data-limit-min') || '780');
       var buffer = parseFloat(el.getAttribute('data-buffer-min') || '60');
       if (isNaN(start)) { return; }
-      var left = (start + limit * 60000 - now) / 60000;
+      // nikdy viac ako limit (13 h): hodiny prehliadača môžu byť mierne pozadu; nástup v budúcnosti stránka
+      // s odpočtom nezobrazí (server ho vypíše ako chybu záznamu)
+      var left = Math.min((start + limit * 60000 - now) / 60000, limit);
       el.textContent = fmtMinutes(left);
       var cls = left > buffer ? 'zelena' : (left > buffer / 2 ? 'oranzova' : 'cervena');
       el.classList.remove('crew-zelena', 'crew-oranzova', 'crew-cervena');
       el.classList.add('crew', 'crew-' + cls);
-      el.setAttribute('title', 'Do limitu pracovného času (' + Math.round(limit / 60 * 10) / 10 + ' h)');
+      el.setAttribute('title', 'Do limitu pracovného času (' + String(Math.round(limit / 60 * 10) / 10).replace('.', ',') + ' h)');
     });
   }
   if (document.querySelector('[data-countdown]')) {

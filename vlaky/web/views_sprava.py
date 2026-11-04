@@ -16,7 +16,7 @@ from ..db import session_scope
 from ..models import AgentHealth, AuditLog, Email, ParameterSet, PositionReport, User
 from .auth import csrf_form, require
 from .common import (INT_PARAMS, PARAM_META, PROB_PARAMS, FormReader, ago, current_param_set, current_params,
-                     fmt_full, iso, log, param_defaults, redirect, render)
+                     fmt_full, fmt_num, iso, log, param_defaults, redirect, render)
 from .data import get_network
 
 router = APIRouter()
@@ -49,7 +49,7 @@ def _settings_overview() -> list:
         ("SMS brána nastavená", yes_no(bool(cfg.sms_gateway_url))),
         ("Povolení odosielatelia e-mailov (domény/adresy)", ", ".join(cfg.csv(cfg.allowed_senders)) or "—"),
         ("Vyžadovať SPF/DKIM/DMARC", yes_no(cfg.require_dmarc_pass)),
-        ("Prah istoty extrakcie (pod ním ide udalosť na potvrdenie)", f"{cfg.confirm_threshold:.2f}"),
+        ("Prah istoty extrakcie (pod ním ide udalosť na potvrdenie)", fmt_num(cfg.confirm_threshold, 2)),
         ("Horizont potvrdzovania [h]", str(cfg.confirm_horizon_h)),
         ("Poloha je stará po [min]", str(cfg.position_stale_minutes)),
         ("Prepočet idúcich vlakov každých [min]", str(cfg.reevaluate_minutes)),

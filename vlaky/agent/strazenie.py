@@ -39,7 +39,12 @@ def _isolated(session: Session, errors: list | None, what: str, fn) -> int:
 
 
 def crew_alerts(session: Session, now: datetime, errors: list | None = None) -> int:
-    """Upozornenia pri 90/60/30 min do limitu pracovného času (13 h) a pri jeho prekročení."""
+    """Upozornenia pri 90/60/30 min do limitu pracovného času (13 h) a pri jeho prekročení.
+
+    Rovnaké pravidlo ako plánovač: limit sa ráta od skutočného nástupu zmeny (prebiehajúca, inak naplánovaná, ktorá
+    je na rade, s nástupom najneskôr teraz). Idúci vlak, ktorého zmena nástup nemá (žiadna zmena, len neskoršia
+    naplánovaná, „prebieha“ s budúcim nástupom), plánovač posudzuje len ODHADOM (nástup = odchod vlaku mínus
+    príprava) – strážnik vtedy upozorní podľa toho istého odhadu z odporúčania, aby nemlčal po limite plánovača."""
     p = current_params(session)
     thresholds = sorted({int(x) for x in settings().csv(settings().crew_alert_minutes)}, reverse=True)
     # naplánovaná zmena vlaku, ktorý už má zmenu v službe (vystriedanie ešte nenastúpilo), nestráži limit – inak by
@@ -50,10 +55,90 @@ def crew_alerts(session: Session, now: datetime, errors: list | None = None) -> 
         (DriverShift.status == "prebieha") |
         ((DriverShift.status == "planovana") &
          (DriverShift.train_id.is_(None) | DriverShift.train_id.not_in(on_duty))))))
-    if shifts:
+    estimates = _unknown_start_trains(session, now)
+    if shifts or estimates:
         prepare_savepoints(session)
-    return sum(_isolated(session, errors, f"zmena rušňovodiča #{sh.id}",
+    sent = sum(_isolated(session, errors, f"zmena rušňovodiča #{sh.id}",
                          lambda sh=sh: _crew_alert(session, now, sh, p, thresholds)) for sh in shifts)
+    return sent + sum(_isolated(session, errors, f"odhad pracovného času, vlak {t.number}",
+                                lambda t=t, a=start, b=limit, crew=crew, sh=sh:
+                                _estimate_alert(session, now, t, a, b, crew, p, thresholds, sh))
+                      for t, start, limit, crew, sh in estimates)
+
+
+def _duty_h(p) -> str:
+    """Limit pracovného času v hodinách po slovensky („13“, „12,5“)."""
+    return f"{p.crew_max_duty_min / 60:g}".replace(".", ",")
+
+
+def _iso(value) -> datetime | None:
+    try:
+        return ensure_utc(datetime.fromisoformat(str(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _unknown_start_trains(session: Session, now: datetime) -> list:
+    """Idúce vlaky bez známeho nástupu rušňovodiča (zmena podľa plánovača – prebiehajúca, inak tá, ktorá je na rade –
+    nemá nástup najneskôr teraz) s odhadom plánovača v poslednom odporúčaní: [(vlak, nástup, limit, crew, zmena)]
+    (zmena = tá, ktorú plánovač vybral, alebo None)."""
+    from ..models import Recommendation
+    from ..planovanie.planovac import active_shift
+
+    out = []
+    for t in session.scalars(select(Train).where(Train.status == "v_jazde").order_by(Train.id)):
+        sh = active_shift(session, t.id, now)
+        if sh is not None and ensure_utc(sh.start_utc) <= now:
+            continue  # nástup je známy – stráži ho upozornenie zmeny (rovnaký limit ako plánovač)
+        rec = session.scalar(select(Recommendation).where(Recommendation.train_id == t.id)
+                             .order_by(Recommendation.id.desc()))
+        crew = (rec.crew or {}) if rec is not None else {}
+        start, limit = _iso(crew.get("start")), _iso(crew.get("limit"))
+        if crew.get("unknown_start") and start is not None and limit is not None:
+            out.append((t, start, limit, crew, sh))
+    return out
+
+
+def _estimate_alert(session: Session, now: datetime, train: Train, start: datetime, limit: datetime, crew: dict,
+                    p, thresholds: list, shift: DriverShift | None = None) -> int:
+    """Upozornenie podľa odhadu plánovača pri idúcom vlaku bez zaznamenaného nástupu – vždy ako ODHAD, nie fakt.
+
+    Ak nástup zakrýva zmena „prebieha“ s nástupom v budúcnosti (starší chybný záznam), správa to povie – dispečer
+    opraví jej čas, alebo zadá nástup rušňovodiča, ktorý vlak vedie (zmena s budúcim nástupom sa tým ukončí)."""
+    left = (limit - now).total_seconds() / 60.0
+    duty_h = _duty_h(p)
+    if left <= 0:
+        level, priority = "prekroceny", "KRITICKÉ"
+        head = f"odhad – PREKROČENÝ limit {duty_h} h"
+    else:
+        hit = [t for t in thresholds if left <= t]
+        if not hit:
+            return 0
+        level = str(min(hit))
+        priority = "KRITICKÉ" if min(hit) <= 30 else "DÔLEŽITÉ"
+        head = f"odhad – do limitu {duty_h} h zostáva {left:.0f} min"
+    name = crew.get("driver") or "neznámy (chýba záznam o nástupe)"
+    relieve_by = limit - timedelta(minutes=p.crew_post_min)
+    subject = f"[AGENT][{priority}] Rušňovodič {name} (vlak {train.number}): {head}"
+    future = ""
+    if shift is not None and shift.status == "prebieha" and ensure_utc(shift.start_utc) > now:
+        who = shift.driver.name if shift.driver else f"#{shift.driver_id}"
+        future = (f"\nZmena „prebieha“ rušňovodiča {who} má nástup v budúcnosti ({fmt(shift.start_utc)}) – agent ju "
+                  f"za nástup neberie. Ak vlak vedie {who}, opravte čas nástupu v zmene; ak iný rušňovodič, zadajte "
+                  f"jeho nástup (zmena s budúcim nástupom sa ukončí).")
+    body = (f"Rušňovodič: {name}\nVlak: vlak {train.number} ({train.origin} → {train.destination})\n"
+            f"Nástup rušňovodiča nie je zadaný – limit {duty_h} h je len ODHAD plánovača (nástup = odchod vlaku "
+            f"mínus príprava): nástup {fmt(start)}, limit {fmt(limit)}.\n"
+            f"Odhad: vystriedať najneskôr o {fmt(relieve_by)} (vrátane {p.crew_post_min:.0f} min na odovzdanie rušňa)."
+            f"\n\nZadajte skutočný nástup rušňovodiča (Rušňovodiči → Vlaky v jazde bez záznamu o nástupe rušňovodiča)."
+            f"{future}\nAgent dispečer iba upozorňuje. Výmenu rušňovodiča zabezpečí dispečer.\n"
+            f"Detail: {settings().public_url.rstrip('/')}/rusnovodici")
+    key = f"crew:odhad:{train.id}:{start.strftime('%Y%m%d%H%M')}:{level}"
+    out = send_internal(session, "upozornenie", subject, body, priority, dedup_key=key)
+    if any(n.status in ("odoslana", "outbox") for n in out):
+        audit(session, "agent", "crew_alert", "train", train.id, level=level, left_min=round(left), odhad=True)
+        return 1
+    return 0
 
 
 def _crew_alert(session: Session, now: datetime, sh: DriverShift, p, thresholds: list) -> int:
@@ -67,14 +152,14 @@ def _crew_alert(session: Session, now: datetime, sh: DriverShift, p, thresholds:
     vlak = f"vlak {train.number}" if train else "bez vlaku"
     if left <= 0:
         level, priority = "prekroceny", "KRITICKÉ"
-        head = f"PREKROČENÝ limit {p.crew_max_duty_min / 60:.0f} h"
+        head = f"PREKROČENÝ limit {_duty_h(p)} h"
     else:
         hit = [t for t in thresholds if left <= t]
         if not hit:
             return 0
         level = str(min(hit))
         priority = "KRITICKÉ" if min(hit) <= 30 else "DÔLEŽITÉ"
-        head = f"do limitu {p.crew_max_duty_min / 60:.0f} h zostáva {left:.0f} min"
+        head = f"do limitu {_duty_h(p)} h zostáva {left:.0f} min"
     relieve_by = limit - timedelta(minutes=p.crew_post_min)
     subject = f"[AGENT][{priority}] Rušňovodič {name} ({vlak}): {head}"
     body = (f"Rušňovodič: {name}\nVlak: {vlak}"
@@ -129,11 +214,13 @@ def _standing_alert(session: Session, now: datetime, t: Train, minutes: int) -> 
     else:
         set_kv(session, kv_key, {"since": still_since.isoformat(), "lat": lat0, "lon": lon0})
     standing = (ensure_utc(last.ts_utc) - still_since).total_seconds() / 60.0
-    where = last.nearest_station or f"{lat0:.4f}, {lon0:.4f}"
+    # „pri dopravni Žilina“ (nie „pri Žilina“ – názov dopravne sa neskloňuje), bez dopravne súradnice
+    where = (f"pri dopravni {last.nearest_station}" if last.nearest_station
+             else f"na súradniciach {lat0:.4f}, {lon0:.4f}")
     bucket = still_since.strftime("%Y%m%d%H%M")  # rovnaká epizóda = rovnaký kľúč (pripomenutie po dedup okne)
-    subject = f"[AGENT][DÔLEŽITÉ] Vlak {t.number} stojí {standing:.0f} min pri {where}"
+    subject = f"[AGENT][DÔLEŽITÉ] Vlak {t.number} stojí {standing:.0f} min {where}"
     body = (f"Vlak {t.number} ({t.origin} → {t.destination}) sa od {fmt(still_since)} pohol menej ako 300 m.\n"
-            f"Posledná poloha: {fmt(last.ts_utc)} ({last.source}), pri {where}.\n\n"
+            f"Posledná poloha: {fmt(last.ts_utc)} ({last.source}), {where}.\n\n"
             f"Overte dôvod (plánovaný pobyt, výluka, porucha, čakanie na trasu) a v prípade potreby "
             f"informujte zákazníka. Detail: {settings().public_url.rstrip('/')}/")
     out = send_internal(session, "upozornenie", subject, body, "DÔLEŽITÉ",

@@ -62,7 +62,8 @@
       <tr class="crew-row crew-row-{{ 'cervena' if r.crew.get('status') == 'ČERVENÁ' else 'oranzova' }}">
         <td><a href="/vlaky/{{ r.train.id }}">{{ r.train.number }}</a></td>
         <td>{{ r.train.origin }} → {{ r.train.destination }}</td>
-        <td class="small">{{ r.text }}</td>
+        <td class="small">{{ r.text }}{% if r.future_shift %}{% set fs = r.future_shift %}
+          <div class="crew crew-oranzova">Zmena „prebieha“ rušňovodiča {{ fs.driver.name if fs.driver else "?" }} má nástup v budúcnosti ({{ fs.start_utc|t }}) – agent ju za nástup neberie. Ak vlak vedie {{ fs.driver.name if fs.driver else "tento rušňovodič" }}, <a href="#zmena-{{ fs.id }}">opravte čas nástupu v zmene</a>; ak iný rušňovodič, zadajte jeho nástup (zmena s budúcim nástupom sa ukončí).</div>{% endif %}</td>
         {% if user.can("crew") %}
         <td class="actions-cell">
           <details class="mini">
@@ -94,17 +95,18 @@
     <tbody>
     {% for r in rows %}
       {% set sh = r.sh %}
-      <tr class="crew-row crew-row-{{ r.color }}">
+      <tr class="crew-row crew-row-{{ r.color }}" id="zmena-{{ sh.id }}">
         <td><strong>{{ sh.driver.name if sh.driver else "?" }}</strong></td>
         <td>{% if r.train %}<a href="/vlaky/{{ r.train.id }}">{{ r.train.number }}</a>{% else %}—{% endif %}</td>
         <td class="nowrap">{{ sh.start_utc|t }}</td>
         <td class="nowrap">{{ r.limit|t }}</td>
-        <td>{% if sh.status == "prebieha" %}<span class="crew crew-{{ r.color }}" data-countdown="{{ sh.start_utc|iso }}" data-limit-min="{{ params.crew_max_duty_min }}" data-buffer-min="{{ params.crew_buffer_min }}">{{ r.left|minutes }}</span>{% if r.crew.get("end_p90") and not r.crew.get("unknown_start") %}<div class="small muted">koniec P90 {{ r.crew.get("end_p90")|t }}</div>{% endif %}{% elif sh.status == "planovana" %}<span class="muted">plánovaná</span>{% else %}<span class="muted">ukončená {{ sh.actual_end_utc|t }}</span>{% endif %}</td>
-        {% if sh.status == "planovana" and r.crew.get("unknown_start") %}
-        {# vlak ide, nástup rušňovodiča nie je zadaný (zmena len plánovaná): len odhad, nie fakt #}
-        <td class="small">{% if r.crew.get("relieve_by") %}odhad: vystriedať najneskôr o {{ r.crew.get("relieve_by")|t }} (nástup rušňovodiča nie je zadaný){% else %}limit {{ "%g"|format((r.crew.get("max_duty_h") or 13)|float) }} h sa nedá overiť – zadajte nástup rušňovodiča{% endif %}</td>
+        <td>{% if r.future %}<span class="crew crew-oranzova">nástup je v budúcnosti – opravte čas nástupu</span>{% elif sh.status == "prebieha" %}<span class="crew crew-{{ r.color }}" data-countdown="{{ sh.start_utc|iso }}" data-limit-min="{{ params.crew_max_duty_min }}" data-buffer-min="{{ params.crew_buffer_min }}">{{ r.left|minutes }}</span>{% if r.crew.get("end_p90") %}<div class="small muted">koniec P90 {{ r.crew.get("end_p90")|t }}</div>{% endif %}{% elif sh.status == "planovana" %}<span class="muted">plánovaná</span>{% else %}<span class="muted">ukončená {{ sh.actual_end_utc|t }}</span>{% endif %}</td>
+        {% if r.estimate %}
+        {# vlak ide, nástup rušňovodiča nie je zadaný (zmena len plánovaná): len odhad plánovača, nie fakt #}
+        <td class="small">{% if r.estimate.get("relieve_by") %}odhad: vystriedať najneskôr o {{ r.estimate.get("relieve_by")|t }} (nástup rušňovodiča nie je zadaný){% else %}limit {{ r.estimate.get("max_duty_h")|duty_h }} h sa nedá overiť – zadajte nástup rušňovodiča{% endif %}</td>
         {% else %}
-        <td class="nowrap">{% if sh.status != "ukoncena" %}<strong>{{ (r.crew.get("relieve_by") or r.relieve_by)|t }}</strong>{% else %}—{% endif %}</td>
+        {# vlastný limit tejto zmeny mínus odovzdanie rušňa – nikdy nie čas iného rušňovodiča z odporúčania #}
+        <td class="nowrap">{% if sh.status != "ukoncena" %}<strong>{{ r.relieve_by|t }}</strong>{% else %}—{% endif %}</td>
         {% endif %}
         <td>{{ SHIFT_STATUS.get(sh.status, sh.status) }}</td>
         {% if user.can("crew") %}

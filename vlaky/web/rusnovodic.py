@@ -134,6 +134,29 @@ def revoke_driver_links(s, train_id: int) -> int:
     return version
 
 
+def end_future_running(s, train_id: Optional[int], now, actor: str, why: str,
+                       keep_id: Optional[int] = None) -> list:
+    """Ukončí zmeny vlaku „prebieha“ s nástupom v budúcnosti (starší chybný záznam – formuláre ani odkaz rušňovodiča
+    taký nástup už nezapíšu), keď vlak dostal nástup, s ktorým plánovač počíta (zmena ``keep_id`` s nástupom
+    najneskôr teraz). Vráti ukončené zmeny.
+
+    Plánovač (planovac.active_shift), stránka Rušňovodiči aj strážnik berú zo zmien „prebieha“ tú s najneskorším
+    nástupom: budúci nástup by zakryl práve zaznamenaný – idúci vlak by ostal „bez záznamu o nástupe“ (len odhad)
+    a strážnik by posielal upozornenia podľa odhadu aj podľa zaznamenanej zmeny. Výsledok je rovnaký ako tlačidlo
+    „Ukončiť“ pri tej zmene; v audite je jej pôvodný nástup a dôvod."""
+    if not train_id:
+        return []
+    q = select(DriverShift).where(DriverShift.train_id == train_id, DriverShift.status == "prebieha",
+                                  DriverShift.start_utc > now)
+    if keep_id is not None:
+        q = q.where(DriverShift.id != keep_id)
+    ended = list(s.scalars(q.order_by(DriverShift.start_utc, DriverShift.id)))
+    for sh in ended:
+        sh.status, sh.actual_end_utc = "ukoncena", now
+        audit(s, actor, "shift_end", "driver_shift", sh.id, end=now, start=sh.start_utc, dovod=why)
+    return ended
+
+
 def make_driver_token(train: Train, version: int = 0) -> str:
     return _serializer().dumps({"n": train.number, "id": train.id, "v": int(version)})
 
@@ -262,10 +285,13 @@ def driver_report(body: ReportIn, request: Request, background: BackgroundTasks)
                 return (f"Vlak je už v jazde – limit pracovného času beží od {fmt(start)} (odchod mínus príprava). "
                         f"Ak ste nastúpili až teraz (vystriedanie počas jazdy), oznámte to dispečerovi.")
 
-            # začína sa zmena, ktorá je na rade (nie neskoršie vystriedanie); vystriedanie ukončí bežiacu zmenu
+            # začína sa zmena, ktorá je na rade (nie neskoršie vystriedanie); vystriedanie ukončí bežiacu zmenu.
+            # „Prebieha“ s nástupom v budúcnosti (starší chybný záznam) nie je nástup: hlásenie neodmietne (409
+            # „nástup už bol zaznamenaný o <budúci čas>“) a po zaznamenaní nástupu sa ukončí (end_future_running)
             shift = due_shift(s, train.id, now)
             running = list(s.scalars(select(DriverShift).where(DriverShift.train_id == train.id,
-                                                               DriverShift.status == "prebieha")
+                                                               DriverShift.status == "prebieha",
+                                                               DriverShift.start_utc <= now)
                                      .order_by(DriverShift.start_utc.desc(), DriverShift.id.desc())))
             if shift is not None and running and ensure_utc(shift.start_utc) <= \
                     ensure_utc(running[0].start_utc) + timedelta(minutes=NASTUP_EARLY_MIN):
@@ -330,6 +356,11 @@ def driver_report(body: ReportIn, request: Request, background: BackgroundTasks)
                 message = f"Nástup zaznamenaný o {fmt(now, False)}. {start_text(start)}"
                 if ended:
                     message += f" Zmena predchádzajúceho rušňovodiča{who(ended[0])} je ukončená."
+            superseded = end_future_running(s, train.id, now, actor, "nástup v budúcnosti – nahradila ju zmena "
+                                            "s nástupom nahláseným z odkazu rušňovodiča", keep_id=shift.id)
+            if superseded:
+                detail["ended_future_shift_ids"] = [x.id for x in superseded]
+                message += f" Starší záznam zmeny{who(superseded[0])} s nástupom v budúcnosti je ukončený."
         elif body.typ == "pripraveny":
             if train.status == "v_jazde":
                 return JSONResponse({"ok": False, "detail": "Vlak je už v jazde."}, status_code=409)

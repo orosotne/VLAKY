@@ -19,7 +19,7 @@
     <tbody>
     {% for r in rows %}
       <tr>
-        <td><strong>{{ r.c.component }}</strong></td>
+        <td><strong title="{{ r.c.component }}">{{ HEALTH_COMPONENT.get(r.c.component, r.c.component) }}</strong></td>
         <td><span class="badge health-badge-{{ r.c.status }}">{{ HEALTH_STATUS.get(r.c.status, r.c.status) }}</span>{% if r.stale %} <span class="badge badge-warn">starý údaj</span>{% endif %}</td>
         <td class="nowrap">{{ r.c.ts|tfull }} <span class="muted small">({{ r.c.ts|ago }})</span></td>
         <td>{% if r.c.detail %}<details><summary class="small">zobraziť</summary><pre class="mono small">{{ r.c.detail|jsonpretty }}</pre></details>{% endif %}</td>

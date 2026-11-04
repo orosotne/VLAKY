@@ -57,6 +57,12 @@
     var hm = p.hour + ':' + p.minute;
     return withDate ? p.day + '.' + p.month + '. ' + hm : hm;
   }
+  // číslo po slovensky: desatinná čiarka, bez zbytočného „,0“ („50“, „37,5“)
+  function fmtNum(v) {
+    var n = Number(v);
+    if (v === null || v === undefined || v === '' || isNaN(n)) { return '—'; }
+    return String(Math.round(n * 10) / 10).replace('.', ',');
+  }
   function fmtMin(m) {
     if (m === null || m === undefined || isNaN(m)) { return '—'; }
     var neg = m < 0;
@@ -157,6 +163,22 @@
     });
   }
 
+  // ------------------------------------------------------------ pracovný čas rušňovodiča (stĺpec tabuľky, okno vlaku)
+  // Odpočet do 13 h len pre rušňovodiča, ktorý nastúpil; zmena, ktorá ešte nezačala (aj nepridelený rušňovodič –
+  // potrebný nástup podľa plánu), ukáže čas nástupu, nie odpočet hypotetického rušňovodiča (napr. „63 h 17 min“).
+  function crewText(d) {
+    if (d.unknown_start) { return d.relieve_note || 'limit 13 h sa nedá overiť – zadajte nástup rušňovodiča'; }
+    if (d.not_started) { return d.start ? (d.name ? 'nástup o ' : 'potrebný nástup o ') + fmt(d.start, true) : '—'; }
+    return fmtMin(d.left_min);
+  }
+  function crewLabel(d) {
+    if (!d) { return '—'; }
+    var name = d.name || 'nepriradený';
+    if (d.not_started && !d.unknown_start) { return name + (d.start ? (d.name ? ' · nástup o ' : ' · potrebný nástup o ') + fmt(d.start, true) : ''); }
+    if (d.left_min !== null && d.left_min !== undefined) { return name + ' · do limitu 13 h: ' + fmtMin(d.left_min); }
+    return name;
+  }
+
   // ------------------------------------------------------------ obsah okna (popup) vlaku
   function popupContent(t) {
     var p = t.position;
@@ -170,7 +192,7 @@
       ['Relácia', t.relation],
       ['Stav', (t.status_text || t.status) + moving + waiting],
       ['Rušeň', t.locomotive ? t.locomotive.number + (t.locomotive.type ? ' (' + t.locomotive.type + ')' : '') : '—'],
-      ['Rušňovodič', d ? (d.name || 'nepriradený') + (d.left_min !== null && d.left_min !== undefined ? ' · do limitu 13 h: ' + fmtMin(d.left_min) : '') : '—']
+      ['Rušňovodič', crewLabel(d)]
     ];
     if (d && d.unknown_start) { rows.push(['Pracovný čas', d.relieve_note || 'limit 13 h sa nedá overiť – zadajte nástup rušňovodiča']); }
     else if (d && d.relieve_by && (d.color === 'cervena' || d.color === 'oranzova')) { rows.push(['Vystriedať najneskôr', fmt(d.relieve_by, true)]); }
@@ -186,7 +208,7 @@
     if (t.estimate) {
       rows.push(['Poloha', 'odhad – posledná správa pred ' + fmtMin(p ? p.age_min : t.estimate.minutes) + '; +' +
         t.estimate.km.toFixed(1).replace('.', ',') + ' km podľa ' + (t.estimate.method === 'plán' ? 'plánu odporúčania' : 'poslednej rýchlosti') +
-        ' (' + t.estimate.speed_kmh + ' km/h)' + (t.estimate.capped && t.estimate.next_station ? ', najďalej po ' + t.estimate.next_station : '')]);
+        ' (' + t.estimate.speed_kmh + ' km/h)' + (t.estimate.capped && t.estimate.next_station ? ', najďalej po dopravňu ' + t.estimate.next_station : '')]);
     }
     var dl = el('dl');
     rows.forEach(function (row) { dl.appendChild(el('dt', null, [row[0]])); dl.appendChild(el('dd', null, [row[1]])); });
@@ -270,7 +292,7 @@
         el('dt', null, ['Platnosť']), el('dd', null, [fmt(p.zaciatok, true) + ' – ' + fmt(p.koniec, true)]),
         p.denne_od ? el('dt', null, ['Denne']) : null, p.denne_od ? el('dd', null, [p.denne_od + '–' + p.denne_do]) : null,
         el('dt', null, ['Stav']), el('dd', null, [(isTrue(p.aktivna) ? 'platí teraz' : 'najbližšie od ' + fmt(p.najblizsie_od, true)) + ' · ' + (p.stav_text || p.stav)]),
-        el('dt', null, ['Dopad']), el('dd', null, [isTrue(p.pomala) ? 'pomalá jazda ' + (p.rychlost || '?') + ' km/h' : (isTrue(p.len_elektricka) ? 'len elektrická trakcia' : 'všetky vlaky')]),
+        el('dt', null, ['Dopad']), el('dd', null, [isTrue(p.pomala) ? 'pomalá jazda ' + (p.rychlost ? fmtNum(p.rychlost) : '?') + ' km/h' : (isTrue(p.len_elektricka) ? 'len elektrická trakcia' : 'všetky vlaky')]),
         p.cislo ? el('dt', null, ['Číslo']) : null, p.cislo ? el('dd', null, [p.cislo]) : null,
         p.zdroj ? el('dt', null, ['Zdroj']) : null, p.zdroj ? el('dd', null, [p.zdroj === 'email' ? 'e-mail' + (p.udalost_id ? ' (udalosť #' + p.udalost_id + ')' : '') : (p.zdroj === 'manual' ? 'ručne' : p.zdroj)]) : null
       ])
@@ -1080,7 +1102,7 @@
         ])]),
         el('td', { class: 'small' }, positionCell(t)),
         el('td', { class: 'small' }, [fmt(t.eta_p50, true), t.eta_p90 ? el('span', { class: 'muted' }, [' (' + fmt(t.eta_p90) + ')']) : null, slack]),
-        el('td', { class: 'small' }, d ? [d.name || '—', el('div', { class: 'crew crew-' + (d.color || 'seda') }, [d.unknown_start ? (d.relieve_note || 'limit 13 h sa nedá overiť – zadajte nástup rušňovodiča') : fmtMin(d.left_min)])] : ['—']),
+        el('td', { class: 'small' }, d ? [d.name || 'nepriradený', el('div', { class: 'crew crew-' + (d.color || 'seda') }, [crewText(d)])] : ['—']),
         el('td', { class: 'small risk' }, [t.risk || '—'])
       ]));
     });
