@@ -62,12 +62,13 @@ def undelivered(session, now: datetime | None = None, ignore_keys: tuple = ()) -
       - odporúčanie (podľa odporúčania, nie podľa kľúča – kľúč sa pri posune odchodu mení, opakuje sa však to isté
         odporúčanie), kým je aktuálne (nové, nie INFO, vlak nie je ukončený, najviac 48 h – RETRY_HOURS),
       - návrh k objednávke, kým objednávka čaká na návrh,
-      - jednorazové upozornenie, ktoré agent opakuje (hlásenie rušňovodiča, pripomienka výluky do odvolania –
-        retry_one_shot), najviac RETRY_HOURS od prvého pokusu a kým platí (pripomienka zrušenej výluky nie); iná
-        doručená správa ho nevybaví,
+      - jednorazové upozornenie, ktoré agent opakuje (hlásenie rušňovodiča, pripomienka výluky do odvolania,
+        upozornenie „Na potvrdenie čaká …“ na udalosti z e-mailov – retry_one_shot), najviac RETRY_HOURS od prvého
+        pokusu a kým platí (pripomienka zrušenej výluky ani upozornenie na udalosť, ktorú dispečer medzitým potvrdil
+        či zamietol, nie); iná doručená správa ho nevybaví,
       - ostatné (súhrn, denná správa, odovzdávka, upozornenia na pracovný čas a státie, ktoré sa posielajú znova
-        v každom cykle) najviac 90 min po poslednom pokuse (opakujú sa najneskôr každých 60 min) a len kým tomuto
-        príjemcovi neprišla iná správa (kanál opäť funguje).
+        s odstupom, kým platia) najviac 90 min po poslednom pokuse (opakujú sa najneskôr každých 60 min) a len kým
+        tomuto príjemcovi neprišla iná správa (kanál opäť funguje).
     Príjemcovia, ktorí už nie sú na internom zozname, sa nepočítajú.
     """
     from ..notifikacie.odosielanie import (RETRY_HOURS, RETRY_MAX_MIN, SENT_STATES, allowed_recipients,
@@ -264,20 +265,35 @@ def _order_key(key: str) -> bool:
 def config_status() -> tuple:
     """(v poriadku, popis) nastavenia odosielania: kanál s príjemcami bez servera správ (chýbajúce nastavenie alebo
     preklep v názve premennej) by správy len odkladal do outboxu. V ostrej prevádzke je to chyba (KRITICKÉ SMS
-    by nikdy neodišla), vo vývoji, v testoch a v ukážke stačí outbox. Neznáme premenné VLAKY_* sa len uvedú."""
-    from ..notifikacie.odosielanie import outbox_counts_as_sent, transport_problems, unknown_env_vars
+    by nikdy neodišla), vo vývoji, v testoch a v ukážke stačí outbox. Neznáme premenné VLAKY_* sa len uvedú.
+
+    Príjemcovia sa posudzujú podľa zoznamu, ktorý práve platí (allowed_recipients): v tieňovej prevádzke len
+    VLAKY_SHADOW_EMAILS – prázdny (alebo s preklepom v názve premennej) znamená, že agent neodošle nič, a to je chyba;
+    VLAKY_NOTIFY_* sa v tieňovej prevádzke nevyžadujú (chýbajúci e-mail dispečerov je len poznámka pre prechod do
+    ostrej prevádzky)."""
+    from ..notifikacie.odosielanie import (allowed_recipients, outbox_counts_as_sent, transport_problems,
+                                           unknown_env_vars)
 
     problems = transport_problems()
     unknown = unknown_env_vars()
     cfg = settings()
+    allowed = allowed_recipients()  # zoznam, ktorý práve platí (v tieňovej prevádzke len VLAKY_SHADOW_EMAILS)
+    notes: list = []
     # bez interného zoznamu príjemcov agent neodošle nič (ani KRITICKÉ) – v ostrej prevádzke je to chyba
-    if not cfg.csv(cfg.notify_emails) and not cfg.csv(cfg.notify_phones) and not cfg.teams_webhook_url:
+    if cfg.shadow_mode:
+        if not allowed["email"]:
+            problems = list(problems) + ["tieňová prevádzka bez tieňového zoznamu príjemcov (VLAKY_SHADOW_EMAILS) – "
+                                         "agent neodošle nič"]
+        elif not cfg.csv(cfg.notify_emails):
+            notes.append("pre prechod do ostrej prevádzky ešte nie je nastavený e-mail dispečerov "
+                         "(VLAKY_NOTIFY_EMAILS)")
+    elif not any(allowed.values()):
         problems = list(problems) + ["nie je nastavený žiadny príjemca upozornení (VLAKY_NOTIFY_EMAILS, "
                                      "VLAKY_NOTIFY_PHONES, VLAKY_TEAMS_WEBHOOK_URL) – agent neodošle nič"]
-    elif not cfg.csv(cfg.notify_emails):
+    elif not allowed["email"]:
         problems = list(problems) + ["nie je nastavený e-mail dispečerov (VLAKY_NOTIFY_EMAILS) – odporúčania, súhrn "
                                      "ani odovzdávka služby neodídu e-mailom"]
-    parts = list(problems)
+    parts = list(problems) + notes
     if unknown:
         parts.append(f"neznáme premenné prostredia (preklep?): {', '.join(unknown[:10])}")
     if problems and outbox_counts_as_sent():

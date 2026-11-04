@@ -10,7 +10,13 @@ Doručovanie: nedostupný server (SMTP, Teams, SMS brána) sa v jednom cykle age
 s limitom spojenia 10 s, zlyhané správy sa opakujú s rastúcim odstupom (5, 10, 20, 40, potom 60 min – retry_due,
 retry_pairs, retry_targets; KRITICKÉ pri výpadku kanála každých 5 min) a len tým príjemcom, ktorým sa ich
 nepodarilo doručiť. Jednorazové upozornenia bez vlastného opakovania (hlásenie rušňovodiča o probléme, pripomienka
-výluky do odvolania) opakuje agent cez retry_one_shot.
+výluky do odvolania, upozornenie na čakajúce udalosti z e-mailov) opakuje agent cez retry_one_shot; upozornenia, ktoré
+volajúci posiela v každom cykle (pracovný čas rušňovodiča, státie vlaku), majú rovnaký odstup (send_internal
+s ``backoff``).
+
+Súbežné odosielanie (web po prepočte a cyklus agenta sú rôzne procesy): odporúčania toho istého vlaku sa doručujú po
+jednom pod zámkom vlaku (serialize_train_delivery – PostgreSQL poradný zámok, SQLite zámok zápisu) a až pod zámkom sa
+zistí stav odporúčania a komu už prišlo – dispečer nikdy nedostane to isté odporúčanie dvakrát.
 
 Server správ nie je nastavený (napr. chýba VLAKY_SMTP_HOST alebo je v názve preklep): vo vývoji, v testoch a v ukážke
 ostane správa len v adresári outbox (stav „outbox“), v ostrej prevádzke je to chyba doručenia (stav „chyba“) – inak
@@ -25,7 +31,7 @@ Verejné funkcie:
     transport_problems() -> list[str], unknown_env_vars() -> list[str], outbox_counts_as_sent() -> bool
     delivery_scope(), retry_due(session, dedup_key), retry_pairs(session, rec_id, rows=None),
     retry_targets(session, dedup_key), delivered_to_all(session, dedup_key), retry_one_shot(session, now=None),
-    recommendation_attempts(session, rec_ids), retry_delay_minutes(n)
+    recommendation_attempts(session, rec_ids), retry_delay_minutes(n), serialize_train_delivery(session, train_id)
 """
 from __future__ import annotations
 
@@ -40,12 +46,14 @@ from email.utils import formatdate, make_msgid
 
 import httpx
 from sqlalchemy import func, or_, select
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..cas import ensure_utc, fmt, now_utc
 from ..config import settings
-from ..models import Closure, Email, Notification, Recommendation
+from ..db import prepare_savepoints
+from ..models import Closure, Email, ExtractedEvent, Notification, Recommendation
 from .texty import count, recommendation_body, recommendation_subject, sms_text
 
 SENT_STATES = ("odoslana", "outbox")
@@ -58,9 +66,12 @@ RETRY_HOURS = 48        # aktuálne odporúčanie sa skúša doručiť najviac 4
 RETRY_GRACE_S = 90
 DEFERRED = "Neodoslané – kanál"  # začiatok chyby správy odloženej ističom (bez pokusu o spojenie)
 CHANNEL_ERROR = "Chyba kanála: "  # začiatok chyby spojenia alebo servera (nie odmietnutia tejto správy)
-# jednorazové upozornenia bez vlastného opakovania (hlásenie rušňovodiča, pripomienka výluky do odvolania): zlyhané
-# doručenie opakuje agent (retry_one_shot) a kým neprídu, zdravie ich počíta ako nedoručené
-ONE_SHOT_PREFIXES = ("problem:", "do_odvolania:")
+# jednorazové upozornenia bez vlastného opakovania (hlásenie rušňovodiča, pripomienka výluky do odvolania, upozornenie
+# „Na potvrdenie čaká …“ na udalosti z e-mailov, s ktorými plánovač nevie počítať – pri udalosti bez miesta je to jediná
+# správa o nej): zlyhané doručenie opakuje agent (retry_one_shot) a kým neprídu, zdravie ich počíta ako nedoručené
+ONE_SHOT_PREFIXES = ("problem:", "do_odvolania:", "neista_udalost:")
+# poradný zámok doručovania odporúčaní vlaku (PostgreSQL, druhý kľúč je id vlaku) – „VLKN“, iný ako zámok prepočtu
+NOTIFY_LOCK_KEY = 0x564C4B4E
 OUTBOX_ENVS = ("dev", "test", "demo")  # len tu stačí kópia v adresári outbox (bez servera správ)
 # premenné VLAKY_* mimo nastavení aplikácie (nasadenie, testy) – nie sú preklepom
 KNOWN_ENV_EXTRA = ("VLAKY_DOMAIN", "VLAKY_UPSTREAM", "VLAKY_APP_DIR", "VLAKY_USER", "VLAKY_UID", "VLAKY_STATE_DIR",
@@ -545,15 +556,27 @@ def _recipients(session: Session, allowed: dict, channel: str, dedup_key: str, o
 
 def send_internal(session: Session, kind: str, subject: str, body: str, priority: str = "INFO",
                   dedup_key: str = "", rec_id: int | None = None, channels: list | None = None,
-                  only: set | None = None) -> list:
+                  only: set | None = None, backoff: bool = False) -> list:
     """Interná správa podľa priority (alebo na zadané kanály); only – len týmto dvojiciam (kanál, príjemca),
-    napr. pri opakovaní súhrnu, dennej správy alebo odovzdávky tým, ktorým neprišla."""
+    napr. pri opakovaní súhrnu, dennej správy alebo odovzdávky tým, ktorým neprišla.
+
+    backoff – upozornenie, ktoré volajúci posiela v každom cykle agenta, kým platí (pracovný čas rušňovodiča, státie
+    vlaku): príjemcovi, ktorému posledný pokus o túto správu zlyhal, sa zopakuje až po odstupe ako ostatné správy
+    (5, 10, 20, 40, 60 min; KRITICKÉ pri výpadku kanála v 5-min okne; hneď, keď mu medzitým prišla iná správa) – nie
+    v každom cykle. Brána, ktorá správu doručí, no odpovie chybou (5xx, časový limit), by inak posielala rovnakú
+    KRITICKÚ SMS každú minútu. Kto správu už dostal, dostane ju len raz (deduplikácia podľa kľúča)."""
     out = []
     allowed = allowed_recipients()
+    hold: set = set()
+    if backoff and dedup_key:
+        hold = {pair for pair, due in _pending(session, _attempts(session, Notification.dedup_key == dedup_key[:120]))
+                .items() if not due}
     with delivery_scope():
         for ch in channels or (_channels(priority) or ["email"]):
             text = body if ch != "sms" else f"{subject}"[:300]
             for r in _recipients(session, allowed, ch, dedup_key, only):
+                if (ch, r) in hold:
+                    continue  # posledný pokus zlyhal a odstup ešte neuplynul
                 out.append(_deliver(session, ch, r, subject, text, priority, kind, dedup_key, rec_id))
     return out
 
@@ -572,15 +595,52 @@ def recommendation_dedup_key(rec: Recommendation) -> str:
     return f"rec:{rec.train_id}:{rec.fingerprint}:{bucket}"
 
 
+def serialize_train_delivery(session: Session, train_id: int) -> None:
+    """Doručovanie odporúčaní toho istého vlaku ide po jednom – aj medzi procesmi (prepočet z webu na pozadí a cyklus
+    agenta). Zámok platí do konca transakcie (commit, rollback): PostgreSQL transakčný poradný zámok
+    (pg_advisory_xact_lock(NOTIFY_LOCK_KEY, id vlaku)), SQLite zámok zápisu do databázy (BEGIN IMMEDIATE, ak relácia
+    transakciu ešte nemá; inak ho transakcia drží od prvého zápisu). Čítanie po získaní zámku vidí každý pokus
+    o doručenie, ktorý súbežný odosielateľ uložil a potvrdil. Zámok prepočtu vlaku (planovac._serialize_train) je iný –
+    doručovanie nezdrží prepočet."""
+    if session.connection().dialect.name == "postgresql":
+        session.execute(sql_text("SELECT pg_advisory_xact_lock(CAST(:k AS integer), CAST(:t AS integer))"),
+                        {"k": NOTIFY_LOCK_KEY, "t": int(train_id)})
+    else:
+        prepare_savepoints(session)
+
+
 def notify_recommendation(session: Session, rec: Recommendation, only: set | None = None) -> list:
     """Pošle odporúčanie podľa priority (INFO sa neposiela hneď, ide do súhrnu).
 
     only – len týmto dvojiciam (kanál, príjemca), napr. pri opakovaní po zlyhaní (retry_pairs); None = všetkým.
     Potlačí sa len správa zhodná s poslednou, ktorú príjemca o vlaku dostal (_is_rec_duplicate).
+
+    Súbežné odoslanie toho istého odporúčania (prepočet z webu a cyklus agenta): pod zámkom doručovania vlaku
+    (serialize_train_delivery) sa odporúčanie načíta znova – pošle sa len aktuálne odporúčanie (nové, nie zastarané
+    ani rozhodnuté dispečerom) v aktuálnom znení – a ak už má pokusy o doručenie, dostanú ho len príjemcovia, ktorým
+    posledný pokus zlyhal a uplynul odstup (retry_pairs). Kto ho už dostal, druhý raz ho nedostane, aj keď volajúci
+    zistil príjemcov pred zámkom. Volajúci transakciu potvrdí hneď po odoslaní (zámok sa tým uvoľní).
     """
+    if not _channels(rec.priority):
+        return []
+    if rec.id is None:
+        session.flush()
+    serialize_train_delivery(session, rec.train_id)
+    current = session.scalar(select(Recommendation).where(Recommendation.id == rec.id)
+                             .execution_options(populate_existing=True))
+    if current is None or current.state != "nove":
+        return []  # medzitým vzniklo novšie odporúčanie, alebo dispečer rozhodol – toto sa už neoznamuje
+    rec = current
     channels = _channels(rec.priority)
     if not channels:
         return []
+    rows = _attempts(session, Notification.recommendation_id == rec.id)
+    if rows:
+        # odporúčanie už niekto posielal (aj súbežne iný proces): len príjemcom, ktorým neprišlo, po odstupe
+        due = {pair for pair, ok in _pending(session, rows).items() if ok}
+        only = due if only is None else {pair for pair in only if pair in due}
+        if not only:
+            return []
     # všetky texty vopred – chyba pri ich príprave nesmie prísť až po odoslaní časti správ (záznamy o nich by sa
     # s chybou vrátili späť a správy by odišli znova)
     subject = recommendation_subject(rec)
@@ -639,11 +699,39 @@ def is_one_shot(dedup_key: str) -> bool:
     return bool(dedup_key) and dedup_key.startswith(ONE_SHOT_PREFIXES)
 
 
+def _waiting_event_alert_current(session: Session, dedup_key: str) -> bool:
+    """Upozornenie „Na potvrdenie čaká …“ (``neista_udalost:{id},{id},…``) ešte platí, kým aspoň jedna z jeho udalostí
+    stále čaká na dispečera a plánovač s ňou stále nevie počítať (nie je potvrdená s opravou, zamietnutá ani
+    nahradená novšou udalosťou) – rovnaké pravidlo, podľa ktorého sa upozornenie posiela (posta.spracovanie). Kľúč je
+    skrátený na 120 znakov – posledné, možno odrezané číslo sa vtedy nepočíta."""
+    try:
+        from ..posta.spracovanie import _blind_reason, _blind_targets
+    except ImportError:  # pragma: no cover - modul pošty bez týchto pravidiel: platí, kým udalosť čaká vo fronte
+        _blind_reason = _blind_targets = None
+    ids = dedup_key.split(":", 1)[1].split(",")
+    if len(dedup_key) >= 120:
+        ids = ids[:-1]
+    for raw in ids:
+        ev = session.get(ExtractedEvent, int(raw)) if raw.strip().isdigit() else None
+        if ev is None:
+            continue
+        if _blind_reason is None or _blind_targets is None:
+            if ev.status == "navrh" and ev.needs_confirmation:
+                return True
+        elif _blind_reason(session, ev) and _blind_targets(session, ev):
+            return True
+    return False
+
+
 def one_shot_current(session: Session, dedup_key: str) -> bool:
     """Jednorazové upozornenie ešte platí (má zmysel ho zopakovať a počítať ako nedoručené). Pripomienka výluky do
     odvolania (``do_odvolania:{id výluky}:{technický koniec}``) len kým výluka stále platí do odvolania – nie je
     zrušená ani odvolaná (ŽSR ju ukončila, dispečer zmenil koniec) a technický koniec sa odvtedy neposunul (novší
-    posun má vlastnú pripomienku). Inak by po obnovení servera prišlo „… stále platí“ o zrušenej výluke."""
+    posun má vlastnú pripomienku). Inak by po obnovení servera prišlo „… stále platí“ o zrušenej výluke. Upozornenie
+    na čakajúce udalosti z e-mailov (``neista_udalost:``) len kým niektorá z nich stále čaká a plánovač s ňou nevie
+    počítať (_waiting_event_alert_current)."""
+    if (dedup_key or "").startswith("neista_udalost:"):
+        return _waiting_event_alert_current(session, dedup_key)
     if not (dedup_key or "").startswith("do_odvolania:"):
         return True
     parts = dedup_key.split(":")
@@ -658,7 +746,8 @@ def one_shot_current(session: Session, dedup_key: str) -> bool:
 
 def retry_one_shot(session: Session, now: datetime | None = None) -> list:
     """Zopakuje jednorazové upozornenia, ktoré sa nepodarilo doručiť (hlásenie rušňovodiča o probléme odoslané
-    z webu, pripomienka výluky do odvolania): tú istú správu (rovnaký kľúč, predmet aj text) len tým príjemcom,
+    z webu, pripomienka výluky do odvolania, upozornenie na čakajúce udalosti z e-mailov): tú istú správu (rovnaký
+    kľúč, predmet aj text) len tým príjemcom,
     ktorým neprišla, s odstupom 5, 10, 20, 40, 60 min (pri výpadku kanála hneď, ako tomu istému príjemcovi prišla
     iná správa), najviac RETRY_HOURS od prvého pokusu a len kým upozornenie platí (one_shot_current)."""
     now = now or now_utc()

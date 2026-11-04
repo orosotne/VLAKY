@@ -197,6 +197,9 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
                 try:
                     pairs = _pending_pairs(s, rec_id, attempts.get(rec_id, []))
                     if pairs is None or pairs:
+                        # notify_recommendation pod zámkom doručovania vlaku zistí stav odporúčania a pokusy znova
+                        # (súbežný prepočet z webu ho mohol medzitým poslať alebo nahradiť novším) – commit hneď
+                        # potom uvoľní zámok
                         summary["notified"] += len(notify_recommendation(s, rec, only=pairs))
                         s.commit()  # záznamy o odoslaných správach sa pri chybe ďalšieho odporúčania nevrátia späť
                 except Exception as exc:  # noqa: BLE001 – chybné odporúčanie nezastaví doručenie ostatných
@@ -450,7 +453,8 @@ def _periodic(now: datetime, summary: dict) -> None:
             pending = len(undelivered(s, now, (f"daily:{dkey}",)))
             failed = s.scalar(select(func.count(Notification.id)).where(Notification.created_at >= day_ago,
                                                                         Notification.status == "chyba")) or 0
-            body = "\n".join([f"Denná správa Agenta dispečera ({dkey})", "",
+            # dátum po slovensky (deň.mesiac.rok), nie ISO – kľúč správy (daily:YYYY-MM-DD) sa nemení
+            body = "\n".join([f"Denná správa Agenta dispečera ({loc.strftime('%d.%m.%Y')})", "",
                               *detail_lines(detail),
                               f"posledný stav čítania schránky: "
                               f"{_MAIL_STATUS.get(last_mail.status, last_mail.status) if last_mail else 'neznámy'}",
@@ -474,7 +478,8 @@ def _periodic(now: datetime, summary: dict) -> None:
             set_kv(s, "retention_done", {"date": dkey})
 
     def one_shot(s) -> None:
-        # jednorazové upozornenia (hlásenie rušňovodiča z webu, pripomienka výluky do odvolania), ktoré neprišli
+        # jednorazové upozornenia (hlásenie rušňovodiča z webu, pripomienka výluky do odvolania, upozornenie „Na
+        # potvrdenie čaká …“ na udalosti z e-mailov), ktoré neprišli
         from ..notifikacie.odosielanie import retry_one_shot
 
         out = retry_one_shot(s, now)

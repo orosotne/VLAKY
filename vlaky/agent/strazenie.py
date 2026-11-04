@@ -71,6 +71,22 @@ def _duty_h(p) -> str:
     return f"{p.crew_max_duty_min / 60:g}".replace(".", ",")
 
 
+def _relief_line(now: datetime, limit: datetime, relieve_by: datetime, p, estimate: bool = False) -> str:
+    """Riadok upozornenia „kedy vystriedať rušňovodiča“. Ak čas vystriedania (limit mínus odovzdanie rušňa) už uplynul
+    – pri upozornení 30 min pred limitom vždy, pri prekročení limitu aj pri každom pripomenutí –, pokyn „vystriedať
+    najneskôr o <minulý čas>“ sa nedá splniť: znie „vystriedať ihneď (limit 13 h uplynie/uplynul o …)“ rovnako ako
+    v odporúčaní plánovača a v odovzdávke služby (texty.relief_overdue)."""
+    from ..notifikacie.texty import relief_overdue
+
+    late = relief_overdue({"left_min": (limit - now).total_seconds() / 60.0, "limit": limit.isoformat(),
+                           "relieve_by": relieve_by.isoformat(), "max_duty_h": p.crew_max_duty_min / 60})
+    post = f"vrátane {p.crew_post_min:.0f} min na odovzdanie rušňa"
+    if estimate:
+        return f"Odhad: vystriedať ihneď ({late})." if late else \
+            f"Odhad: vystriedať najneskôr o {fmt(relieve_by)} ({post})."
+    return f"Vystriedať ihneď ({late})." if late else f"Vystriedať najneskôr o: {fmt(relieve_by)} ({post})"
+
+
 def _iso(value) -> datetime | None:
     try:
         return ensure_utc(datetime.fromisoformat(str(value)))
@@ -129,12 +145,13 @@ def _estimate_alert(session: Session, now: datetime, train: Train, start: dateti
     body = (f"Rušňovodič: {name}\nVlak: vlak {train.number} ({train.origin} → {train.destination})\n"
             f"Nástup rušňovodiča nie je zadaný – limit {duty_h} h je len ODHAD plánovača (nástup = odchod vlaku "
             f"mínus príprava): nástup {fmt(start)}, limit {fmt(limit)}.\n"
-            f"Odhad: vystriedať najneskôr o {fmt(relieve_by)} (vrátane {p.crew_post_min:.0f} min na odovzdanie rušňa)."
+            f"{_relief_line(now, limit, relieve_by, p, estimate=True)}"
             f"\n\nZadajte skutočný nástup rušňovodiča (Rušňovodiči → Vlaky v jazde bez záznamu o nástupe rušňovodiča)."
             f"{future}\nAgent dispečer iba upozorňuje. Výmenu rušňovodiča zabezpečí dispečer.\n"
             f"Detail: {settings().public_url.rstrip('/')}/rusnovodici")
     key = f"crew:odhad:{train.id}:{start.strftime('%Y%m%d%H%M')}:{level}"
-    out = send_internal(session, "upozornenie", subject, body, priority, dedup_key=key)
+    # posiela sa v každom cykle, kým platí – zlyhaný pokus (aj 5xx brány, ktorá SMS doručila) až po odstupe
+    out = send_internal(session, "upozornenie", subject, body, priority, dedup_key=key, backoff=True)
     if any(n.status in ("odoslana", "outbox") for n in out):
         audit(session, "agent", "crew_alert", "train", train.id, level=level, left_min=round(left), odhad=True)
         return 1
@@ -165,10 +182,12 @@ def _crew_alert(session: Session, now: datetime, sh: DriverShift, p, thresholds:
     body = (f"Rušňovodič: {name}\nVlak: {vlak}"
             f"{(' (' + train.origin + ' → ' + train.destination + ')') if train else ''}\n"
             f"Nástup: {fmt(sh.start_utc)}   Limit: {fmt(limit)}\n"
-            f"Vystriedať najneskôr o: {fmt(relieve_by)} (vrátane {p.crew_post_min:.0f} min na odovzdanie rušňa)\n\n"
+            f"{_relief_line(now, limit, relieve_by, p)}\n\n"
             f"Agent dispečer iba upozorňuje. Výmenu rušňovodiča zabezpečí dispečer.\n"
             f"Detail: {settings().public_url.rstrip('/')}/rusnovodici")
-    out = send_internal(session, "upozornenie", subject, body, priority, dedup_key=f"crew:{sh.id}:{level}")
+    # posiela sa v každom cykle, kým platí – zlyhaný pokus (aj 5xx brány, ktorá SMS doručila) až po odstupe
+    out = send_internal(session, "upozornenie", subject, body, priority, dedup_key=f"crew:{sh.id}:{level}",
+                        backoff=True)
     if any(n.status in ("odoslana", "outbox") for n in out):
         sent += 1
         audit(session, "agent", "crew_alert", "driver_shift", sh.id, level=level, left_min=round(left))
@@ -224,7 +243,7 @@ def _standing_alert(session: Session, now: datetime, t: Train, minutes: int) -> 
             f"Overte dôvod (plánovaný pobyt, výluka, porucha, čakanie na trasu) a v prípade potreby "
             f"informujte zákazníka. Detail: {settings().public_url.rstrip('/')}/")
     out = send_internal(session, "upozornenie", subject, body, "DÔLEŽITÉ",
-                        dedup_key=f"standing:{t.id}:{bucket}")
+                        dedup_key=f"standing:{t.id}:{bucket}", backoff=True)
     if any(n.status in ("odoslana", "outbox") for n in out):
         sent += 1
     return sent
