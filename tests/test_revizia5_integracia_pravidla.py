@@ -276,20 +276,24 @@ def test_zrusenie_ma_termin_z_casti_vety_ktora_rusi(cfg, body, term, partial):
     assert "zrušenie sa jej netýka" not in _notes(items)
 
 
-@pytest.mark.parametrize("subject,body,term,listed", [
+@pytest.mark.parametrize("subject,body,terms,listed", [
     ("ROV č. 1500/2026", "Výluka podľa ROV č. 1500/2026 v úseku Kysak – Košice v noci z 25.11. na 26.11.2026 sa ruší.",
-     ("25.11. 22:00", "26.11. 06:00"), "noc 25.11./26.11.2026"),
+     [("25.11. 22:00", "26.11. 06:00")], ["noc 25.11./26.11.2026"]),
     ("ROV 4411/2026 – zrušenie jednej noci", "Ruší sa výluka v noci 24./25.11.2026. Výluky v ostatných nociach sa "
-     "uskutočnia podľa ROV 4411/2026.", ("24.11. 22:00", "25.11. 06:00"), "noc 24.11./25.11.2026"),
+     "uskutočnia podľa ROV 4411/2026.", [("24.11. 22:00", "25.11. 06:00")], ["noc 24.11./25.11.2026"]),
+    # dve noci sú dve zrušenia – deň 26.11. medzi nimi sa neruší (súvislej výluke sa neotvorí)
     ("ROV č. 1500/2026", "Výluka podľa ROV č. 1500/2026 v úseku Kysak – Košice v nociach 25./26.11. a 26./27.11.2026 sa "
-     "ruší.", ("25.11. 22:00", "27.11. 06:00"), "noci 25.11./26.11.2026, 26.11./27.11.2026"),
+     "ruší.", [("25.11. 22:00", "26.11. 06:00"), ("26.11. 22:00", "27.11. 06:00")],
+     ["noc 25.11./26.11.2026", "noc 26.11./27.11.2026"]),
 ], ids=["noc_z_na", "noc_lomka", "dve_noci"])
-def test_zrusenie_noci_bez_casu_ma_nocny_termin(cfg, subject, body, term, listed):
-    """[R5L2 noc] Zrušenie noci bez času má termín noci 22:00 – 06:00 s poznámkou (nie celý deň 00:00 – 24:00)."""
+def test_zrusenie_noci_bez_casu_ma_nocny_termin(cfg, subject, body, terms, listed):
+    """[R5L2 noc] Zrušenie noci bez času má termín noci 22:00 – 06:00 s poznámkou (nie celý deň 00:00 – 24:00); každá
+    noc je samostatné zrušenie."""
     items = _x(subject, body)
-    assert [i.kind for i in items] == ["vyluka_zrusenie"], _show(items)
-    assert (_l(items[0].data.get("start")), _l(items[0].data.get("end"))) == term, items[0].data
-    assert any(listed in n and "22:00 – 06:00" in n for n in items[0].notes), items[0].notes
+    assert [i.kind for i in items] == ["vyluka_zrusenie"] * len(terms), _show(items)
+    assert [(_l(i.data.get("start")), _l(i.data.get("end"))) for i in items] == terms, _show(items)
+    for it, night in zip(items, listed):
+        assert any(night in n and "22:00 – 06:00" in n for n in it.notes), it.notes
 
 
 @pytest.mark.parametrize("subject,body", [

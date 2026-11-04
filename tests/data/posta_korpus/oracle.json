@@ -13501,6 +13501,1382 @@
      ]
     }
    ]
+  },
+  {
+   "id": "r5j_novy_nahradny_rozsah",
+   "origin": "r5-integracia: I1 oprava – náhradný termín, rozsah sa nemení",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 sa ruší. Náhradný termín výluky je 14.11.2026 od 08:00 do 14:00 hod., rozsah výluky sa nemení.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-14 08:00",
+       "2026-11-14 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 00:00",
+       "2026-11-13 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_novy_druh_nemeni",
+   "origin": "r5-integracia: I1 oprava – nová výluka, druh sa nemení",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 sa ruší. Nová výluka bude dňa 14.11.2026 od 08:00 do 14:00 hod., druh výluky sa nemení.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-14 08:00",
+       "2026-11-14 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 00:00",
+       "2026-11-13 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_novy_usek_nemeni",
+   "origin": "r5-integracia: I1 oprava – výluka bude, úsek sa nemení",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 sa ruší. Výluka bude dňa 14.11.2026 od 08:00 do 14:00 hod., úsek sa nemení.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-14 08:00",
+       "2026-11-14 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 00:00",
+       "2026-11-13 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_len_vecer",
+   "origin": "r5-integracia: I1 oprava – uskutoční sa len večer",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 od 08:00 do 14:00 hod. sa ruší. Výluka sa uskutoční len dňa 12.11.2026 od 18:00 do 22:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 18:00",
+       "2026-11-12 22:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 08:00",
+       "2026-11-12 14:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_len_noc",
+   "origin": "r5-integracia: I1 oprava – uskutoční sa len v noci",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 od 08:00 do 14:00 hod. sa ruší. Výluka sa uskutoční len v noci z 12.11. na 13.11.2026 od 22:00 do 04:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 22:00",
+       "2026-11-13 04:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 08:00",
+       "2026-11-12 14:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_vykona_sa_len",
+   "origin": "r5-integracia: I1 oprava – vykoná sa len",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 v čase od 08:00 do 14:00 hod. sa nekoná. Vykoná sa len dňa 12.11.2026 od 16:00 do 20:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 16:00",
+       "2026-11-12 20:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 08:00",
+       "2026-11-12 14:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_plati_len",
+   "origin": "r5-integracia: I1 oprava – platí len iný čas",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 od 08:00 do 14:00 hod. sa ruší. Výluka platí len dňa 12.11.2026 od 15:00 do 18:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 15:00",
+       "2026-11-12 18:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 08:00",
+       "2026-11-12 14:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_iba_cas_bez_dna",
+   "origin": "r5-integracia: I1 oprava – iba v čase bez dňa",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 od 08:00 do 14:00 hod. sa ruší. Výluka sa uskutoční iba v čase od 18:00 do 22:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 18:00",
+       "2026-11-12 22:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 08:00",
+       "2026-11-12 14:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_okno_vo_vete",
+   "origin": "r5-integracia: I1 oprava – okno vo vete s obdobím",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 od 08:00 do 14:00 hod. sa v čase od 10:00 do 14:00 hod. ruší.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 10:00",
+       "2026-11-12 14:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_rusi_v_case",
+   "origin": "r5-integracia: I1 oprava – ruší sa v čase",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 od 08:00 do 14:00 hod. sa ruší v čase od 10:00 do 14:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 10:00",
+       "2026-11-12 14:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_vedlajsia_veta_od",
+   "origin": "r5-integracia: I1 oprava – vedľajšia veta, od času",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka v úseku Kysak – Košice, ktorá mala trvať od 08:00 do 14:00 hod., sa dňa 12.11.2026 ruší od 10:00 hod. (ROV č. 1142/2026).\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 10:00",
+       "2026-11-13 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_rusi_do",
+   "origin": "r5-integracia: I1 oprava – ruší sa do času",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 sa ruší do 10:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 00:00",
+       "2026-11-12 10:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_den_v_obdobi",
+   "origin": "r5-integracia: I1 oprava – deň v období s oknom",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice v dňoch 24.11. až 27.11.2026 od 08:00 do 14:00 hod. sa dňa 25.11.2026 ruší.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_naplanovana_na",
+   "origin": "r5-integracia: I1 oprava – naplánovaná na, deň",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice naplánovaná na 24.11. – 27.11.2026 sa dňa 25.11.2026 ruší.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_platna_od_do",
+   "origin": "r5-integracia: I1 oprava – platná od do, nekoná",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice platná od 24.11.2026 do 27.11.2026 sa dňa 25.11.2026 nekoná.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_dve_okna",
+   "origin": "r5-integracia: I1 oprava – dve okná",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 sa ruší od 08:00 do 10:00 a od 12:00 do 14:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 08:00",
+       "2026-11-12 10:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 12:00",
+       "2026-11-12 14:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_nesuvisle_dni",
+   "origin": "r5-integracia: I1 oprava – nesúvislé dni",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice sa dňa 24.11.2026 a dňa 26.11.2026 ruší.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-26 00:00",
+       "2026-11-27 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_rusi_plati_len",
+   "origin": "r5-integracia: I1 oprava – ruší sa, platí len časť",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice sa dňa 12.11.2026 ruší. Platí len v čase od 08:00 do 10:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 00:00",
+       "2026-11-12 08:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 10:00",
+       "2026-11-13 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_dni_okrem_dna",
+   "origin": "r5-integracia: I1 oprava – dni okrem dňa, ktorý platí",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice v dňoch 24.11. – 27.11.2026 sa ruší, dňa 26.11.2026 platí bez zmeny.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-26 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-27 00:00",
+       "2026-11-28 00:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_cas_den_v_predmete",
+   "origin": "r5-integracia: I1 oprava – čas v texte, deň v predmete",
+   "subject": "ROV č. 1142/2026 – zmena 12.11.2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice sa v čase od 10:00 do 14:00 hod. ruší.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-12 10:00",
+       "2026-11-12 14:00"
+      ]
+     ],
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_noci_nesuvisle",
+   "origin": "r5-integracia: I1 oprava – dve nesúvislé noci",
+   "subject": "ROV č. 1500/2026",
+   "body": "Výluka podľa ROV č. 1500/2026 v úseku Kysak – Košice v nociach 25./26.11. a 27./28.11.2026 sa ruší.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 22:00",
+       "2026-11-26 06:00"
+      ]
+     ],
+     "ref": "1500/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-27 22:00",
+       "2026-11-28 06:00"
+      ]
+     ],
+     "ref": "1500/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_noci_suvisle",
+   "origin": "r5-integracia: I1 oprava – dve súvislé noci",
+   "subject": "ROV č. 1500/2026",
+   "body": "Výluka podľa ROV č. 1500/2026 v úseku Kysak – Košice v nociach 25./26.11. a 26./27.11.2026 sa ruší.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 22:00",
+       "2026-11-26 06:00"
+      ]
+     ],
+     "ref": "1500/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-26 22:00",
+       "2026-11-27 06:00"
+      ]
+     ],
+     "ref": "1500/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_noc_den_v_tyzdni",
+   "origin": "r5-integracia: I1 oprava – noc z pondelka na utorok",
+   "subject": "ROV č. 1500/2026",
+   "body": "Výluka podľa ROV č. 1500/2026 v úseku Kysak – Košice sa v noci z pondelka 23.11. na utorok 24.11.2026 ruší.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-23 22:00",
+       "2026-11-24 06:00"
+      ]
+     ],
+     "ref": "1500/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_den_a_noc",
+   "origin": "r5-integracia: I1 oprava – deň a noc za ním",
+   "subject": "ROV č. 1500/2026",
+   "body": "Výluka podľa ROV č. 1500/2026 v úseku Kysak – Košice sa dňa 25.11.2026 a v noci z 25.11. na 26.11.2026 ruší.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 06:00"
+      ]
+     ],
+     "ref": "1500/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_noc_okno_iny_usek",
+   "origin": "r5-integracia: I1 oprava – okno nočnej výluky iného úseku",
+   "subject": "ROV č. 1502/2026",
+   "body": "Výluka podľa ROV č. 1502/2026 v úseku Kysak – Košice v noci z 25.11. na 26.11.2026 sa ruší.\n\nVýluka v úseku Margecany – Kysak platí naďalej denne v čase od 19:00 do 09:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 22:00",
+       "2026-11-26 06:00"
+      ]
+     ],
+     "ref": "1502/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_noc_okno_dispecer",
+   "origin": "r5-integracia: I1 oprava – služba dispečera nie je okno výluky",
+   "subject": "ROV č. 1502/2026",
+   "body": "Výluka podľa ROV č. 1502/2026 v úseku Kysak – Košice v noci z 25.11. na 26.11.2026 sa ruší.\n\nNočná služba dispečera je k dispozícii od 18:00 do 07:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 22:00",
+       "2026-11-26 06:00"
+      ]
+     ],
+     "ref": "1502/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_nekona_povodny_rozsah",
+   "origin": "r5-integracia: I1 oprava – nekoná v pôvodnom rozsahu, ale len",
+   "subject": "ROV č. 1142/2026",
+   "body": "Výluka podľa ROV č. 1142/2026 v úseku Kysak – Košice dňa 12.11.2026 sa nekoná v pôvodnom rozsahu, ale len od 08:00 do 10:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Kysak",
+     "to": "Košice",
+     "ref": "1142/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_okrem_za_vyrokom",
+   "origin": "r5-integracia: I1 oprava – okrem úseku za výrokom",
+   "subject": "ROV č. 3360/2026",
+   "body": "Výluka v úsekoch Trnava – Senica a Senica – Kúty dňa 09.12.2026 sa ruší, okrem úseku Trnava – Senica.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@ortt.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Senica",
+     "to": "Kúty",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_okrem_bez_ciarky",
+   "origin": "r5-integracia: I1 oprava – okrem úseku bez čiarky",
+   "subject": "ROV č. 3360/2026",
+   "body": "Výluka v úsekoch Trnava – Senica a Senica – Kúty dňa 09.12.2026 sa ruší okrem úseku Trnava – Senica.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@ortt.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Senica",
+     "to": "Kúty",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_s_vynimkou",
+   "origin": "r5-integracia: I1 oprava – s výnimkou úseku",
+   "subject": "ROV č. 3360/2026",
+   "body": "Výluky v úsekoch Trnava – Senica a Senica – Kúty dňa 09.12.2026 sa rušia s výnimkou úseku Trnava – Senica.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@ortt.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Senica",
+     "to": "Kúty",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_nerusi",
+   "origin": "r5-integracia: I1 oprava – sa neruší",
+   "subject": "ROV č. 3360/2026",
+   "body": "Výluka v úseku Senica – Kúty dňa 09.12.2026 sa ruší. Výluka v úseku Trnava – Senica sa neruší.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@ortt.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Senica",
+     "to": "Kúty",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_nezrusuje",
+   "origin": "r5-integracia: I1 oprava – sa nezrušuje",
+   "subject": "ROV č. 3360/2026",
+   "body": "Výluka v úseku Senica – Kúty dňa 09.12.2026 sa ruší. Výluka v úseku Trnava – Senica sa nezrušuje.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@ortt.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Senica",
+     "to": "Kúty",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_bude_vyluka_podla_rov",
+   "origin": "r5-integracia: I1 oprava – bude výluka podľa ROV",
+   "subject": "ROV č. 3360/2026",
+   "body": "Výluka v úseku Senica – Kúty dňa 09.12.2026 sa ruší. V úseku Trnava – Senica bude výluka podľa ROV.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@ortt.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Senica",
+     "to": "Kúty",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_nebudu_vykonane",
+   "origin": "r5-integracia: I1 oprava – nebudú dňa … vykonané",
+   "subject": "ROV č. 3360/2026",
+   "body": "Výluky v úseku Trnava – Senica a v úseku Senica – Kúty nebudú dňa 09.12.2026 vykonané.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@ortt.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Trnava",
+     "to": "Senica",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Senica",
+     "to": "Kúty",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_nevykonava",
+   "origin": "r5-integracia: I1 oprava – nevykonáva",
+   "subject": "ROV č. 3360/2026",
+   "body": "Výluka v úseku Trnava – Senica ani v úseku Senica – Kúty sa dňa 09.12.2026 nevykonáva.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@ortt.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Trnava",
+     "to": "Senica",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Senica",
+     "to": "Kúty",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_nebude_vykonavat",
+   "origin": "r5-integracia: I1 oprava – nebude vykonávať",
+   "subject": "ROV č. 3360/2026",
+   "body": "Výluka v úseku Trnava – Senica sa dňa 09.12.2026 nebude vykonávať.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@ortt.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Trnava",
+     "to": "Senica",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_dva_useky_rov",
+   "origin": "r5-integracia: I1 oprava – dva úseky toho istého ROV",
+   "subject": "ROV č. 3360/2026",
+   "body": "Výluky v úsekoch Senica – Kúty a Kúty – Devínska Nová Ves dňa 09.12.2026 sa rušia. Výluka v úseku Trnava – Senica ostáva v platnosti.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@ortt.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Senica",
+     "to": "Kúty",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "frm": "Kúty",
+     "to": "Devínska Nová Ves",
+     "iv": [
+      [
+       "2026-12-09 00:00",
+       "2026-12-10 00:00"
+      ]
+     ],
+     "ref": "3360/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_povodne_namiesto_vyluky",
+   "origin": "r5-integracia: I1 oprava – Namiesto výluky dňa …",
+   "subject": "Zmena ROV č. 1315/2026",
+   "body": "Namiesto výluky dňa 25.11.2026 od 08:00 do 14:00 hod. bude výluka v úseku Ružomberok – Liptovský Mikuláš dňa 26.11.2026 od 08:00 do 14:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1315/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_povodne_a_nie",
+   "origin": "r5-integracia: I1 oprava – … a nie …",
+   "subject": "Zmena ROV č. 1315/2026",
+   "body": "Výluka v úseku Ružomberok – Liptovský Mikuláš sa uskutoční 26.11.2026 od 08:00 do 14:00 hod. a nie 25.11.2026 od 08:00 do 14:00 hod., ako bolo pôvodne uvedené.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1315/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_povodne_predtym",
+   "origin": "r5-integracia: I1 oprava – (predtým …)",
+   "subject": "Zmena ROV č. 1315/2026",
+   "body": "Výluka v úseku Ružomberok – Liptovský Mikuláš bude 26.11.2026 od 08:00 do 14:00 hod. (predtým 25.11.2026 od 08:00 do 14:00 hod.).\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1315/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_povodne_doteraz",
+   "origin": "r5-integracia: I1 oprava – (doteraz …)",
+   "subject": "Zmena ROV č. 1315/2026",
+   "body": "Výluka v úseku Ružomberok – Liptovský Mikuláš bude 26.11.2026 od 08:00 do 14:00 hod. (doteraz 25.11.2026 od 08:00 do 14:00 hod.).\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1315/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_povodne_miesto",
+   "origin": "r5-integracia: I1 oprava – miesto …",
+   "subject": "Zmena ROV č. 1315/2026",
+   "body": "Výluka v úseku Ružomberok – Liptovský Mikuláš bude 26.11.2026 od 08:00 do 14:00 hod. miesto 25.11.2026 od 08:00 do 14:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1315/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_povodne_planovana_na",
+   "origin": "r5-integracia: I1 oprava – plánovaná na … sa presúva na …",
+   "subject": "Zmena ROV č. 1315/2026",
+   "body": "Výluka v úseku Ružomberok – Liptovský Mikuláš plánovaná na 25.11.2026 od 08:00 do 14:00 hod. sa presúva na 26.11.2026 od 08:00 do 14:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1315/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_povodne_z_terminu",
+   "origin": "r5-integracia: I1 oprava – sa z termínu … presúva na …",
+   "subject": "Zmena ROV č. 1315/2026",
+   "body": "Výluka v úseku Ružomberok – Liptovský Mikuláš sa z termínu 25.11.2026 od 08:00 do 14:00 hod. presúva na 26.11.2026 od 08:00 do 14:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1315/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_povodne_z_na_okna",
+   "origin": "r5-integracia: I1 oprava – presúva z … na …",
+   "subject": "Zmena ROV č. 1315/2026",
+   "body": "Výluka v úseku Ružomberok – Liptovský Mikuláš sa presúva z 25.11.2026 08:00 – 14:00 na 26.11.2026 08:00 – 14:00.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1315/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_povodne_predtym_vety",
+   "origin": "r5-integracia: I1 oprava – „Predtým dňa …“ je ďalší termín (kontrola)",
+   "subject": "Výluka a pomalá jazda Kysak – Košice",
+   "body": "Od 20.11.2026 14:00 do 30.11.2026 platí v úseku Kysak – Košice pomalá jazda 50 km/h.\nPredtým dňa 20.11.2026 od 08:00 do 14:00 hod. bude v úseku Kysak – Košice výluka podľa ROV č. 1178/2026.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "pomala_jazda",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-20 14:00",
+       "2026-12-01 00:00"
+      ]
+     ],
+     "rks": [
+      "pomala_jazda"
+     ],
+     "ref": "1178/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-20 08:00",
+       "2026-11-20 14:00"
+      ]
+     ],
+     "rks": [
+      "uplna"
+     ],
+     "ref": "1178/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_pomale_rychlosti",
+   "origin": "r5-integracia: I1 oprava – pomalé jazdy 50 a 30 km/h v riadkoch",
+   "subject": "Pomalé jazdy – prehľad",
+   "body": "Prehľad pomalých jázd:\n\nPor.č. | Úsek | Koľaj | Začiatok | Koniec | Rýchlosť\n1 | Kysak – Košice | 1. TK | 23.11.2026 08:00 | 30.11.2026 14:00 | 50 km/h\n2 | Kysak – Košice | 1. TK | 23.11.2026 08:00 | 30.11.2026 14:00 | 30 km/h\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "pomala_jazda",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-23 08:00",
+       "2026-11-30 14:00"
+      ]
+     ],
+     "rks": [
+      "pomala_jazda"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r5j_text_dve_kolaje",
+   "origin": "r5-integracia: I1 oprava – 1. TK a 2. TK v dvoch odsekoch",
+   "subject": "ROV č. 1419/2026",
+   "body": "Výluka 1. traťovej koľaje v úseku Kysak – Košice dňa 23.11.2026 od 08:00 do 14:00 hod.\n\nVýluka 2. traťovej koľaje v úseku Kysak – Košice dňa 23.11.2026 od 08:00 do 14:00 hod.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-23 08:00",
+       "2026-11-23 14:00"
+      ]
+     ],
+     "rks": [
+      "kolaj"
+     ],
+     "ref": "1419/2026"
+    }
+   ]
+  },
+  {
+   "id": "r5j_text_kolaj_tv_odseky",
+   "origin": "r5-integracia: I1 oprava – 1. TK a vypnuté TV v dvoch odsekoch",
+   "subject": "ROV č. 1413/2026",
+   "body": "Výluka 1. traťovej koľaje v úseku Kysak – Košice dňa 23.11.2026 od 08:00 do 14:00 hod. podľa ROV č. 1413/2026.\n\nV úseku Kysak – Košice dňa 23.11.2026 od 08:00 do 14:00 hod. bude vypnuté trakčné vedenie.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-23 08:00",
+       "2026-11-23 14:00"
+      ]
+     ],
+     "rks": [
+      "kolaj",
+      "trakcne_vedenie"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r5j_text_kolaj_a_tv_veta",
+   "origin": "r5-integracia: I1 oprava – výluka 1. TK a vypnutie TV v jednej vete",
+   "subject": "ROV č. 1400/2026",
+   "body": "Výluka 1. traťovej koľaje a vypnutie trakčného vedenia v úseku Kysak – Košice dňa 23.11.2026 od 08:00 do 14:00 hod. podľa ROV č. 1400/2026.\n",
+   "received": "2026-11-09 09:00",
+   "sender": "vyluky@orke.zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-23 08:00",
+       "2026-11-23 14:00"
+      ]
+     ],
+     "rks": [
+      "kolaj",
+      "trakcne_vedenie"
+     ],
+     "ref": "1400/2026"
+    }
+   ]
   }
  ]
 }
