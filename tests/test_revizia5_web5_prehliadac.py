@@ -40,11 +40,13 @@ function snap(page) {
     const cb = form ? form.querySelector('input[name=potvrdit_neaktualne]') : null;
     const active = document.activeElement;
     const notice = document.getElementById('zivy-stav-sprava');
+    const error = document.getElementById('zivy-stav-chyba');
     return { semafor: sem ? sem.className : '', header: head ? head.textContent.replace(/\s+/g, ' ').trim() : '',
              farba: form && form.querySelector('input[name=farba]') ? form.querySelector('input[name=farba]').value : null,
              confirm: cb ? { required: cb.required, checked: cb.checked } : null,
              note: (document.getElementById('pozn-prijat') || {}).value || '', focus: active ? active.id : '',
              notice: notice ? notice.className + ' | ' + notice.textContent : '',
+             error: error ? error.className + ' | ' + error.textContent : '',
              variants: Array.from(document.querySelectorAll('table .semafor')).map((e) => e.textContent.trim()) };
   });
 }
@@ -76,7 +78,7 @@ function snap(page) {
     out.staleSignal = fs.existsSync(sync + '/zastarane');
     // návrat na kartu = okamžitý dopyt na stav (inak do minúty)
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await page.waitForSelector('#zivy-stav-sprava.flash-info', { timeout: 20000 });
+    await page.waitForSelector('#zivy-stav-sprava.flash-varovanie', { timeout: 20000 });
     out.after = await snap(page);
     // bez spojenia so serverom: po dvoch neúspešných dopytoch upozornenie
     await page.route('**/odporucania/' + recId, (route) => route.abort());
@@ -84,7 +86,7 @@ function snap(page) {
       await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
       await page.waitForTimeout(1000);
     }
-    await page.waitForSelector('#zivy-stav-sprava.flash-chyba', { timeout: 10000 });
+    await page.waitForSelector('#zivy-stav-chyba.flash-chyba', { timeout: 10000 });
     out.offline = await snap(page);
     await ctx.close();
   } finally {
@@ -195,6 +197,8 @@ def test_otvorena_stranka_odporucania_po_vypadku_agenta_nie_je_zelena(cfg, tmp_p
     assert "ZELENÁ" not in after["variants"], after
     assert after["farba"] == "ORANŽOVÁ" and after["confirm"] == {"required": True, "checked": False}, after
     assert after["note"] == "rozpísaná poznámka" and after["focus"] == "pozn-prijat", after
-    assert after["notice"].startswith("flash flash-info | Stav sa zmenil – údaje na stránke sú obnovené"), after
-    assert offline["notice"].startswith("flash flash-chyba | Stav stránky sa nepodarilo overiť od "), offline
+    # zmena semaforu je výrazné upozornenie, ktoré zmenu pomenuje (nie rovnaké ako bežná obnova údajov)
+    assert after["notice"].startswith("flash flash-varovanie | Stav sa zmenil ("), after
+    assert "Semafor: ZELENÁ → ORANŽOVÁ (bez čerstvých údajov agenta)" in after["notice"], after
+    assert offline["error"].startswith("flash flash-chyba | Stav stránky sa nepodarilo overiť od "), offline
     assert "semafor-oranzova" in offline["semafor"], offline

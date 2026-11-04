@@ -530,12 +530,28 @@ def page_state(*parts: Any) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
 
 
+def page_summary(*items: Any) -> str:
+    """Hlavné údaje stránky ako JSON [[popis, hodnota], …] (atribút data-zivy-hlavne). Pri živej obnove ich stránka
+    porovná so svojimi: zmenu (semafor, rozhodnutie, stav odporúčania, čerstvosť dát agenta…) ohlási výrazným
+    upozornením s pomenovaním zmeny, obnovu bez takej zmeny (bežný prepočet s rovnakým výsledkom) len nenápadne.
+    Položky bez hodnoty (None) sa vynechajú."""
+    return json.dumps([[str(label), str(value)] for label, value in items if value is not None and value != ""],
+                      ensure_ascii=False)
+
+
 def wants_state(request: Request) -> bool:
     return request.headers.get(STATE_HEADER) == "1"
 
 
-def state_response(state: str) -> JSONResponse:
-    return JSONResponse({"stav": state}, headers={"Cache-Control": "no-store"})
+def state_response(state: str, ages: Optional[Mapping[str, Optional[str]]] = None) -> JSONResponse:
+    """Odpoveď na dopyt otvorenej stránky (X-Vlaky-Stav): odtlačok stavu („stav“), čas servera („teraz“ – vek údajov
+    a odpočet pracovného času sa na stránke počítajú k nemu, nie k hodinám počítača dispečera) a aktuálne časy údajov
+    („vek“: kľúč data-vek-kluc → čas ISO), ku ktorým stránka „pred N min“ znova ukotví – vek inak rástol od načítania
+    stránky, hoci agent medzitým schránku skontroloval."""
+    body: dict = {"stav": state, "teraz": iso(now_utc())}
+    if ages is not None:
+        body["vek"] = {k: v for k, v in ages.items() if v}
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
 
 
 def render(request: Request, template: str, ctx: Optional[dict] = None, user=None,

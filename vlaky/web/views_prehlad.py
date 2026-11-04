@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from ..audit import audit
-from ..cas import ensure_utc, local, local_naive_to_utc, now_utc
+from ..cas import ensure_utc, fmt, local, local_naive_to_utc, now_utc
 from ..config import settings
 from ..db import session_scope
 from ..models import (Email, ExtractedEvent, Recommendation, ShiftHandoverReport, Train)
@@ -23,7 +23,7 @@ from .common import (DONE_TRAIN_STATES, EVENT_KIND, FormReader, REC_STATE, TRAIN
 from .data import (alerts, auto_applied_unconfirmed, borders_list, capped_variants, crew_live, data_freshness,
                    display_color, is_current, latest_positions, semafor_cap, train_rows)
 from .prepocet import evaluate_all_bg
-from .common import iso, page_state, state_response, wants_state
+from .common import iso, page_state, page_summary, state_response, wants_state
 from .data import recommendation_status, worse_color
 
 router = APIRouter()
@@ -421,10 +421,15 @@ def recommendations_page(request: Request, stav: str = "", farba: str = "", vlak
              r.id in current) for r in recs])
         if wants_state(request):
             return state_response(state)
+        # hlavné údaje zoznamu (rozhodnutie, zobrazená farba, stav) – ich zmenu otvorený zoznam ohlási výrazne
+        summary = page_summary(*[(
+            f"Vlak {r.train.number if r.train else '?'} ({fmt(r.created_at)})",
+            ", ".join([r.decision, "ORANŽOVÁ (bez čerstvých údajov agenta)" if r.id in current and r.color == "ZELENÁ"
+                       else r.color, REC_STATE.get(r.state, r.state)])) for r in recs])
         return render(request, "odporucania.html", {"recs": recs, "stav": stav, "farba": farba, "vlak": vlak,
                                                     "strana": strana, "pages": max(1, -(-total // per_page)),
                                                     "total": total, "fresh": fresh, "current_ids": current,
-                                                    "page_state": state}, user=user)
+                                                    "page_state": state, "page_summary": summary}, user=user)
 
 
 def _next_steps(rec: Recommendation, color: Optional[str] = None) -> list:
@@ -487,6 +492,14 @@ def _ago_iso(now: datetime, minutes: Any) -> Optional[str]:
     return iso(now - timedelta(minutes=float(minutes))) if isinstance(minutes, (int, float)) else None
 
 
+def _duty_minutes(crew: dict, params: dict) -> int:
+    """Limit pracovného času rušňovodiča v minútach (z odporúčania, inak z parametrov) – horná hranica odpočtu."""
+    try:
+        return round(float(crew.get("max_duty_h")) * 60)
+    except (TypeError, ValueError):
+        return int(params["crew_max_duty_min"])
+
+
 @router.get("/odporucania/{rec_id}", response_class=HTMLResponse)
 def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
     cfg = settings()
@@ -508,7 +521,8 @@ def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
         newest_color = display_color(newest, fresh, is_current(newest, latest))
         history_colors = {h.id: newest_color if h.id == latest else h.color for h in history}
         # aktuálne odporúčanie: pracovný čas rušňovodiča a vek dát k teraz, nie zmrazené čísla z prepočtu
-        crew_now = crew_live(rec.crew, current_params(s, now), now) if current and rec.crew else None
+        params = current_params(s, now)
+        crew_now = crew_live(rec.crew, params, now) if current and rec.crew else None
         # rušňovodič z odporúčania ešte nenastúpil (naplánovaná zmena, nový rušňovodič po odstavení) alebo nie je
         # pridelený (potrebný nástup podľa plánu): limit 13 h mu ešte nebeží – žiadny odpočet (napr. „63 h 17 min“)
         crew = rec.crew or {}
@@ -516,6 +530,10 @@ def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
         crew_ref = now if current else (ensure_utc(rec.created_at) or now)  # staršie odporúčanie: čas prepočtu
         crew_waiting = bool(crew) and not crew.get("unknown_start") and (
             not crew.get("driver") or (crew_start is not None and crew_start > crew_ref))
+        # koniec pracovného času (limit), ku ktorému sa „Zostáva do limitu“ na otvorenej stránke odpočítava – rovnako
+        # ako ho počíta crew_live; bez zadaného nástupu sa zostávajúci čas neukazuje ako fakt (žiadny odpočet)
+        crew_limit = iso(parse_iso(crew.get("limit"))) \
+            if crew_now and not crew.get("unknown_start") and not crew_waiting else None
         position_age = None
         position_at = None
         if current:
@@ -523,25 +541,41 @@ def recommendation_detail(request: Request, rec_id: int, user=Depends(view)):
             if rows:
                 position_at = iso(rows[0].ts_utc)
                 position_age = round((now - ensure_utc(rows[0].ts_utc)).total_seconds() / 60.0, 1)
+        position_stale = position_age is not None and position_age > cfg.position_stale_minutes
+        # časy, od ktorých stránka počíta „pred N min“ (data-vek); pri každom dopyte na stav sa posielajú znova
+        mailbox_at = _ago_iso(now, fresh.get("mailbox_min"))
+        cycle_at = _ago_iso(now, fresh.get("agent_cycle_min"))
+        ages = {"poloha": position_at, "schranka": mailbox_at, "cyklus": cycle_at} if current else {}
         # odtlačok toho, čo stránka ukazuje: otvorená stránka sa ho každú minútu pýta a pri zmene (agent prestal
         # prepočítavať a ZELENÁ je teraz ORANŽOVÁ, nové odporúčanie, rozhodnutie iného dispečera, tichá aktualizácia
         # odporúčania plánovačom) si obsah obnoví – nikdy neukazuje ZELENÚ bez čerstvých dát agenta
         state = page_state(
             rec.id, rec.state, rec.decision, rec.color, rec.priority, (rec.data_age or {}).get("computed_at"),
             rec.decided_by, iso(rec.decided_at), color, current, latest, fresh["stale"],
-            rec.train.status if rec.train else "", (crew_now or {}).get("status"),
-            position_age is not None and position_age > cfg.position_stale_minutes)
+            rec.train.status if rec.train else "", (crew_now or {}).get("status"), crew_limit, position_stale)
         if wants_state(request):
-            return state_response(state)
+            return state_response(state, ages)
+        # hlavné údaje: ich zmenu otvorená stránka ohlási výrazne (bežný prepočet s rovnakým výsledkom nie)
+        summary = page_summary(
+            ("Semafor", f"{color} (bez čerstvých údajov agenta)" if color != rec.color else color),
+            ("Rozhodnutie", rec.decision), ("Priorita", rec.priority or "INFO"),
+            ("Stav odporúčania", REC_STATE.get(rec.state, rec.state) + (f" ({rec.decided_by})" if rec.decided_by
+                                                                        else "")),
+            ("Posledné odporúčanie vlaku", "áno" if latest == rec.id else "nie – vlak má novšie odporúčanie"),
+            ("Stav vlaku", TRAIN_STATUS.get(rec.train.status, rec.train.status) if rec.train else None),
+            ("Údaje agenta", ("nie sú čerstvé" if fresh["stale"] else "čerstvé") if current else None),
+            ("Poloha vlaku", (f"neistá – staršia ako {cfg.position_stale_minutes} min" if position_stale else
+                              "bez polohy" if position_age is None else "v poriadku") if current else None),
+            ("Pracovný čas rušňovodiča", (crew_now or {}).get("status")))
         return render(request, "odporucanie.html", {
             "rec": rec, "train": rec.train, "latest_id": latest, "history": history,
             "history_colors": history_colors, "steps": _next_steps(rec, color),
             "stale_minutes": cfg.position_stale_minutes, "fresh": fresh, "current": current,
             "agent_stale": bool(current and fresh["stale"]), "color": color, "downgraded": color != rec.color,
             "cap": cap, "variants": capped_variants(rec, cap), "crew_now": crew_now, "crew_waiting": crew_waiting,
-            "position_age": position_age, "position_at": position_at, "page_state": state,
-            "mailbox_at": _ago_iso(now, fresh.get("mailbox_min")),
-            "cycle_at": _ago_iso(now, fresh.get("agent_cycle_min")), "running": _running_rec(rec, current)},
+            "crew_limit": crew_limit, "crew_duty_min": _duty_minutes(crew, params),
+            "position_age": position_age, "position_at": position_at, "page_state": state, "page_summary": summary,
+            "mailbox_at": mailbox_at, "cycle_at": cycle_at, "running": _running_rec(rec, current)},
             user=user)
 
 

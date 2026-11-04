@@ -210,10 +210,10 @@ def test_odtlacok_stavu_odporucania_pre_zivu_obnovu(client, fixed_now):
     fresh_state = _page_state(page)
     r = client.get(f"/odporucania/{rid}", headers=STATE)
     assert r.status_code == 200 and r.headers["content-type"].startswith("application/json")
-    assert r.json() == {"stav": fresh_state}
+    assert r.json()["stav"] == fresh_state
     assert r.headers.get("cache-control") == "no-store"
     set_fake_now(t0 + timedelta(minutes=5))
-    assert client.get(f"/odporucania/{rid}", headers=STATE).json() == {"stav": fresh_state}  # nič sa nezmenilo
+    assert client.get(f"/odporucania/{rid}", headers=STATE).json()["stav"] == fresh_state  # nič sa nezmenilo
 
     set_fake_now(t0 + timedelta(minutes=45))
     stale_state = client.get(f"/odporucania/{rid}", headers=STATE).json()["stav"]
@@ -240,7 +240,7 @@ def test_odtlacok_stavu_detailu_vlaku_a_zoznamu_odporucani(client, fixed_now):
     urls = (f"/vlaky/{tid}", "/odporucania", "/vlaky")
     states = {url: _page_state(client.get(url).text) for url in urls}
     for url in urls:
-        assert client.get(url, headers=STATE).json() == {"stav": states[url]}, url
+        assert client.get(url, headers=STATE).json()["stav"] == states[url], url
     set_fake_now(t0 + timedelta(minutes=45))
     for url in urls:
         assert client.get(url, headers=STATE).json()["stav"] != states[url], url
@@ -524,8 +524,9 @@ def test_export_csv_slovenske_stavy_a_desatinna_ciarka(client, fixed_now):
     events = rows("udalosti")
     head = events[0]
     got = sorted((r[head.index("stav")], r[head.index("extraktor")]) for r in events[1:])
+    # zapísaná automaticky bez potvrdenia dispečera nie je „zapísaná do registra“ ako potvrdená (kontrola opravy R5U6)
     assert got == [("informačná (bez potvrdenia)", "pravidlá"), ("zamietnutá", "jazykový model (LLM)"),
-                   ("zapísaná do registra", "pravidlá"), ("čaká na potvrdenie", "pravidlá")], got
+                   ("zapísaná automaticky (bez potvrdenia)", "pravidlá"), ("čaká na potvrdenie", "pravidlá")], got
     raw = "".join(";".join(r) for r in recs + handovers + events)
     for code in ("ocakavany", "prevzaty", "aplikovane", "zamietnute", "navrh", "1683.0", "1234.5"):
         assert code not in raw, code

@@ -3,7 +3,7 @@
 {% block title %}Vlaky{% endblock %}
 {% block content %}
 {# data-zivy-stav: zoznam sa pri zmene (výpadok agenta, nové odporúčanie) obnoví sám (static/js/app.js) #}
-<div class="page-head" data-zivy-stav="{{ page_state }}" data-tz="{{ tz }}">
+<div class="page-head" data-zivy-stav="{{ page_state }}" data-zivy-hlavne="{{ page_summary }}" data-teraz="{{ now|iso }}" data-tz="{{ tz }}">
   <h1>Vlaky</h1>
   <div class="head-actions">
     {% if user.can("operate") %}<a class="btn btn-primary" href="/vlaky/novy">Nový vlak</a>{% endif %}

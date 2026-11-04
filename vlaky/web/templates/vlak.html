@@ -4,7 +4,7 @@
 {% block content %}
 {# data-zivy-stav: pri zmene stavu (výpadok agenta, nové odporúčanie, rozhodnutie) sa stránka obnoví sama; stránka
    s jednorazovým odkazom pre rušňovodiča sa neprepíše – len upozorní (static/js/app.js) #}
-<div class="page-head" data-zivy-stav="{{ page_state }}" data-tz="{{ tz }}"{% if driver_link %} data-zivy-url="/vlaky/{{ t.id }}" data-zivy-len-upozornit="1"{% endif %}>
+<div class="page-head" data-zivy-stav="{{ page_state }}" data-zivy-hlavne="{{ page_summary }}" data-teraz="{{ now|iso }}" data-tz="{{ tz }}"{% if driver_link %} data-zivy-url="/vlaky/{{ t.id }}" data-zivy-len-upozornit="1"{% endif %}>
   <p class="crumbs"><a href="/vlaky">Vlaky</a> › {{ t.number }}</p>
   <h1>Vlak {{ t.number }} <span class="muted">{{ t.origin }} → {{ t.destination }}</span></h1>
   <div class="head-actions">

@@ -17,7 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from ..cas import ensure_utc, local, local_naive_to_utc, now_utc
 from ..db import session_scope
-from ..models import BorderCrossing, Email, ExtractedEvent, Handover, Notification, Recommendation, Train
+from ..models import BorderCrossing, Closure, Email, ExtractedEvent, Handover, Notification, Recommendation, Train
 from .auth import csrf_form, require
 from .common import (EVENT_KIND, EVENT_STATUS, EXTRACTOR, HANDOVER_DIRECTION, HANDOVER_STATUS, REC_STATE, log, redirect,
                      render)
@@ -210,6 +210,21 @@ def _pct(v) -> str:
         return ""
 
 
+def _event_state(e: ExtractedEvent, unverified_closure: bool) -> str:
+    """Stav udalosti v exporte rovnakými slovami ako fronta a reporty: zapísaná automaticky (bez potvrdenia dispečera)
+    nie je „zapísaná do registra“ ako potvrdená – jej výluka môže ešte čakať na overenie; potvrdená udalosť, ktorej
+    zápis zlyhal, čaká vo fronte."""
+    if e.status == "navrh":
+        return "čaká na potvrdenie" if e.needs_confirmation else "informačná (bez potvrdenia)"
+    if e.status == "aplikovane" and e.confirmed_at is None:
+        return "zapísaná automaticky – výluka čaká na overenie" if unverified_closure else \
+            "zapísaná automaticky (bez potvrdenia)"
+    result = (e.validation or {}).get("apply_result") if isinstance(e.validation, dict) else None
+    if e.status == "potvrdene" and isinstance(result, dict) and result.get("ok") is False:
+        return "potvrdená – zápis zlyhal (čaká vo fronte)"
+    return EVENT_STATUS.get(e.status, e.status)
+
+
 @router.get("/reporty/export/{typ}.csv")
 def export_csv(typ: str, od: str = "", do: str = "", user=Depends(reports)):
     if typ not in EXPORTS:
@@ -258,10 +273,13 @@ def export_csv(typ: str, od: str = "", do: str = "", user=Depends(reports)):
                  .outerjoin(Email, Email.id == ExtractedEvent.email_id)
                  .where(ExtractedEvent.created_at >= start, ExtractedEvent.created_at < end)
                  .order_by(ExtractedEvent.id))
+            # udalosti zapísané automaticky, ktorých výluka je stále „návrh“ (rovnako ako vo fronte na potvrdenie)
+            unverified = set(s.scalars(
+                select(Closure.source_event_id).join(ExtractedEvent, ExtractedEvent.id == Closure.source_event_id)
+                .where(ExtractedEvent.created_at >= start, ExtractedEvent.created_at < end,
+                       Closure.status == "navrh")))
             for e, sender, subject in s.execute(q):
-                state = EVENT_STATUS.get(e.status, e.status)
-                if e.status == "navrh":
-                    state = "čaká na potvrdenie" if e.needs_confirmation else "informačná (bez potvrdenia)"
+                state = _event_state(e, e.id in unverified)
                 rows.append([e.id, e.created_at, EVENT_KIND.get(e.kind, e.kind), _pct(e.confidence),
                              EXTRACTOR.get(e.extractor, e.extractor), state, e.confirmed_by, e.confirmed_at,
                              len((e.validation or {}).get("edits") or []), sender or "", subject or ""])
