@@ -2204,8 +2204,7 @@
     {
      "kind": "none"
     }
-   ],
-   "xfail": "newsletter s číslom ROV sa spracuje ako prevádzkové oznámenie s poznámkou „overte“ (prísnejší prípad)"
+   ]
   },
   {
    "id": "r5k_I05",

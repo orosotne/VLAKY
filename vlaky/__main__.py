@@ -215,6 +215,22 @@ def _create_user(args) -> int:
     return 0
 
 
+def _no_recipient_problem(channels: list | None) -> str:
+    """Prečo test-notify nemal komu poslať: v tieňovej prevádzke sú SMS a Teams vypnuté (správy idú len e-mailom na
+    VLAKY_SHADOW_EMAILS) – skúška len týchto kanálov preto nič nepošle, hoci zoznam je nastavený."""
+    from .config import settings
+    from .notifikacie.odosielanie import allowed_recipients
+
+    wanted = list(dict.fromkeys(channels or ["email", "teams", "sms"]))
+    if settings().shadow_mode and wanted and all(ch in ("sms", "teams") for ch in wanted):
+        shadow = ("skúša sa len e-mail na VLAKY_SHADOW_EMAILS (test-notify --kanal email)"
+                  if allowed_recipients().get("email") else
+                  "nastavte aj VLAKY_SHADOW_EMAILS (e-mail v tieňovej prevádzke)")
+        return (f"SMS a Teams sú v tieňovej prevádzke vypnuté – {shadow}; SMS a Teams vyskúšajte po vypnutí tieňového "
+                "režimu (VLAKY_SHADOW_MODE=false)")
+    return "žiadny príjemca – nastavte interný zoznam (VLAKY_NOTIFY_EMAILS, v tieňovej prevádzke VLAKY_SHADOW_EMAILS)"
+
+
 def _test_notify(channels: list | None) -> int:
     """test-notify: skúšobná správa na každý kanál interného zoznamu; návratový kód 1, ak niečo neodišlo."""
     from .db import init_db, session_scope
@@ -240,8 +256,7 @@ def _test_notify(channels: list | None) -> int:
         print("Poznámka: stav „outbox“ = správa je len v adresári outbox (server správ nie je nastavený) – "
               "stačí len vo vývoji a v ukážke.")
     if not rows:
-        problems.append("žiadny príjemca – nastavte interný zoznam (VLAKY_NOTIFY_EMAILS, v tieňovej prevádzke "
-                        "VLAKY_SHADOW_EMAILS)")
+        problems.append(_no_recipient_problem(channels))
     if problems:
         print("VÝSLEDOK: CHYBA – " + "; ".join(problems), file=sys.stderr)
         return 1

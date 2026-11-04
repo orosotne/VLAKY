@@ -553,15 +553,22 @@ def process_email(session: Session, email: Email, *, reprocess: bool = False) ->
                 notes.append("Podozrivý e-mail (možný pokus o prompt injection) – spracované len ako dáta, "
                              "istota znížená, vždy vyžaduje potvrdenie.")
             original = copy.deepcopy(it.data)
-            vr = validate_event(session, it.kind, it.data, confidence=conf, verdict=email.verdict)
-            extra = _source_reasons(email, it)
+            # zmena, zrušenie či nový termín len s číslom ROV (bez úseku): úsek z registra výluk – skôr, ako udalosť
+            # obmedzí celý vozový park a skôr, ako odíde upozornenie (to potom uvedie úsek)
+            data, fill_reasons, fill_warnings = _register_place(session, it.kind, it.data, email)
+            vr = validate_event(session, it.kind, data, confidence=conf, verdict=email.verdict)
+            extra = _source_reasons(email, it) + fill_reasons
             target_reasons, target_warnings = _register_check(session, it.kind, vr.data, now, email=email)
             reasons = list(vr.reasons) + [r for r in extra + target_reasons if r not in vr.reasons]
+            source = dict(it.field_source)
+            source.update({k: "register" for k in ("from_station", "to_station", "line_ref")
+                           if data.get(k) and not it.data.get(k)})
             validation = {**vr.as_dict(), "notes": notes, "field_confidence": it.field_confidence,
                           "evidence": it.evidence, "original_data": original, "extraction": result.meta,
-                          "field_source": dict(it.field_source), "unverified_fields": list(it.unverified)}
+                          "field_source": source, "unverified_fields": list(it.unverified)}
             validation["confirmation_reasons"] = reasons
-            validation["warnings"] = list(vr.warnings) + [w for w in target_warnings if w not in vr.warnings]
+            validation["warnings"] = list(vr.warnings) + [w for w in fill_warnings + target_warnings
+                                                          if w not in vr.warnings]
             prepared.append(ExtractedEvent(
                 email_id=email.id, kind=it.kind, data=vr.data, confidence=round(conf, 2), extractor=it.extractor,
                 status="navrh", needs_confirmation=bool(reasons) or email.verdict != OK, validation=validation))
@@ -586,8 +593,9 @@ def process_email(session: Session, email: Email, *, reprocess: bool = False) ->
 
 def _auto_reason(email: Email) -> str:
     """E-mail nie je prevádzkovým oznámením podľa hlavičiek a príloh (RFC 3834 automatická odpoveď – neprítomnosť,
-    potvrdenie doručenia či prečítania; pozvánka do kalendára text/calendar). Automaticky generované správy systémov
-    (KIS – „Auto-Submitted: auto-generated“) prevádzkovými oznámeniami sú. „“ = nič také.
+    potvrdenie doručenia či prečítania; pozvánka do kalendára text/calendar; hromadný informačný e-mail – newsletter,
+    :func:`_bulk_reason`). Automaticky generované správy systémov (KIS – „Auto-Submitted: auto-generated“)
+    prevádzkovými oznámeniami sú. „“ = nič také.
 
     Kalendárová príloha (.ics) s textom bez pozvánky (bez METHOD:REQUEST, organizátora či účastníkov) – napr. termín
     výluky na uloženie do kalendára pri ROV – sama nerozhoduje: posúdia ju pravidlá spolu s obsahom e-mailu
@@ -610,12 +618,90 @@ def _auto_reason(email: Email) -> str:
             return "správa o doručení alebo prečítaní"
         if ctype.startswith("text/calendar"):
             return "pozvánka do kalendára (text/calendar)"
+        bulk = _bulk_reason(email, h)
+        if bulk:
+            return bulk
     for a in email.attachments:
         if (str(a.content_type or "").lower().startswith("text/calendar") or
                 str(a.filename or "").lower().endswith((".ics", ".calendar"))) and \
                 (not (a.text or "").strip() or _ICS_INVITE.search(a.text or "")):
             return "pozvánka do kalendára (text/calendar)"
     return ""
+
+
+# hromadná pošta: hlavičky distribučného zoznamu (RFC 2076 Precedence, RFC 2369 List-Unsubscribe) sú len slabým
+# signálom – prevádzkové oznámenia OR (ROV, telegramy, mimoriadnosti) chodia aj cez distribučné zoznamy
+_BULK_PRECEDENCE = ("bulk", "list", "junk")
+# adresa odosielateľa newslettera, spravodaja či tlačového oddelenia (časť pred @, bez diakritiky)
+_NEWSLETTER_TOKENS = ("newsletter", "spravodaj", "zpravodaj", "bulletin", "novinky", "marketing", "tlacov", "komunikac")
+_NEWSLETTER_WORDS = {"news", "press", "media", "pr", "tlac"}
+# adresa výlukového, dispečerského či prevádzkového pracoviska (vyluky@, dispecing@, kis@, potr@ …)
+_OPERATIONAL_TOKENS = ("vyluk", "dispec", "potr", "telegram", "prevadz", "dopravn", "kontrol", "mimoriad")
+_OPERATIONAL_WORDS = {"kis", "tlg", "rov", "srov", "kd"}
+
+
+def _raw_header(h: Any, name: str) -> str:
+    """Hodnota hlavičky z originálu (aj zakódovaná podľa RFC 2047) ako text."""
+    from email.header import decode_header, make_header
+
+    raw = h.get(name)
+    if raw is None:
+        return ""
+    try:
+        return header_text(str(make_header(decode_header(str(raw)))))
+    except Exception:  # noqa: BLE001 – poškodená hlavička: surový text
+        return header_text(str(raw))
+
+
+def _sender_tokens(addr: str) -> list[str]:
+    local_part = fold(addr.split("@")[0]) if "@" in addr else ""
+    return [t for t in re.split(r"[^a-z0-9]+", local_part) if t]
+
+
+def _operational_sender(addr: str) -> bool:
+    """Adresa výlukového, dispečerského či prevádzkového pracoviska alebo OR („vyluky.orke@“, „kis@“, „…@ortt.…“)."""
+    toks = _sender_tokens(addr)
+    return bool(_sender_issuer(addr)) or any(t.startswith(_OPERATIONAL_TOKENS) or t in _OPERATIONAL_WORDS
+                                             for t in toks)
+
+
+def _newsletter_sender(addr: str) -> bool:
+    return any(t.startswith(_NEWSLETTER_TOKENS) or t in _NEWSLETTER_WORDS for t in _sender_tokens(addr))
+
+
+def _bulk_reason(email: Any, h: Any) -> str:
+    """Hromadný informačný e-mail (newsletter, spravodaj) podľa hlavičiek distribučného zoznamu – „“ = nie.
+
+    Hlavička „Precedence: bulk/list/junk“ či „List-Unsubscribe“ je len slabý signál (prevádzkové oznámenia OR chodia
+    aj cez distribučné zoznamy, mimoriadnosť často bez čísla ROV): newsletter je to až spolu s ostatnými signálmi –
+    predmet newslettera, spravodaja, bulletinu či tlačovej správy A adresa odosielateľa typu newsletter@, spravodaj@ –
+    a nikdy nie od výlukového, dispečerského či prevádzkového pracoviska alebo OR (vyluky.orke@, kis@ …). Taký e-mail
+    nie je prevádzkovým oznámením ani s číslom ROV (článok o výlukách nie je ROV). Inak ho posúdia pravidlá: predmet
+    newslettera je slabý signál a e-mail s číslom ROV, telegramu či POTR sa spracuje ako prevádzkové oznámenie
+    s poznámkou „overte“ (prísnejší prípad)."""
+    from .parser import is_forward_subject, is_reply_subject
+    from .pravidla import _BULK_SUBJECT
+
+    signals = []
+    prec = " ".join(_raw_header(h, "Precedence").split()).lower()
+    if prec in _BULK_PRECEDENCE:
+        signals.append(f"Precedence: {prec}")
+    if h.get("List-Unsubscribe") is not None:
+        signals.append("List-Unsubscribe")
+    if not signals:
+        return ""
+    addr = (parseaddr(_raw_header(h, "From"))[1] or str(getattr(email, "sender", "") or "")).strip().lower()
+    if _operational_sender(addr):
+        return ""
+    subject = _raw_header(h, "Subject") or str(getattr(email, "subject", "") or "")
+    more = []
+    if _BULK_SUBJECT.search(fold(subject)) and not is_reply_subject(subject) and not is_forward_subject(subject):
+        more.append("predmet")
+    if _newsletter_sender(addr):
+        more.append(f"odosielateľ {addr}")
+    if len(more) < 2:
+        return ""
+    return "hromadný informačný e-mail – newsletter (" + ", ".join(signals + more) + ")"
 
 
 def _source_reasons(email: Email, item: Any) -> list[str]:
@@ -631,6 +717,80 @@ def _source_reasons(email: Email, item: Any) -> list[str]:
     if getattr(item, "unverified", None):
         reasons.append("kľúčové polia " + ", ".join(item.unverified) + " našiel len LLM – pravidlá ich neoverili")
     return reasons
+
+
+_PLACE_FROM_REGISTER = ("vyluka_nova", "vyluka_zmena", "vyluka_zrusenie")
+
+
+def _register_place(session: Session, kind: str, data: dict,
+                    email: Optional[Email]) -> tuple[dict, list[str], list[str]]:
+    """Úsek udalosti, ktorá uvádza len číslo výluky („STORNO – ROV 5330/2026“, „Výluka podľa ROV 5310/2026 sa odkladá
+    o týždeň …“, „Zmena ROV 6100/2026: výluka dňa … sa posúva na …“, „Výluka sa doplňuje o termín …“), z registra výluk.
+
+    Doplní sa, keď výluky s týmto číslom (rovnaký druh dokumentu; od tej istej OR ako e-mail, keď sa OR dá určiť –
+    číslo ROV má každá OR vlastné) ležia v registri na jednom úseku: dopravne (a číslo trate, ak ho e-mail neuvádza
+    a výluky ho majú rovnaké). Čakajúca udalosť potom obmedzí len vlaky v tomto úseku – nie celý vozový park – a
+    upozornenie dispečerom uvedie úsek. Udalosť vždy potvrdzuje dispečer (dôvod na potvrdenie) a vidí, odkiaľ úsek je.
+
+    Termín sa z registra nedopĺňa: register má pôvodný termín, nie termín zmeny či nový termín, ktorý e-mail neuvádza
+    (zmena by sa javila ako žiadna a vlak v novom termíne by dostal ZELENÚ) – taká udalosť ostáva bez záznamu pre
+    plánovač a vlaky v úseku nedostanú ZELENÚ, kým ju dispečer nedoplní; zrušenie bez termínu ruší celú výluku.
+    Výluky s číslom na viacerých úsekoch: úsek vyberie dispečer (upozornenie ich vymenuje, poistka pre celý vozový
+    park ostáva); výluka s číslom len od inej OR sa nepoužije (upozornenie to vysvetlí).
+
+    Vráti (dáta udalosti – kópia s doplneným úsekom alebo pôvodné, dôvody na potvrdenie, upozornenia)."""
+    ref = str(data.get("external_ref") or "").strip()
+    if kind not in _PLACE_FROM_REGISTER or not ref or data.get("from_station") or data.get("to_station"):
+        return data, [], []
+    fam = _event_family(kind, data)
+    same = [c for c in _active_closures(session) if c.external_ref and refs_match(c.external_ref, ref)
+            and (fam is None or _closure_family(c) == fam)]
+    if not same:
+        return data, [], []
+    issuer = mail_issuer(email) if email is not None else None
+    own = [c for c in same if not issuer or _closure_issuer(session, c) in (None, issuer)]
+    if not own:
+        c = same[0]
+        theirs = _OR_LABELS.get(_closure_issuer(session, c) or "", "inej OR")
+        mine = _OR_LABELS.get(issuer or "", "inej OR")
+        return data, [], [f"Výluka s číslom {ref} je v registri len od {theirs} (#{c.id} {c.from_station} – "
+                          f"{c.to_station}), e-mail je od {mine} – číslo ROV má každá OR vlastné, úsek sa z registra "
+                          "nedoplnil. Ak sa e-mail predsa týka tejto výluky, doplňte úsek (Upraviť a potvrdiť)."]
+    listed = "; ".join(f"#{c.id} {c.from_station} – {c.to_station} "
+                       f"{_term_desc(c.start_utc, c.end_utc, c.daily_from, c.daily_to)}" for c in own[:6])
+    if len({frozenset((_station_key(c.from_station), _station_key(c.to_station))) for c in own}) > 1:
+        verb = "sú" if 2 <= len(own) <= 4 else "je"
+        return data, [], [f"E-mail neuvádza úsek a v registri {verb} {_plural(len(own), 'výluka', 'výluky', 'výluk')} "
+                          f"s číslom {ref} na rôznych úsekoch ({listed}) – úsek vyberte (Upraviť a potvrdiť); dovtedy "
+                          "sa udalosť môže týkať ktoréhokoľvek vlaku."]
+    c = own[0]
+    if _mail_names_place(email, {_station_key(c.from_station), _station_key(c.to_station)}):
+        # e-mail uvádza miesto (úsek, dopravňu, stanicu, trať …), ktoré pravidlá neprečítali – môže to byť iný úsek
+        # toho istého ROV (napr. ďalší úsek viacúsekového ROV v skratke „N. Zámky – Šurany“); úsek z registra by
+        # obmedzil iné vlaky a vlaky v skutočnom úseku by dostali ZELENÚ
+        todo = ("Overte, ktorej výluky sa zrušenie týka, a doplňte úsek podľa e-mailu (Upraviť a potvrdiť)."
+                if kind == "vyluka_zrusenie" else
+                "Úsek doplňte podľa e-mailu (Upraviť a potvrdiť); dovtedy sa udalosť môže týkať ktoréhokoľvek vlaku.")
+        return data, [], [f"E-mail uvádza miesto, ktoré sa nepodarilo prečítať – úsek sa z registra nedoplnil, hoci "
+                          f"číslo {ref} má v registri výluka #{c.id} {c.from_station} – {c.to_station} (môže ísť o iný "
+                          f"úsek). {todo}"]
+    out = dict(data)
+    out["from_station"], out["to_station"] = c.from_station, c.to_station
+    if not out.get("line_ref") and c.line_ref and all((x.line_ref or "") == c.line_ref for x in own):
+        out["line_ref"] = c.line_ref
+    where = f"{c.from_station} – {c.to_station}"
+    what = "výluka" if len(own) == 1 else "výluky"
+    warning = f"Úsek {where} doplnený z registra výluk podľa čísla {ref} ({what} {listed}) – e-mail úsek neuvádza."
+    if not (data.get("start") or data.get("end")):
+        warning += (" Zrušenie bez termínu ruší celú výluku." if kind == "vyluka_zrusenie" else
+                    " Termín e-mail neuvádza (register má pôvodný termín) – doplňte ho (Upraviť a potvrdiť); dovtedy "
+                    "vlaky v tomto úseku nedostanú ZELENÚ.")
+    theirs = _closure_issuer(session, c) if issuer is None else None
+    if theirs:
+        warning += (f" Výluka #{c.id} je od {_OR_LABELS[theirs]}, e-mail OR neuvádza – overte, že ide o tú istú výluku "
+                    "(číslo ROV má každá OR vlastné).")
+    reason = f"úsek {where} doplnený z registra výluk podľa čísla {ref} – e-mail úsek neuvádza, overte ho"
+    return out, [reason], [warning]
 
 
 def _register_check(session: Session, kind: str, data: dict, now: datetime,
@@ -2030,6 +2190,78 @@ _PLACE_WORDS = re.compile(r"\b(?:usek\w*|zst|stanic\w*|medzi|dopravn\w*|obvod\w*
 _LIST_START = re.compile(r"(?:[-•*–]|\d{1,2}[.)]|[a-z]\))\s")
 _UPPER = "A-ZÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ"
 _SECTION_PAIR = re.compile(rf"[{_UPPER}][\w.]*\s*[-–—]\s*[{_UPPER}]")    # „Senica – Kúty“ (v pôvodnom texte)
+# zmienka o mieste vo vlastnom texte e-mailu (úsek, dopravňa, stanica, zastávka, obvod, trať, „medzi“, km polohy)
+_PLACE_HINT = re.compile(r"\b(?:usek\w*|zst\b|stanic\w*|zastavk\w*|dopravn\w*|obvod\w*|medzi\b|trat\w*"
+                         r"|km\b(?!\s*/\s*h))")
+_DASH = re.compile(r"\s[-–—]\s|[–—]")
+# podpis e-mailu („S pozdravom“, „Vybavuje: …“, „--“) – mená osôb nie sú miesta výluky
+_SIGNATURE = re.compile(r"^\s*(?:s\s+pozdravom|s\s+uctou|s\s+priatelskym|dakujem|vybavuje|kontakt|--\s*$)", re.M)
+
+
+def _mail_names_place(email: Optional[Email], keys: set) -> bool:
+    """Vlastný text e-mailu (predmet, telo bez citácie a podpisu, prílohy okrem kalendára) uvádza miesto, ktoré nie je
+    úsekom ``keys`` (kľúče dopraví úseku z registra): slová úsek, žst., stanica, zastávka, dopravňa, obvod, trať,
+    „medzi“, km polohy; dvojicu s pomlčkou, ktorej strany nie sú dopravne úseku („N. Zámky – Šurany“; nie skratky ako
+    „STORNO – ROV“); názov dopravne vo vete (nie na jej začiatku – „Dobrý deň“), ktorá nie je v úseku. Podpis
+    „OR Košice“ miestom nie je."""
+    from .stanice import tokens
+
+    if email is None:
+        return False
+    st = stations()
+
+    def station_at(toks: list, start: int, step: int):
+        """Najdlhší názov dopravne z 1 – 4 slov od ``start`` dopredu (step 1) či dozadu (step −1) – nie cez čiarku
+        či koniec vety; aj skloňovaný či skrátený tvar („Šurian“, „N. Zámky“)."""
+        for k in (4, 3, 2, 1):
+            idx = sorted(start + step * j for j in range(k))
+            if idx[0] < 0 or idx[-1] >= len(toks):
+                continue
+            words = [toks[j].raw for j in idx]
+            if any(w[-1:] in ",;:!?" or (w.endswith(".") and len(w.rstrip(".")) > 3) for w in words[:-1]):
+                continue
+            found = st.match(" ".join(words).strip(" .,;:!?()[]\"'„“"), allow_fuzzy=False)
+            if found is not None:
+                return found
+        return None
+
+    def other(found) -> bool:
+        return found is None or _station_key(found.name) not in keys
+
+    body = _unquoted(getattr(email, "body_text", "") or "")
+    cut = _SIGNATURE.search(fold(body))
+    # aj prílohy (ROV v PDF či tabuľke): úsek v prílohe, ktorý pravidlá neprečítali, môže byť iný
+    attached = [str(getattr(a, "text", "") or "") for a in (getattr(email, "attachments", None) or [])
+                if not str(getattr(a, "filename", "") or "").lower().endswith((".ics", ".vcs", ".calendar"))]
+    for raw in [str(getattr(email, "subject", "") or ""), body[:cut.start()] if cut else body] + attached:
+        chars = list(raw)
+        for m in _OR_TEXT.finditer(fold(raw)):              # fold zachováva dĺžku textu
+            chars[m.start():m.end()] = " " * (m.end() - m.start())
+        text = "".join(chars)
+        if _PLACE_HINT.search(fold(text)):
+            return True
+        for d in _DASH.finditer(text):
+            left, right = tokens(text[:d.start()]), tokens(text[d.end():], d.end())
+            if not left or not right or not (left[-1].raw[:1].isupper() and right[0].raw[:1].isupper()):
+                continue
+            if left[-1].raw.rstrip(".,;:").isupper() or right[0].raw.rstrip(".,;:").isupper():
+                continue                                    # „STORNO – ROV 5330/2026“ – skratky, nie dopravne
+            if other(station_at(left, len(left) - 1, -1)) or other(station_at(right, 0, 1)):
+                return True
+        toks = tokens(text)
+        for i, t in enumerate(toks):
+            w = t.raw.lstrip("\"'„“(")
+            if not w[:1].isupper() or w.rstrip(".,;:").isupper():
+                continue
+            before = text[:t.start].rstrip(" \t\"'„“(")
+            if not before or before[-1] in ".!?:;\n":
+                continue                                    # začiatok vety či riadku („Výluka …“, „Dobrý deň“)
+            found = station_at(toks, i, 1)
+            if found is not None and _station_key(found.name) not in keys:
+                return True
+    return False
+
+
 _REF_RE = re.compile(r"(?<![\d/])(\d{1,6}/\d{4})(?![\d/])")
 _DATE_RE = re.compile(r"(?<![\d.])(\d{1,2})\.\s?(\d{1,2})\.(?:\s?(\d{4}))?")
 _TIME_RE = re.compile(r"(?<![\d.:])([01]?\d|2[0-4])(?::([0-5]\d)|\.([0-5]\d)(?=\s*(?:hod|h\b|-|do\b|az\b|[,;)]|$)))")
