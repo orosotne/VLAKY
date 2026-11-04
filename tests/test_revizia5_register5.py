@@ -462,9 +462,6 @@ def test_r5r_starsia_udalost_ineho_dna_po_rozdeleni(env, session, older, probe, 
     zmena 26.11. nezapísala – staršia sa zapíše (nie „nahradená“, deň sa nestratí); tá istá časť (24.11.) ostáva
     podľa novšej zmeny (staršia je nahradená)."""
     _ruzomberok(session)
-    # ROV 1315/2026 aj na inom úseku: staršia zmena bez úseku ho z registra nedostane (integrácia 5. revízie dopĺňa úsek
-    # len pri jednoznačnom čísle) – nemá dočasný záznam, úsek doplní dispečer pri potvrdení (ako v náleze kontroly)
-    _closure(session, "Poprad-Tatry", "Spišská Nová Ves", loc(2026, 12, 7, 8), loc(2026, 12, 7, 14), "1315/2026")
     drop(env, "b.eml", raw_mail("ROV c. 1315/2026", older, "starsia", sender=ROV_ZA,
                                 date="Mon, 16 Nov 2026 09:00:00 +0100"))
     _process(session, utc(2026, 11, 16, 8, 2))

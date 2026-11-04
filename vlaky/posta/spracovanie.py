@@ -48,6 +48,7 @@ from datetime import date, datetime, timedelta
 from email import policy as _mail_policy
 from email.parser import BytesHeaderParser
 from email.utils import parseaddr
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
@@ -727,10 +728,16 @@ def _register_place(session: Session, kind: str, data: dict,
     """Úsek udalosti, ktorá uvádza len číslo výluky („STORNO – ROV 5330/2026“, „Výluka podľa ROV 5310/2026 sa odkladá
     o týždeň …“, „Zmena ROV 6100/2026: výluka dňa … sa posúva na …“, „Výluka sa doplňuje o termín …“), z registra výluk.
 
-    Doplní sa, keď výluky s týmto číslom (rovnaký druh dokumentu; od tej istej OR ako e-mail, keď sa OR dá určiť –
-    číslo ROV má každá OR vlastné) ležia v registri na jednom úseku: dopravne (a číslo trate, ak ho e-mail neuvádza
-    a výluky ho majú rovnaké). Čakajúca udalosť potom obmedzí len vlaky v tomto úseku – nie celý vozový park – a
-    upozornenie dispečerom uvedie úsek. Udalosť vždy potvrdzuje dispečer (dôvod na potvrdenie) a vidí, odkiaľ úsek je.
+    Doplní sa, keď výluky s týmto číslom (rovnaký druh dokumentu – ROV, SROV, telegram, POTR; od tej istej OR ako
+    e-mail, keď sa OR dá určiť – číslo ROV má každá OR vlastné) ležia v registri na jednom úseku: dopravne (a číslo
+    trate, ak ho e-mail neuvádza a výluky ho majú rovnaké). Čakajúca udalosť potom obmedzí len vlaky v tomto úseku –
+    nie celý vozový park – a upozornenie dispečerom uvedie úsek. Udalosť vždy potvrdzuje dispečer (dôvod na
+    potvrdenie) a vidí, odkiaľ úsek je.
+
+    Druh dokumentu: e-mail ho uvádza pred číslom („TLG 5310/2026“, „ROV č. 5310/2026“), výluka v registri v čísle či
+    v e-maile, ktorý ju zapísal (:func:`_closure_doc`). Iný druh (čísla ROV a telegramov sú samostatné rady) či výluka,
+    ktorej druh sa určiť nedá (zadaná ručne len s číslom), úsek nedá. Úsek sa nedoplní ani vtedy, keď e-mail uvádza
+    iné miesto, ktoré pravidlá neprečítali, alebo sa nedá celý overiť (:func:`_mail_names_place`).
 
     Termín sa z registra nedopĺňa: register má pôvodný termín, nie termín zmeny či nový termín, ktorý e-mail neuvádza
     (zmena by sa javila ako žiadna a vlak v novom termíne by dostal ZELENÚ) – taká udalosť ostáva bez záznamu pre
@@ -756,6 +763,23 @@ def _register_place(session: Session, kind: str, data: dict,
         return data, [], [f"Výluka s číslom {ref} je v registri len od {theirs} (#{c.id} {c.from_station} – "
                           f"{c.to_station}), e-mail je od {mine} – číslo ROV má každá OR vlastné, úsek sa z registra "
                           "nedoplnil. Ak sa e-mail predsa týka tejto výluky, doplňte úsek (Upraviť a potvrdiť)."]
+    # druh dokumentu: rovnaké číslo telegramu a ROV nie je tá istá výluka; výluka bez známeho druhu sa nepoužije
+    mail_docs = _mail_doc_types(email, ref)
+    docs = {c.id: _closure_doc(session, c) for c in own}
+    fitting = [c for c in own if docs[c.id] and (not mail_docs or mail_docs == {docs[c.id]})]
+    if not fitting:
+        c = own[0]
+        sec = f"#{c.id} {c.from_station} – {c.to_station}"
+        named = ", ".join(sorted(_DOC_LABELS[x] for x in mail_docs))
+        if docs[c.id]:
+            why = (f"e-mail uvádza {named} {ref}, výluka {sec} je v registri podľa {_DOC_LABELS[docs[c.id]]} "
+                   f"{ref} – iný dokument (čísla ROV, telegramov a POTR sú samostatné rady)")
+        else:
+            why = (f"výluka {sec} má v registri len číslo {ref} bez druhu dokumentu (ROV, telegram …) – nedá sa "
+                   "overiť, že ide o ten istý dokument")
+        return data, [], [f"Úsek sa z registra nedoplnil: {why}. Ak sa e-mail týka tejto výluky, doplňte úsek "
+                          "(Upraviť a potvrdiť); dovtedy sa udalosť môže týkať ktoréhokoľvek vlaku."]
+    own = fitting
     listed = "; ".join(f"#{c.id} {c.from_station} – {c.to_station} "
                        f"{_term_desc(c.start_utc, c.end_utc, c.daily_from, c.daily_to)}" for c in own[:6])
     if len({frozenset((_station_key(c.from_station), _station_key(c.to_station))) for c in own}) > 1:
@@ -764,16 +788,18 @@ def _register_place(session: Session, kind: str, data: dict,
                           f"s číslom {ref} na rôznych úsekoch ({listed}) – úsek vyberte (Upraviť a potvrdiť); dovtedy "
                           "sa udalosť môže týkať ktoréhokoľvek vlaku."]
     c = own[0]
-    if _mail_names_place(email, {_station_key(c.from_station), _station_key(c.to_station)}):
-        # e-mail uvádza miesto (úsek, dopravňu, stanicu, trať …), ktoré pravidlá neprečítali – môže to byť iný úsek
-        # toho istého ROV (napr. ďalší úsek viacúsekového ROV v skratke „N. Zámky – Šurany“); úsek z registra by
-        # obmedzil iné vlaky a vlaky v skutočnom úseku by dostali ZELENÚ
+    doubt = _mail_names_place(email, {_station_key(c.from_station), _station_key(c.to_station)})
+    if doubt:
+        # e-mail uvádza miesto (úsek, dopravňu, stanicu, trať …), ktoré pravidlá neprečítali, alebo sa nedá celý
+        # overiť – môže to byť iný úsek toho istého ROV (napr. ďalší úsek viacúsekového ROV v skratke „N. Zámky –
+        # Šurany“); úsek z registra by obmedzil iné vlaky a vlaky v skutočnom úseku by dostali ZELENÚ
         todo = ("Overte, ktorej výluky sa zrušenie týka, a doplňte úsek podľa e-mailu (Upraviť a potvrdiť)."
                 if kind == "vyluka_zrusenie" else
                 "Úsek doplňte podľa e-mailu (Upraviť a potvrdiť); dovtedy sa udalosť môže týkať ktoréhokoľvek vlaku.")
-        return data, [], [f"E-mail uvádza miesto, ktoré sa nepodarilo prečítať – úsek sa z registra nedoplnil, hoci "
-                          f"číslo {ref} má v registri výluka #{c.id} {c.from_station} – {c.to_station} (môže ísť o iný "
-                          f"úsek). {todo}"]
+        what = (f"E-mail sa nedá celý overiť ({doubt}) a môže uvádzať iné miesto" if doubt[:1] != "„" else
+                f"E-mail uvádza miesto, ktoré sa nepodarilo prečítať ({doubt})")
+        return data, [], [f"{what} – úsek sa z registra nedoplnil, hoci číslo {ref} má v registri výluka #{c.id} "
+                          f"{c.from_station} – {c.to_station} (môže ísť o iný úsek). {todo}"]
     out = dict(data)
     out["from_station"], out["to_station"] = c.from_station, c.to_station
     if not out.get("line_ref") and c.line_ref and all((x.line_ref or "") == c.line_ref for x in own):
@@ -1179,20 +1205,74 @@ def _event_issuer(session: Session, ev: Optional[ExtractedEvent]) -> Optional[st
     return mail_issuer(session.get(Email, ev.email_id))
 
 
-def _closure_issuer(session: Session, c: Closure) -> Optional[str]:
-    """OR, ktorej výluka v registri je (podľa e-mailu, ktorý ju zapísal, alebo e-mailu v poznámke „Zdroj: e-mail #N“);
-    None – nedá sa určiť (napr. výluka zadaná ručne)."""
+def _closure_emails(session: Session, c: Closure) -> list[int]:
+    """E-maily, ktoré výluku v registri zapísali: e-mail udalosti, ktorá ju naposledy zapísala, a e-maily z poznámky
+    („Zdroj: e-mail #N“) – bez opakovania."""
     ids: list[int] = []
     if c.source_event_id:
         ev = session.get(ExtractedEvent, c.source_event_id)
         if ev is not None and ev.email_id:
             ids.append(ev.email_id)
     ids += [int(x) for x in re.findall(r"Zdroj: e-mail #(\d+)", c.note or "")]
-    for email_id in dict.fromkeys(ids):
+    return list(dict.fromkeys(ids))
+
+
+def _closure_issuer(session: Session, c: Closure) -> Optional[str]:
+    """OR, ktorej výluka v registri je (podľa e-mailu, ktorý ju zapísal, alebo e-mailu v poznámke „Zdroj: e-mail #N“);
+    None – nedá sa určiť (napr. výluka zadaná ručne)."""
+    for email_id in _closure_emails(session, c):
         code = mail_issuer(session.get(Email, email_id))
         if code:
             return code
     return None
+
+
+# druh dokumentu pred číslom („ROV č. 5310/2026“, „Telegram č. 5310/2026“, „TLG 5310/2026“, „POTR 12/2026“) – v texte
+# bez diakritiky, koniec úseku tesne pred číslom
+_DOC_TAIL = re.compile(r"\b(suborn\w*\s+rov\w*|s?rov|rozkaz\w*\s+o\s+vyluk\w*|tlg|telegram\w*|potr)"
+                       r"\s*[(\[]?\s*(?:c\.|cis\.|cislo|c)?\s*[:.\-–]?\s*$")
+_DOC_LABELS = {"rov": "ROV", "srov": "SROV", "tlg": "TLG", "potr": "POTR"}
+
+
+def _doc_types(text: str, num: str) -> set:
+    """Druhy dokumentov (rov, srov, tlg, potr), ktoré text uvádza tesne pred číslom ``num``."""
+    out: set = set()
+    if not num or not text:
+        return out
+    f = fold(text)
+    for m in re.finditer(rf"(?<![\d/]){re.escape(num)}(?![\d/])", f):
+        tail = _DOC_TAIL.search(f, max(0, m.start() - 40), m.start())
+        if tail is None:
+            continue
+        word = tail.group(1)
+        out.add("srov" if word.startswith(("suborn", "srov")) else "tlg" if word.startswith(("tlg", "telegram"))
+                else "potr" if word == "potr" else "rov")
+    return out
+
+
+def _mail_doc_types(email: Any, ref: Any) -> set:
+    """Druhy dokumentov, ktoré e-mail (predmet a vlastný text) uvádza pri čísle ``ref``; prázdna množina – neuvádza."""
+    doc, num = _ref_parts(ref)
+    if doc:
+        return {doc}
+    if email is None:
+        return set()
+    return _doc_types(str(getattr(email, "subject", "") or ""), num) | \
+        _doc_types(_unquoted(getattr(email, "body_text", "") or ""), num)
+
+
+def _closure_doc(session: Session, c: Closure) -> str:
+    """Druh dokumentu výluky v registri (rov, srov, tlg, potr): z čísla („ROV č. 1142/2026“), inak z e-mailov, ktoré
+    ju zapísali; „“ – nedá sa určiť (výluka zadaná ručne len s číslom, e-mail druh pri čísle neuvádza či ich je viac)."""
+    doc, num = _ref_parts(c.external_ref)
+    if doc or not num:
+        return doc
+    found: set = set()
+    for email_id in _closure_emails(session, c):
+        e = session.get(Email, email_id)
+        if e is not None:
+            found |= _mail_doc_types(e, num)
+    return found.pop() if len(found) == 1 else ""
 
 
 def _sibling_events(session: Session, ev_id: Optional[int]) -> set[int]:
@@ -1793,6 +1873,15 @@ def _same_fields(c: Closure, fields: dict) -> bool:
     return not fields.get("external_ref") or not c.external_ref or refs_match(c.external_ref, fields["external_ref"])
 
 
+def _placed_by_number(ev: Optional[ExtractedEvent]) -> bool:
+    """Čakajúca udalosť, ktorej úsek doplnil register výluk podľa čísla (e-mail úsek neuvádza – :func:`_register_place`):
+    k výluke ju viaže len číslo a priradí sa až pri potvrdení dispečerom."""
+    if ev is None or ev.status != "navrh" or not isinstance(ev.validation, dict):
+        return False
+    src = ev.validation.get("field_source")
+    return isinstance(src, dict) and src.get("from_station") == "register"
+
+
 def _waiting_changes(session: Session, c: Closure, ev_id: Optional[int]) -> list[int]:
     """Iné čakajúce zmeny tej istej výluky (ich dočasný záznam „navrh“ odkazuje na výluku ``c``)."""
     ids = session.scalars(select(Closure.source_event_id).where(Closure.proposed_change_of == c.id,
@@ -1800,14 +1889,22 @@ def _waiting_changes(session: Session, c: Closure, ev_id: Optional[int]) -> list
     return sorted({i for i in ids if i and i != ev_id})
 
 
-def _unsafe_split(session: Session, c: Closure, ev_id: Optional[int]) -> str:
-    """Prečo výluku ``c`` nemožno bezpečne rozdeliť („“ = možno)."""
+def _unsafe_split(session: Session, c: Closure, ev_id: Optional[int], change: bool = False) -> str:
+    """Prečo výluku ``c`` nemožno bezpečne rozdeliť („“ = možno).
+
+    Zmenu (``change``) nezastaví čakajúca zmena, ktorej úsek doplnil register podľa čísla (e-mail úsek neuvádza):
+    jej dočasný záznam je len pre plánovač (vlaky v úseku nedostanú ZELENÚ) a pri potvrdení sa priradí k časti
+    výluky, s ktorou sa jej termín prekrýva – novšia zapísaná zmena toho istého dňa ju nahradí, zmena iného dňa sa
+    zapíše (ako zmena bez úseku, ktorá dočasný záznam nemá). Zrušenie časti výluky taká zmena zastaví (najprv ju
+    vybaví dispečer – inak by staršia zmena zrušený deň znova založila)."""
     if c.until_revoked:
         return "výluka platí do odvolania (jej koniec je len technický)"
     owner = _pending_owner(session, c, ev_id)
     if owner is not None:
         return f"výluka ešte čaká na potvrdenie udalosti #{owner.id}"
     waiting = _waiting_changes(session, c, ev_id)
+    if change:
+        waiting = [i for i in waiting if not _placed_by_number(session.get(ExtractedEvent, i))]
     if waiting:
         return "na výluku čaká aj iná zmena (udalosť " + ", ".join(f"#{i}" for i in waiting) + ")"
     return ""
@@ -1909,7 +2006,7 @@ def _change_plan(session: Session, c: Closure, fields: dict, ev_id: Optional[int
         return _Plan("pridat", _partial_move_text(c, fields))
     if len(named) == len(wins):
         return _Plan("pridat", _union_text(c, fields, "nový termín zasahuje všetky okná výluky, ale menej dní"))
-    why = _unsafe_split(session, c, ev_id)
+    why = _unsafe_split(session, c, ev_id, change=True)
     if why:
         return _Plan("pridat", _union_text(c, fields, why))
     old = "; ".join(_term_desc(*wins[i]) for i in named)
@@ -2190,76 +2287,258 @@ _PLACE_WORDS = re.compile(r"\b(?:usek\w*|zst|stanic\w*|medzi|dopravn\w*|obvod\w*
 _LIST_START = re.compile(r"(?:[-•*–]|\d{1,2}[.)]|[a-z]\))\s")
 _UPPER = "A-ZÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ"
 _SECTION_PAIR = re.compile(rf"[{_UPPER}][\w.]*\s*[-–—]\s*[{_UPPER}]")    # „Senica – Kúty“ (v pôvodnom texte)
-# zmienka o mieste vo vlastnom texte e-mailu (úsek, dopravňa, stanica, zastávka, obvod, trať, „medzi“, km polohy)
-_PLACE_HINT = re.compile(r"\b(?:usek\w*|zst\b|stanic\w*|zastavk\w*|dopravn\w*|obvod\w*|medzi\b|trat\w*"
-                         r"|km\b(?!\s*/\s*h))")
-_DASH = re.compile(r"\s[-–—]\s|[–—]")
+# zmienka o mieste vo vlastnom texte e-mailu (úsek, žst., stanica, zastávka, obvod, trať a „tr.“, „medzi“, km polohy,
+# „Miesto:“, odbočka, vlečka, priecestie) – v texte bez diakritiky; „traťová koľaj“ miestom nie je
+_PLACE_HINT = re.compile(r"\b(?:usek\w*|zst\b|z\.\s?st\b|zel\.\s?st\b|stanic\w*|zastavk\w*|obvod\w*|medzi\b"
+                         r"|trat(?!ov)\w*|tr\.|km\b(?!\s*/\s*h)|miest[oae]\b|odbock\w*|vleck\w*|priecest\w*)")
+# v pôvodnom texte: dopravňa (nie „dopravné opatrenia“), traťový úsek „TÚ 2401“
+_PLACE_HINT_RAW = re.compile(r"(?i:\bdopravň\w*|\bdopravni\b)|\bT[ÚU]\s*(?:č\.\s*)?\d")
 # podpis e-mailu („S pozdravom“, „Vybavuje: …“, „--“) – mená osôb nie sú miesta výluky
 _SIGNATURE = re.compile(r"^\s*(?:s\s+pozdravom|s\s+uctou|s\s+priatelskym|dakujem|vybavuje|kontakt|--\s*$)", re.M)
+_PLACE_WORD = re.compile(r"[^\s\-–—/]+")                    # slová textu; pomlčka a lomka slová delia
+_PLACE_QUOTES = "\"'„“”‚‘’«»([{<*"
+_PLACE_TAIL = ",;:!?)]}>\"'“”’»*"
+# tituly a oslovenie – za nimi je meno osoby („Ing. Martin Novák“, „pani Kováčová“), nie dopravňa (Martin, Nováky)
+_TITLES = {"ing.", "mgr.", "bc.", "judr.", "rndr.", "phdr.", "paeddr.", "mudr.", "mvdr.", "doc.", "prof.", "dr.",
+           "ing", "mgr", "bc", "pan", "pani", "pana", "panovi", "panom"}
+_GREETING = {"dobry", "dobre", "dobreho"}                  # „Dobrý deň“, „Dobré ráno“ – nie dopravňa Dobrá
+# bežné slová, ktoré sú aj názvom stanice („posunová čata“, „počkaj“) – malými písmenami miestom nie sú
+_LOWER_COMMON = {"cata", "pockaj"}
+_ABBR_WORD = re.compile(r"[a-z]{1,4}\.")                    # skrátené slovo názvu bez diakritiky („l.“, „sp.“)
+# vlastný text e-mailu (znaky), ktorý sa pri doplnení úseku z registra overí; dlhší sa overiť nedá – úsek sa nedoplní
+PLACE_SCAN_CHARS = 60_000
+_DOC_ATTACHMENT = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".odt", ".ods", ".rtf", ".txt", ".csv", ".htm", ".html",
+                   ".zip", ".rar", ".7z", ".eml", ".msg")
+_SCAN_IMAGE_BYTES = 100_000                                 # obrázok väčší ako logo v podpise – môže byť sken ROV
 
 
-def _mail_names_place(email: Optional[Email], keys: set) -> bool:
-    """Vlastný text e-mailu (predmet, telo bez citácie a podpisu, prílohy okrem kalendára) uvádza miesto, ktoré nie je
-    úsekom ``keys`` (kľúče dopraví úseku z registra): slová úsek, žst., stanica, zastávka, dopravňa, obvod, trať,
-    „medzi“, km polohy; dvojicu s pomlčkou, ktorej strany nie sú dopravne úseku („N. Zámky – Šurany“; nie skratky ako
-    „STORNO – ROV“); názov dopravne vo vete (nie na jej začiatku – „Dobrý deň“), ktorá nie je v úseku. Podpis
-    „OR Košice“ miestom nie je."""
-    from .stanice import tokens
+# druh dopravne za názvom mesta („Zvolen osobná stanica“, „Bratislava hlavná stanica“, „Prešov mesto“)
+_STATION_DESCRIPTORS = {"hlavna", "osobna", "nakladna", "predmestie", "mesto", "vychod", "zapad", "sever", "juh",
+                        "zastavka", "zriadovacia", "zavody", "stanica", "kupele", "obec", "namestie"}
 
-    if email is None:
-        return False
+
+@lru_cache(maxsize=1)
+def _station_heads() -> tuple[frozenset, frozenset, frozenset]:
+    """(prvé slová názvov dopraví, ich začiatky s 1 – 3 písmenami, mestá s viacerými dopravňami) – bez diakritiky.
+
+    Prvé slová a začiatky: rýchly predvýber slov, ktoré môžu začínať názov dopravne (skloňovaný či skrátený tvar má
+    rovnaké prvé tri písmená, skratka „N.“ prvé písmeno). Mestá: prvé slovo názvu dopravne s druhom dopravne či
+    mestskou časťou („Bratislava hlavná stanica“, „Poprad-Tatry“, „Zvolen osobná stanica“), ktoré samo dopravňou nie je
+    – „v Bratislave“, „do Popradu“ sú tiež miestom."""
     st = stations()
+    heads: set = set()
+    towns: set = set()
+    for s in (st.net.stations if st.net else []):
+        name = str(s.name or "")
+        words = fold(name).replace("-", " ").split()
+        if words:
+            heads.add(words[0])
+        m = re.match(r"([^\W\d_]+)(\s+|\s*[-–]\s*)(\S+)", name)
+        if m and ("-" in m.group(2) or "–" in m.group(2) or
+                  (m.group(3)[:1].islower() and fold(m.group(3)) in _STATION_DESCRIPTORS)) \
+                and st.exact(m.group(1)) is None:
+            towns.add(fold(m.group(1)))
+    return frozenset(heads), frozenset(h[:i] for h in heads for i in (1, 2, 3)), frozenset(towns)
 
-    def station_at(toks: list, start: int, step: int):
-        """Najdlhší názov dopravne z 1 – 4 slov od ``start`` dopredu (step 1) či dozadu (step −1) – nie cez čiarku
-        či koniec vety; aj skloňovaný či skrátený tvar („Šurian“, „N. Zámky“)."""
-        for k in (4, 3, 2, 1):
-            idx = sorted(start + step * j for j in range(k))
-            if idx[0] < 0 or idx[-1] >= len(toks):
+
+def _unreadable_attachment(a: Any) -> str:
+    """Príloha, ktorej text sa nedal prečítať a môže uvádzať miesto (dokument, archív, sken) – jej názov; „“ = nie."""
+    name = str(getattr(a, "filename", "") or "")
+    low, ctype = name.lower(), str(getattr(a, "content_type", "") or "").lower()
+    if str(getattr(a, "text", "") or "").strip():
+        return ""
+    if low.endswith(_DOC_ATTACHMENT) or ctype.startswith(("application/pdf", "application/msword",
+                                                           "application/vnd.", "application/zip", "message/")):
+        return name or ctype
+    if (ctype.startswith("image/") or low.endswith((".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif"))) \
+            and int(getattr(a, "size", 0) or 0) >= _SCAN_IMAGE_BYTES:
+        return name or ctype
+    return ""
+
+
+def _other_station(text: str, keys: set, cache: dict) -> Optional[str]:
+    """Prvý názov dopravne v texte, ktorá nie je v úseku ``keys`` (kľúče dopraví z registra) – aj skloňovaný či skrátený
+    tvar („v Šuranoch“, „N. Zámky“), veľkými písmenami („NOVÉ ZÁMKY“), na začiatku vety či riadku („Šurany: …“),
+    v zátvorke či v dvojici so spojovníkom („Šurany-Komárno“), mesto s viacerými dopravňami („v Bratislave“). Hľadá sa
+    v slovách s veľkým začiatočným písmenom (1 – 4 slová, nie cez čiarku, koniec vety či riadku); malými písmenami len
+    presný názov stanice („surany“). Pozdrav „Dobrý deň“ a meno za titulom („Ing. Martin …“) dopravňou nie sú.
+    Lineárne v dĺžke textu – každé slovo raz, výsledky hľadania v ``cache`` (spoločná pre celý e-mail).
+    None = žiadna iná dopravňa."""
+    from .stanice import Tok, _inflection_eq, _stem_eq
+
+    st = stations()
+    if st.net is None:
+        return None
+    heads, prefixes, towns = _station_heads()
+    words = [(m.group(0), m.start(), m.end()) for m in _PLACE_WORD.finditer(text)]
+    n = len(words)
+
+    def clean(raw: str) -> str:
+        w = raw.lstrip(_PLACE_QUOTES)
+        while w and w[-1] in _PLACE_TAIL:
+            w = w[:-1]
+        return w
+
+    def candidate(word: str) -> bool:
+        """Slovo môže začínať názov dopravne (predvýber podľa prvých písmen – bez hľadania v registri)."""
+        f = fold(word)
+        letters = f.rstrip(".")
+        if not letters.isalpha():
+            return False
+        if f.endswith(".") and len(letters) <= 4:
+            return letters in prefixes                       # skratka „N.“, „Sp.“, „Pop.“
+        return letters[:3] in prefixes if len(letters) >= 3 else letters in heads
+
+    def abbrev_inflected(parts: list) -> str:
+        """Skrátený a skloňovaný názov („do L. Mikuláša“, „z N. Zámkov“): skratky sú začiatkom slov názvu, ostatné slová
+        sa líšia len pádovou koncovkou – len jednoznačná dopravňa."""
+        ws = [fold(x) for x in parts]
+        if not 2 <= len(ws) <= 5 or not any(_ABBR_WORD.fullmatch(x) for x in ws) or \
+                all(_ABBR_WORD.fullmatch(x) for x in ws):
+            return ""
+        found = set()
+        for norm_key, lst in st.net.by_norm.items():
+            kw = norm_key.replace(" - ", " ").split()
+            if len(kw) == len(ws) and all(k.startswith(x[:-1]) if _ABBR_WORD.fullmatch(x) else
+                                          (_stem_eq(k, x) and _inflection_eq(k, x)) for x, k in zip(ws, kw)):
+                found |= {x.name for x in lst if x.type in ("station", "yard", "border", "halt")}
+        return found.pop() if len(found) == 1 else ""
+
+    def lookup(span: str) -> str:
+        if span not in cache:
+            # „Spišskej Novej Vsi“ – vypadávajúca samohláska v krátkom slove „Ves“ (Spišská Nová Ves)
+            parts = ["Ves" if fold(x) == "vsi" else x for x in span.split(" ")]
+            found = st.exact(span) or st.stem(" ".join(parts)) or st.abbrev(span)
+            name = found.name if found is not None else abbrev_inflected(parts)
+            if not name and " " not in span:
+                f = fold(span)
+                town = next((t for t in towns if _stem_eq(t, f) and _inflection_eq(t, f)), "")
+                name = span if town else ""              # mesto s viacerými dopravňami („v Bratislave“)
+                cache[("town", span)] = town
+            cache[span] = name
+        return cache[span]
+
+    def own(name: str, span: str) -> bool:
+        """Dopravňa (či mesto, v ktorom je dopravňa) úseku z registra."""
+        town = cache.get(("town", span))
+        if town:
+            return any(k.replace("-", " ").split()[:1] == [town] for k in keys)
+        return _station_key(name) in keys
+
+    def lower_station(i: int) -> Optional[tuple]:
+        """Názov stanice malými písmenami (napr. v predmete bez diakritiky „zmena rov … surany“) – len presný názov
+        stanice (nie zastávky – tie sa volajú aj ako bežné slová: Zelené, Píla, Závod), nie bežné slová."""
+        for k in (3, 2, 1):
+            if i + k > n or not all(joins(j) for j in range(i, i + k - 1)):
                 continue
-            words = [toks[j].raw for j in idx]
-            if any(w[-1:] in ",;:!?" or (w.endswith(".") and len(w.rstrip(".")) > 3) for w in words[:-1]):
-                continue
-            found = st.match(" ".join(words).strip(" .,;:!?()[]\"'„“"), allow_fuzzy=False)
-            if found is not None:
-                return found
+            span = " ".join(clean(x[0]) for x in words[i:i + k]).rstrip(".")
+            key = ("lower", span)
+            if key not in cache:
+                found = st.exact(span) if fold(span) not in _LOWER_COMMON else None
+                cache[key] = found.name if found is not None and found.type in ("station", "yard", "border") else ""
+            if cache[key]:
+                return k, span, cache[key]
         return None
 
-    def other(found) -> bool:
-        return found is None or _station_key(found.name) not in keys
+    def joins(j: int) -> bool:
+        """Slovo ``j`` môže pokračovať slovom ``j + 1`` v jednom názve (medzera či spojovník, nie koniec vety)."""
+        gap = text[words[j][2]:words[j + 1][1]]
+        raw = words[j][0]
+        return gap.strip() in ("", "-") and "\n" not in gap and not Tok(raw, 0, 0).hard_end and \
+            raw[-1:] not in _PLACE_TAIL and bool(clean(raw))
 
+    i, names = 0, False
+    while i < n:
+        if i and "\n" in text[words[i - 1][2]:words[i][1]]:
+            names = False                                    # meno za titulom končí riadkom
+        w = clean(words[i][0])
+        f = fold(w)
+        if f in _TITLES:
+            names = True
+            i += 1
+            continue
+        if not w[:1].isalpha() or not w[:1].isupper():
+            names = False
+            bare = w.rstrip(".")
+            low = lower_station(i) if len(bare) >= 4 and bare.isalpha() and candidate(bare) else None
+            if low is not None and _station_key(low[2]) not in keys:
+                return low[1]
+            i += low[0] if low is not None else 1
+            continue
+        if names or f.rstrip(".,") in _GREETING or not candidate(w):
+            i += 1
+            continue
+        hit = None
+        for k in (4, 3, 2, 1):
+            if i + k > n or not all(joins(j) for j in range(i, i + k - 1)):
+                continue
+            last = clean(words[i + k - 1][0])
+            if k > 1 and len(last.rstrip(".")) == 1 and not last.endswith("."):
+                continue                                     # „Žilina s polohou“ – „s“ nie je skratka názvu
+            span = " ".join([w] + [clean(x[0]) for x in words[i + 1:i + k]])
+            # bodka na konci: skratka („N.“, „Kút.“ ako skratka nie je) alebo koniec vety („… v Šuranoch.“)
+            for variant in ((span, span[:-1]) if span.endswith(".") else (span,)):
+                name = lookup(variant) if variant else ""
+                if name:
+                    hit = (k, variant, name)
+                    break
+            if hit:
+                break
+        if hit is None:
+            i += 1
+            continue
+        k, span, name = hit
+        if not own(name, span):
+            return span
+        i += k
+    return None
+
+
+def _mail_names_place(email: Optional[Email], keys: set) -> str:
+    """Prečo úsek z registra nemožno doplniť: vlastný text e-mailu (predmet, telo bez citácie a podpisu, prílohy okrem
+    kalendára) uvádza miesto, ktoré nie je úsekom ``keys`` (kľúče dopraví úseku z registra), alebo sa nedá celý overiť.
+    „“ = neuvádza (úsek sa môže doplniť).
+
+    Miesto: slová úsek, žst., stanica, zastávka, dopravňa, obvod, trať („tr.“, „TÚ 2401“), „medzi“, km polohy,
+    „Miesto:“; názov dopravne kdekoľvek v texte – aj na začiatku vety či riadku, v predmete, veľkými písmenami,
+    skloňovaný či skrátený (:func:`_other_station`). Pozdrav, podpis „OR Košice“ a mená osôb za titulom miestom nie sú.
+    Nedá sa overiť: príloha (dokument, sken), ktorej text sa nedal prečítať, a text dlhší ako ``PLACE_SCAN_CHARS`` – pri
+    pochybnosti sa úsek nedoplní (ostane poistka pre celý vozový park a úsek doplní dispečer)."""
+    if email is None:
+        return ""
     body = _unquoted(getattr(email, "body_text", "") or "")
-    cut = _SIGNATURE.search(fold(body))
+    # podpis až za vlastným textom – e-mail, ktorý začína „Ďakujem, …“ či „Kontakt: …“, sa overí celý
+    cut = next((m for m in _SIGNATURE.finditer(fold(body)) if body[:m.start()].strip()), None)
+    texts = [str(getattr(email, "subject", "") or ""), body[:cut.start()] if cut else body]
     # aj prílohy (ROV v PDF či tabuľke): úsek v prílohe, ktorý pravidlá neprečítali, môže byť iný
-    attached = [str(getattr(a, "text", "") or "") for a in (getattr(email, "attachments", None) or [])
-                if not str(getattr(a, "filename", "") or "").lower().endswith((".ics", ".vcs", ".calendar"))]
-    for raw in [str(getattr(email, "subject", "") or ""), body[:cut.start()] if cut else body] + attached:
+    for a in getattr(email, "attachments", None) or []:
+        if str(getattr(a, "filename", "") or "").lower().endswith((".ics", ".vcs", ".calendar")):
+            continue
+        bad = _unreadable_attachment(a)
+        if bad:
+            return f"príloha „{bad[:80]}“ sa nedala prečítať"
+        texts.append(str(getattr(a, "text", "") or ""))
+    total = sum(len(t) for t in texts)
+    if total > PLACE_SCAN_CHARS:
+        size = f"{total:,}".replace(",", " ")
+        return f"text s prílohami má {size} znakov, na overenie miesta je príliš dlhý"
+    cache: dict = {}
+    for raw in texts:
+        if not raw.strip():
+            continue
         chars = list(raw)
         for m in _OR_TEXT.finditer(fold(raw)):              # fold zachováva dĺžku textu
             chars[m.start():m.end()] = " " * (m.end() - m.start())
         text = "".join(chars)
-        if _PLACE_HINT.search(fold(text)):
-            return True
-        for d in _DASH.finditer(text):
-            left, right = tokens(text[:d.start()]), tokens(text[d.end():], d.end())
-            if not left or not right or not (left[-1].raw[:1].isupper() and right[0].raw[:1].isupper()):
-                continue
-            if left[-1].raw.rstrip(".,;:").isupper() or right[0].raw.rstrip(".,;:").isupper():
-                continue                                    # „STORNO – ROV 5330/2026“ – skratky, nie dopravne
-            if other(station_at(left, len(left) - 1, -1)) or other(station_at(right, 0, 1)):
-                return True
-        toks = tokens(text)
-        for i, t in enumerate(toks):
-            w = t.raw.lstrip("\"'„“(")
-            if not w[:1].isupper() or w.rstrip(".,;:").isupper():
-                continue
-            before = text[:t.start].rstrip(" \t\"'„“(")
-            if not before or before[-1] in ".!?:;\n":
-                continue                                    # začiatok vety či riadku („Výluka …“, „Dobrý deň“)
-            found = station_at(toks, i, 1)
-            if found is not None and _station_key(found.name) not in keys:
-                return True
-    return False
+        hint = _PLACE_HINT.search(fold(text)) or _PLACE_HINT_RAW.search(text)
+        if hint:
+            # zmienka s pár slovami za ňou („km 12,4 sa presúva“, „Miesto: Šurany“, „tr. 140“)
+            said = " ".join(text[hint.start():hint.start() + 60].split("\n")[0].split()[:4]).rstrip(".,;:!?)")
+            return f"„{said}“"
+        found = _other_station(text, keys, cache)
+        if found:
+            return f"„{found}“"
+    return ""
 
 
 _REF_RE = re.compile(r"(?<![\d/])(\d{1,6}/\d{4})(?![\d/])")

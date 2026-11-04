@@ -223,8 +223,9 @@ def test_usek_z_registra_sa_nedoplni_ked_email_uvadza_ine_miesto(env, session, b
 
     from vlaky.posta.spracovanie import _register_place
 
+    # druh dokumentu výluky (ROV) musí byť známy – výluka len s číslom úsek nedá (pozri test_revizia5_integracia_ostatne2)
     session.add(Closure(kind="uplna", from_station="Senec", to_station="Galanta", start_utc=utc(2026, 12, 4, 7),
-                        end_utc=utc(2026, 12, 4, 13), status="overene", source="email", external_ref="4120/2026"))
+                        end_utc=utc(2026, 12, 4, 13), status="overene", source="email", external_ref="ROV 4120/2026"))
     session.commit()
     attached = [SimpleNamespace(filename="ROV_4120_zmena.pdf",
                                 text="Úsek: N. Zámky – Šurany, 11.12.2026 08:00 – 12:00")]
