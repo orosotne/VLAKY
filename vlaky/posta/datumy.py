@@ -118,7 +118,8 @@ class Period:
     daily_from: Optional[str] = None
     daily_to: Optional[str] = None
     flags: set = field(default_factory=set)
-    # flagy: cely_den, cez_polnoc, rok_doplneny, do_odvolania, bez_konca, denne, zle_poradie
+    # flagy: cely_den, cez_polnoc, rok_doplneny, do_odvolania, bez_konca, bez_casu_zaciatku, bez_casu_konca, denne,
+    # zle_poradie
 
 
 def _year(y: Optional[str]) -> Optional[int]:
@@ -267,10 +268,17 @@ def _add_bare(folded: str, toks: list[Temporal], taken: list, pos: int, first: d
         taken.append((t.start, t.end))
 
 
+# číslo položky zoznamu na začiatku riadku pred dátumom („1. 01.12.2026 od 08:00“, „2. 03.12.2026“) – nie je to deň
+_ENUM_BEFORE_DATE = re.compile(r"(?m)^([ \t>*•-]*)(\d{1,2}\.)(?=[ \t]+\d{1,2}\s?\.\s?\d{1,2}\s?\.)")
+
+
 def scan(folded: str, ref: date) -> list[Temporal]:
-    """Nájde dátumy a časy, spojí dátum + čas do dátumu s časom. Výsledok je zoradený podľa pozície."""
+    """Nájde dátumy a časy, spojí dátum + čas do dátumu s časom. Výsledok je zoradený podľa pozície.
+
+    Číslo položky zoznamu pred dátumom („1. 01.12.2026“) sa za deň nepovažuje."""
     toks: list[Temporal] = []
     taken: list[tuple[int, int]] = []
+    folded = _ENUM_BEFORE_DATE.sub(lambda m: m.group(1) + " " * len(m.group(2)), folded)
 
     for m in _ISO_RE.finditer(folded):
         d = _mkdate(int(m.group(1)), int(m.group(2)), int(m.group(3)))
@@ -652,6 +660,16 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
                 continue
             if a.kind == "date" and b.kind == "datetime":
                 p = Period(datetime.combine(a.day, time(0, 0)), b.dt, a.start, b.end, flags={"bez_casu_zaciatku"})
+                out.append(p)
+                used.update((i, i + 1))
+                i += 2
+                continue
+            if a.kind == "datetime" and b.kind == "date" and b.day >= a.day:
+                # „od 20.11.2026 14:00 do 30.11.2026“ – koniec bez času platí do konca uvedeného dňa (prísnejší prípad)
+                p = Period(a.dt, datetime.combine(b.day, time(0, 0)) + timedelta(days=1), a.start, b.end,
+                           flags={"bez_casu_konca"})
+                if not (a.year_given and b.year_given):
+                    p.flags.add("rok_doplneny")
                 out.append(p)
                 used.update((i, i + 1))
                 i += 2
