@@ -1104,7 +1104,7 @@ def _register_check(session: Session, kind: str, data: dict, now: datetime,
                     if removal:
                         reasons.append(removal)
                 warnings.append(f"Mení výluku #{target.id} {target.from_station} – {target.to_station} "
-                                f"{fmt(target.start_utc)} – {fmt(target.end_utc)} (priradená podľa: {how}).")
+                                f"{_span(target)} (priradená podľa: {how}).")
             elif target is not None and kind == "vyluka_zmena":
                 # nový termín už výluka v registri má (napr. opakovane poslaná zmena po potvrdení) – čaká na dispečera
                 # ako každá zmena výluky, fronta však povie, že register nezmení
@@ -1129,7 +1129,7 @@ def _register_check(session: Session, kind: str, data: dict, now: datetime,
                                         "ako samostatná výluka, platia obe obmedzenia.")
                     elif target is None and _closure_family(c) == _event_family(kind, data):
                         warnings.append(f"Výluka s rovnakým číslom {data['external_ref']} je v registri v inom termíne "
-                                        f"(#{c.id} {fmt(c.start_utc)} – {fmt(c.end_utc)}) – zapíše sa ako ďalší termín "
+                                        f"(#{c.id} {_span(c)}) – zapíše sa ako ďalší termín "
                                         "(ROV môže mať viac termínov). Ak ide o presun termínu, pôvodný termín "
                                         "v registri zrušte alebo upravte.")
         elif kind == "vyluka_zrusenie":
@@ -1159,7 +1159,7 @@ def _register_check(session: Session, kind: str, data: dict, now: datetime,
                     warnings.append(plan.text)
                 else:
                     warnings.append(f"Zruší výluku #{target.id} {target.from_station} – {target.to_station} "
-                                    f"{fmt(target.start_utc)} – {fmt(target.end_utc)} (priradená podľa: {how}).")
+                                    f"{_span(target)} (priradená podľa: {how}).")
                 theirs = _closure_issuer(session, target) if not data.get("from_station") and issuer is None else None
                 if theirs:
                     # priradené len podľa čísla, OR e-mailu sa nedá určiť – číslo ROV má každá OR vlastné
@@ -2260,8 +2260,7 @@ def _closure_guard(session: Session, c: Closure, now: datetime, ev_id: Optional[
     if c.status == "overene":
         reasons.append(f"mení sa výluka #{c.id} overená dispečerom")
     if _utc(c.start_utc) <= now + timedelta(hours=h) and _utc(c.end_utc) >= now:
-        reasons.append(f"mení sa výluka #{c.id}, ktorá platí alebo začne do {h} h "
-                       f"({fmt(c.start_utc)} – {fmt(c.end_utc)})")
+        reasons.append(f"mení sa výluka #{c.id}, ktorá platí alebo začne do {h} h ({_span(c)})")
     owner = _pending_owner(session, c, ev_id)
     if owner is not None:
         reasons.append(f"výluka #{c.id} ešte čaká na potvrdenie udalosti #{owner.id}")
@@ -2788,6 +2787,14 @@ def _compact(wins: list, keep: list) -> list[tuple[datetime, datetime, bool]]:
     return out
 
 
+def _span(c: Closure) -> str:
+    """Termín výluky pre dispečera: „od … do odvolania“ pri výluke do odvolania (jej koniec je len technický – posúva
+    sa), inak „začiatok – koniec“."""
+    if c.until_revoked:
+        return f"od {fmt(c.start_utc)} do odvolania"
+    return f"{fmt(c.start_utc)} – {fmt(c.end_utc)}"
+
+
 def _term_desc(start: Any, end: Any, daily_from: Any = "", daily_to: Any = "") -> str:
     out = f"{fmt(start)} – {fmt(end)}"
     return out + (f", denne {daily_from}–{daily_to}" if daily_from and daily_to else "")
@@ -2856,7 +2863,7 @@ def _unsafe_split(session: Session, c: Closure, ev_id: Optional[int], change: bo
 
 def _partial_move_text(c: Closure, fields: dict) -> str:
     return (f"Zmena môže presúvať len časť viacdennej výluky #{c.id} {c.from_station} – {c.to_station} "
-            f"({fmt(c.start_utc)} – {fmt(c.end_utc)}) na {fmt(fields['start_utc'])} – {fmt(fields['end_utc'])} – "
+            f"({_span(c)}) na {fmt(fields['start_utc'])} – {fmt(fields['end_utc'])} – "
             "pôvodná výluka ostáva v registri bez zmeny a nový termín je ďalšia výluka. Ak sa niektoré dni pôvodnej "
             "výluky rušia, upravte jej termín v registri výluk.")
 

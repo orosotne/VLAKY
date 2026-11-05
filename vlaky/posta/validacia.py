@@ -20,7 +20,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..cas import UTC, ensure_utc, local, local_naive_to_utc, now_utc, tz
+from ..cas import UTC, ensure_utc, fmt, local, local_naive_to_utc, now_utc, tz
 from ..config import settings
 from ..models import BorderCrossing, Train
 from .stanice import stations
@@ -468,7 +468,7 @@ def validate_event(session: Session, kind: str, data: dict, *, confidence: float
             res.errors.append("Chýba predpokladaný čas príchodu (ETA).")
             res.blocking.append("chýba ETA")
         elif not (now - timedelta(days=2) <= times["eta"] <= now + timedelta(days=14)):
-            res.warnings.append("Predpokladaný príchod je ďaleko od dnešného dňa – overte dátum.")
+            res.warnings.append(FAR_ETA)
         bc = resolve_border(session, data)
         if bc is None:
             res.errors.append(f"Hraničný priechod „{data.get('border') or '?'}“ sa v registri nenašiel.")
@@ -493,6 +493,10 @@ def validate_event(session: Session, kind: str, data: dict, *, confidence: float
     if kind == "objednavka":
         if not data.get("customer"):
             res.errors.append("Chýba zákazník.")
+        far = [t for f, t in times.items() if f in ("earliest_departure", "deadline") and t > now + FAR_AHEAD]
+        if far:
+            # pravdepodobne preklep v roku – rovnako ako formulár vlaku (najviac rok dopredu) to dispečer overí
+            res.warnings.append(f"{FAR_ORDER} ({fmt(min(far))}).")
         if "deadline" in times and "earliest_departure" in times and times["deadline"] <= times["earliest_departure"]:
             res.errors.append("Termín dodania je skôr ako najskorší odchod.")
         checks = (("wagons", 1, 120, "počet vozňov"), ("weight_t", 1, 6000, "hmotnosť"),
@@ -542,6 +546,11 @@ def change_intent(data: dict) -> str:
     return re.sub(r"[\s\-]+", "_", fold(str(data.get("zamer") or "")).strip())
 
 
+FAR_ETA = "Predpokladaný príchod je ďaleko od dnešného dňa – overte dátum."
+FAR_AHEAD = timedelta(days=366)            # objednávka ďalej dopredu je skôr preklep v roku
+FAR_ORDER = "Termín objednávky je viac ako rok dopredu – overte dátum, najmä rok"
+
+
 def confirmation_needed(kind: str, data: dict, confidence: float, verdict: str, res: ValidationResult,
                         now: datetime) -> tuple[bool, list[str]]:
     s = settings()
@@ -553,6 +562,10 @@ def confirmation_needed(kind: str, data: dict, confidence: float, verdict: str, 
         reasons.append("validácia našla chyby")
     if any("približne" in w for w in res.warnings):
         reasons.append("dopravňa určená len približne")
+    if kind == "avizo" and FAR_ETA in res.warnings:
+        reasons.append("predpokladaný príchod z avíza je ďaleko od dnešného dňa – overte dátum")
+    if kind == "objednavka" and any(w.startswith(FAR_ORDER) for w in res.warnings):
+        reasons.append("termín objednávky je viac ako rok dopredu – overte dátum (najmä rok)")
     if kind == "avizo" and any("nemá dátum jazdy" in w for w in res.warnings):
         # vlak bez dátumu jazdy môže byť aj staršia, neukončená jazda s rovnakým číslom – avízo sa mu nepriradí
         # automaticky (rovnako ako pred zavedením tohto priradenia, keď sa avízo takému vlaku nepriradilo vôbec)
