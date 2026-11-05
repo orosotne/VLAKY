@@ -325,3 +325,27 @@ def test_zamietnutie_doplnenia_po_rucne_zapisanej_vyluke(env, session):
     assert c.status == "overene" and c.source_event_id is None
     _cycle(env, session)
     assert _closed(session, 2026, 11, 25, 10)
+
+
+# ====================================================================== opätovný zápis nahradeného čiastočného zrušenia
+@pytest.mark.parametrize("newer", ["opakovanie", "predlzenie"])
+def test_zamietnutie_novsej_udalosti_znova_zapise_len_zrusenie_dna(env, session, newer):
+    """Overený ROV 23. – 25.11. denne; čaká „dňa 24.11. sa ruší“; potvrdené novšie dlhšie opakovanie (či predĺženie)
+    do 26.11. a potom zrušenie („nahradené“). Dispečer novšiu udalosť zamietne: zrušenie sa zapíše znova s novým plánom –
+    zruší len 24.11., 23.11. a 25.11. ostávajú zatvorené (nie celá výluka)."""
+    _confirm(session, _one(env, session, SUBJ, ROV_B))
+    cancel = _one(env, session, CSUBJ, _body(f"{SEC} dňa 24.11.2026 sa ruší."))
+    if newer == "opakovanie":
+        later = _one(env, session, SUBJ, _rov("v dňoch 23.11. – 26.11.2026 denne od 08:00 do 14:00 hod."))
+    else:
+        later = _one(env, session, ZSUBJ, _body(f"{SEC} sa predlžuje do 26.11.2026 14:00 hod."))
+    assert _confirm(session, later).get("ok")
+    _cycle(env, session)
+    assert _confirm(session, cancel).get("action") == "nahradene"
+    _cycle(env, session)
+    rej = _reject(session, later)
+    text = str((rej.validation or {}).get("rejection", {}).get("rollback"))
+    assert f"udalosť #{cancel.id} zapísaná znova" in text, text
+    _cycle(env, session)
+    assert _closed(session, 2026, 11, 23, 10) and _closed(session, 2026, 11, 25, 10)
+    assert not _closed(session, 2026, 11, 24, 10)

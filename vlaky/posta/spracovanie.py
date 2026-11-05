@@ -2394,8 +2394,9 @@ def _apply_closure(session: Session, ev: ExtractedEvent, confirmed: bool) -> dic
         notes.insert(0, str(d["note"]))
     email = session.get(Email, ev.email_id) if ev.email_id else None
     source_line = f"Zdroj: e-mail #{ev.email_id}" + (f" od {email.sender}, „{email.subject[:120]}“" if email else "")
-    was_applied = bool((ev.validation or {}).get("applied"))
     previous = (ev.validation or {}).get("applied") or {}
+    # „nahradené“ nič nezapísalo – opätovný zápis (napr. po zamietnutí novšej udalosti) sa počíta ako prvý zápis
+    was_applied = bool(previous) and previous.get("action") != "nahradene"
     if was_applied and previous.get("action") in ("rozdelene", "bez_zmeny"):
         # udalosť už výluku rozdelila (alebo register nezmenila) – opakovaný zápis nič nemení
         return {k: v for k, v in previous.items() if k not in ("at", "by", "confirmed", "ok", "kind")}
@@ -2679,8 +2680,9 @@ def _newer_splitter(session: Session, c: Closure, ev: ExtractedEvent) -> Optiona
 def _apply_closure_cancel(session: Session, ev: ExtractedEvent, confirmed: bool) -> dict:
     d = ev.data or {}
     val = ev.validation or {}
-    applied = bool(val.get("applied"))
     previous = val.get("applied") or {}
+    # „nahradené“ nič nezapísalo – opätovný zápis sa posudzuje celý (časť výluky, odmietnutia), nie ako zopakovanie
+    applied = bool(previous) and previous.get("action") != "nahradene"
     if applied and previous.get("action") == "rozdelene":
         # udalosť už zrušila časť výluky (výluku rozdelila) – opakovaný zápis nič nemení
         return {k: v for k, v in previous.items() if k not in ("at", "by", "confirmed", "ok", "kind")}
@@ -5441,7 +5443,7 @@ def _reapply_superseded(session: Session, x: ExtractedEvent, actor: str) -> list
             val.pop("applied", None)
             val.pop("pending_closure", None)
             reasons = list(val.get("confirmation_reasons") or [])
-            why = f"udalosť nahradila udalosť #{x.id}, ktorú dispečer zamietol – overte, či táto platí"
+            why = f"túto udalosť nahradila udalosť #{x.id}, ktorú dispečer zamietol – overte, či platí"
             val["confirmation_reasons"] = reasons + ([why] if why not in reasons else [])
             y.validation = val
             y.status = "navrh"
@@ -5450,6 +5452,10 @@ def _reapply_superseded(session: Session, x: ExtractedEvent, actor: str) -> list
             _write_pending_safe(session, y)
             msgs.append(f"udalosť #{y.id} vrátená do fronty")
             continue
+        val = dict(y.validation or {})
+        val.pop("applied", None)       # zápis s novým plánom (nie ako zopakovanie „nahradeného“ zápisu)
+        y.validation = val
+        session.flush()
         try:
             from ..db import prepare_savepoints
 
@@ -5461,7 +5467,11 @@ def _reapply_superseded(session: Session, x: ExtractedEvent, actor: str) -> list
         val = dict(y.validation or {})
         val["apply_result"] = {k: v for k, v in res.items() if k not in ("before", "train_before")}
         y.validation = val
-        if res.get("ok"):
+        if res.get("ok") and res.get("action") == "nahradene":
+            msgs.append(f"udalosť #{y.id} ostáva nahradená (udalosť #{res.get('superseded_by')})")
+        elif res.get("ok") and res.get("action") == "bez_zmeny":
+            msgs.append(f"udalosť #{y.id} register nezmenila (výluka jej termín má)")
+        elif res.get("ok"):
             msgs.append(f"udalosť #{y.id} zapísaná znova")
         else:
             y.status = "potvrdene"
