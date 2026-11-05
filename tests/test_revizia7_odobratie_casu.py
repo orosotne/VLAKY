@@ -217,7 +217,7 @@ def test_pomala_jazda_s_vyssou_rychlostou_caka_na_dispecera(env, session):
     s, (ev,) = _mail(env, session, "pj2.eml", "ROV c. 2400/2026 pomala jazda", body.replace("30 km/h", "60 km/h"),
                      utc(2026, 11, 17, 8, 2), "Tue, 17 Nov 2026 09:00:00 +0100")
     assert s["auto_applied"] == 0 and ev.needs_confirmation, (s, _reasons(ev))
-    assert any("zmiernil obmedzenie" in r and "rýchlosť 30 → 60 km/h" in r for r in _reasons(ev)), _reasons(ev)
+    assert any("zmiernil obmedzenie" in r and "rýchlosť 30 km/h → 60 km/h" in r for r in _reasons(ev)), _reasons(ev)
     (orig,) = [c for c in _live(session) if c.proposed_change_of is None]
     assert float(orig.speed_kmh) == 30.0
 
@@ -406,4 +406,4 @@ def test_odobratie_casu_presne_podla_planovaca():
     # text dôvodu uvádza, čo sa zmierňuje
     slow = _closure(kind="pomala_jazda", speed_kmh=30)
     why = _removal_reason(slow, _fields(slow, speed_kmh=60))
-    assert why.startswith("zápis by zmiernil obmedzenie výluky #1") and "rýchlosť 30 → 60 km/h" in why, why
+    assert why.startswith("zápis by zmiernil obmedzenie výluky #1") and "rýchlosť 30 km/h → 60 km/h" in why, why

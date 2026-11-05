@@ -139,10 +139,15 @@ def closure_windows(session: Session, start: datetime, end: datetime) -> list:
     započíta konzervatívne na celé obdobie (s poznámkou pre dispečera).
     """
     out = []
+    # výluka do odvolania platí aj po technickom konci (ten sa len posúva – posta.spracovanie._extend_open_ended):
+    # vlak naplánovaný ďalej ako o 30 dní by ju inak „nevidel“ (falošná ZELENÁ)
     rows = session.scalars(select(Closure).where(Closure.status.in_(("navrh", "overene")),
-                                                 Closure.end_utc >= start, Closure.start_utc <= end))
+                                                 (Closure.end_utc >= start) | Closure.until_revoked.is_(True),
+                                                 Closure.start_utc <= end))
     for c in rows:
         cs, ce = ensure_utc(c.start_utc), ensure_utc(c.end_utc)
+        if c.until_revoked:
+            ce = max(ce, end)
         electric = c.electric_only or c.kind == "trakcne_vedenie"
         # neznámy druh (napr. voľný text zo staršieho formulára) – úplná výluka, inak by ju plánovač vynechal (FE0)
         kind = c.kind if c.kind in KNOWN_KINDS else "uplna"
