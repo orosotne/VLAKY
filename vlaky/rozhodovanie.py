@@ -44,12 +44,20 @@ VYPRAVIT, POCKAT, ODSTAVIT, PRESMEROVAT, ESKALOVAT = (
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Closure:
-    """Výluka alebo iné obmedzenie úseku. Časy v minútach od t0."""
+    """Výluka alebo iné obmedzenie úseku. Časy v minútach od t0.
+
+    open_end, ref – rozšírenie kanonickej kópie (referencia ich nemá, predvolené hodnoty správanie nemenia): koniec
+    okna nie je skutočný koniec (výluka do odvolania – koniec okna je len technický koniec v registri alebo hranica
+    výpočtu). Vzorka, ktorá je v úseku v čase od začiatku takej výluky − rezerva pred výlukou, by čakala, kým výluku
+    neodvolajú – jej časy od tohto úseku nie sú skutočné (Evaluation.p_open). ``ref`` je identifikátor okna pre
+    volajúceho (ktorá výluka vzorky zdržala); neporovnáva sa."""
 
     start: float
     end: float
     electric_only: bool = False  # True = napr. vypnuté trakčné vedenie: motorová trakcia môže ísť
     label: str = ""
+    open_end: bool = False
+    ref: Optional[int] = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -159,6 +167,14 @@ class Evaluation:
     status: str = ""
     reasons: list = field(default_factory=list)
     needs_new_path: bool = False
+    # rozšírenie kanonickej kópie – výluky do odvolania (Closure.open_end): podiel vzoriek, ktoré vojdú do úseku takej
+    # výluky od jej začiatku − rezerva (čakali by, kým ju neodvolajú – ich príchod nie je skutočný), či od nich závisí
+    # príchod P50 a P90 (s takými vzorkami ako „nikdy neprídu“ by bol iný) a ref okien, ktoré vzorky zdržali
+    # (najčastejšie prvé)
+    p_open: float = 0.0
+    open_p50: bool = False
+    open_p90: bool = False
+    open_refs: tuple = ()
 
 
 @dataclass
@@ -325,10 +341,17 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
     for seg in segs:
         slow.append(tuple((s.start, s.end, s.part_from, s.part_to) for s in seg.slowdowns if s.end > earliest))
         earliest += seg.run_min
+    # výluky do odvolania na úsekoch (Closure.open_end, rozšírenie kanonickej kópie): vzorka, ktorá je v úseku od
+    # začiatku takej výluky − rezerva pred výlukou, by čakala, kým ju neodvolajú – jej príchod nie je skutočný
+    opens_of = [tuple(c for c in seg.closures if c.open_end and not (c.electric_only and not route.electric))
+                for seg in segs]
+    any_open = any(opens_of)
+    opened = []  # pre každú vzorku ref (inak popis) prvej výluky do odvolania, do ktorej úseku vošla, alebo None
 
     for i in range(n):
         t = depart
         hold = stuck = False
+        first_open = None
         for k, seg in enumerate(segs):
             base_travel = travel = seg.run_min + _lognormal(seg, normals[i][k])
             if slow[k]:
@@ -351,6 +374,11 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
                         moved = True
                 if moved and slow[k]:  # po čakaní ide vlak úsekom v inom čase
                     travel = _slowed(seg, normals[i][k], t, base_travel)
+            if any_open and first_open is None:
+                for c in opens_of[k]:
+                    if t + travel > c.start - p.buffer_before_closure_min:
+                        first_open = c.ref if c.ref is not None else c.label
+                        break
             t += travel
         # Pracovný čas rušňovodiča: od nástupu (príprava pred odchodom) po odovzdanie rušňa.
         duty = t + p.crew_post_min - duty_start
@@ -374,6 +402,8 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
         holds += hold
         stucks += stuck
         reliefs += relief
+        if any_open:
+            opened.append(first_open)
 
     ev = Evaluation(
         route=route.name, depart=depart,
@@ -383,6 +413,31 @@ def evaluate(route: Route, depart: float, ready: float, deadline: float, p: Para
         arrival_p50=_quantile(arrivals, 0.5), arrival_p90=_quantile(arrivals, 0.9),
         duty_p90=_quantile(duties, 0.9), expected_cost=sum(costs) / n,
         needs_new_path=needs_new_path)
+    n_open = sum(o is not None for o in opened)
+    if n_open:
+        # vzorky, ktoré čakajú na odvolanie výluky, sa posudzujú, ako keby výluku nikdy neodvolali (koniec okna je len
+        # technický koniec či hranica výpočtu): príchod P50 / P90 je kvantil s nimi „nikdy neprídu“ – skutočný príchod
+        # inej vzorky, nikdy skorší –, a ak by ním bola práve taká vzorka, príchod nie je známy (open_p50 / open_p90);
+        # meškajú a rušňovodiča treba vystriedať (P(včas), semafor; nie keď simulácia pracovný čas neráta – nástup
+        # „v nekonečne“). Náklad ostáva z technického konca – volajúci ho neuvádza (nie je známy).
+        never = [math.inf if o is not None else a for a, o in zip(arrivals, opened)]
+        q50, q90 = _quantile(never, 0.5), _quantile(never, 0.9)
+        counts: dict = {}
+        late_open = relief_open = 0
+        for i, o in enumerate(opened):
+            if o is not None:
+                counts[o] = counts.get(o, 0) + 1
+                late_open += arrivals[i] <= deadline
+                relief_open += math.isfinite(duties[i]) and duties[i] <= p.crew_max_duty_min
+        ev.p_open = n_open / n
+        ev.open_p50, ev.open_p90 = math.isinf(q50), math.isinf(q90)
+        if not ev.open_p50:
+            ev.arrival_p50 = max(ev.arrival_p50, q50)
+        if not ev.open_p90:
+            ev.arrival_p90 = max(ev.arrival_p90, q90)
+        ev.p_on_time = (on_time - late_open) / n
+        ev.p_crew_relief = (reliefs + relief_open) / n
+        ev.open_refs = tuple(sorted(counts, key=lambda r: -counts[r]))
     _classify(ev, deadline, p)
     return ev
 

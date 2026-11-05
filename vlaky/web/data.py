@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 import threading
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy import func, select
@@ -687,7 +687,12 @@ def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = 
         stale = pos is None or pos["stale"]
         conflict = False
         if depart and route_closures:
-            end = arr90 or arr50 or depart
+            # príchod pri zdržaní nie je známy (jazda so zdržaním by vošla do výluky do odvolania): koniec plánu nie je
+            # známy – konflikt s každou neskoršou výlukou na trase
+            from ..notifikacie.texty import p90_unknown
+
+            end = arr90 or (datetime.max.replace(tzinfo=timezone.utc) if p90_unknown(chosen) else None) or arr50 \
+                or depart
             for rc in route_closures:
                 for a, b in rc["intervaly"]:
                     if parse_iso(a) <= end and parse_iso(b) >= depart:

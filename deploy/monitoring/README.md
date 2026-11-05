@@ -16,7 +16,10 @@ Keď agent nebeží, dispečing pracuje ako doteraz – prevádzkové e-maily ch
 
 `GET /health` je bez prihlásenia a overuje **webovú aplikáciu a databázu** (`{"status":"ok","db":"ok"}`,
 inak HTTP 503). Stav **agenta** pokrýva heartbeat a `python -m vlaky health` (posledný cyklus agenta
-do 10 min, posledná úplná kontrola schránky do 30 min – aj počas dočítavania nahromadenej pošty) – ten používa aj Docker ako kontrolu zdravia kontajnera `agent`.
+do 10 min, posledná úplná kontrola schránky do 30 min – aj počas dočítavania nahromadenej pošty, doručovanie
+správ, nastavenie odosielania a **nastavenia rozhodovania**: rezerva pred výlukou či po nej v platnej sade
+parametrov nad limitom 1 440 min (24 h) je chyba zdravia `nastavenia` aj chyba cyklu „nastavenia rozhodovania: …“,
+teda heartbeat `/fail`) – ten používa aj Docker ako kontrolu zdravia kontajnera `agent`.
 
 ## Nastavenie krok za krokom (príklad healthchecks.io)
 
@@ -86,3 +89,9 @@ nedostupný LLM, plný disk, certifikát). V skratke pri výpadku agenta:
 3. Reštart: `docker compose up -d agent` (pri zmene `.env`) alebo `docker compose restart agent`.
 4. Ak to nepomôže do 30 min, eskaluj podľa kontaktov v prevádzkovom denníku; po vyriešení
    informuj dispečing a zapíš príčinu.
+
+**`/fail` alebo „unhealthy“ s textom „nastavenia rozhodovania: rezerva … je nad limitom 1 440 min (24 h)“** nie je
+výpadok: agent beží a odporúča (prísnejšie), len platná sada parametrov má rezervu pred výlukou či po nej uloženú
+staršou verziou formulára nad limitom. Vedúci dispečer ju opraví v Nastaveniach (stránka ukáže uloženú hodnotu
+a upozornenie) a uloží novú sadu parametrov; chyba zmizne v ďalšom cykle agenta. Postup: docs/PREVADZKA.md,
+kapitola 13 („Chyba nastavenia rozhodovania“).

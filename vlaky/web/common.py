@@ -21,6 +21,7 @@ from ..agent.zdravie import HEALTH_DETAIL_LABELS
 from ..cas import ensure_utc, fmt, local, local_naive_to_utc, now_utc
 from ..config import settings
 from ..notifikacie.texty import CLOSURE_KIND  # noqa: F401  (druhy výluk – aj odovzdávka služby)
+from ..notifikacie.texty import p90_unknown, variant_departure_unknown
 
 log = logging.getLogger("vlaky.web")
 
@@ -107,7 +108,8 @@ HEALTH_STATUS = {"ok": "v poriadku", "warn": "upozornenie", "error": "chyba"}
 HEALTH_DETAIL = dict(HEALTH_DETAIL_LABELS)  # rovnaké popisy ako denná správa agenta
 # komponenty agenta (AgentHealth.component) na stránke /zdravie
 HEALTH_COMPONENT = {"cyklus": "Cyklus agenta", "schranka": "Schránka (kontrola e-mailov)",
-                    "planovanie": "Plánovanie (prepočet vlakov)", "objednavky": "Objednávky zákazníkov"}
+                    "planovanie": "Plánovanie (prepočet vlakov)", "objednavky": "Objednávky zákazníkov",
+                    "nastavenia": "Nastavenia rozhodovania"}
 # entita záznamu v audite po slovensky (kód ostáva viditeľný – filter „Entita“ pracuje s kódom)
 AUDIT_ENTITY = {
     "train": "vlak", "closure": "výluka", "Closure": "výluka", "email": "e-mail", "Email": "e-mail",
@@ -435,6 +437,8 @@ def build_templates() -> Jinja2Templates:
     env.globals.update({
         "TRAIN_STATUS": TRAIN_STATUS, "CLOSURE_KIND": CLOSURE_KIND, "CLOSURE_STATUS": CLOSURE_STATUS,
         "kind_text": closure_kind_text,
+        # termín varianty / príchod pri zdržaní nie je známy – rovnaké pravidlo ako e-mail (notifikacie.texty)
+        "variant_departure_unknown": variant_departure_unknown, "p90_unknown": p90_unknown,
         "EVENT_KIND": EVENT_KIND, "REC_STATE": REC_STATE, "SHIFT_STATUS": SHIFT_STATUS,
         "HANDOVER_STATUS": HANDOVER_STATUS, "HANDOVER_DIRECTION": HANDOVER_DIRECTION, "EVENT_STATUS": EVENT_STATUS,
         "POSITION_SOURCE": POSITION_SOURCE, "ROLE_LABEL": ROLE_LABEL,
