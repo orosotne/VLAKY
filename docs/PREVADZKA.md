@@ -248,14 +248,14 @@ Teams (`VLAKY_TEAMS_WEBHOOK_URL`) aj SMS (`VLAKY_NOTIFY_PHONES`) – a pre každ
 a stav. Vypíše aj kanály bez príjemcov, kanál bez servera správ (`POZOR: …`) a neznáme premenné `VLAKY_*`
 (preklep v názve, napr. `VLAKY_SMTP_SERVER` namiesto `VLAKY_SMTP_HOST`). Návratový kód 0 = všetko odišlo
 („VÝSLEDOK: OK“ – over, že správa naozaj prišla na každý kanál), 1 = chyba (stav `chyba` alebo `zablokovana`,
-prázdny interný zoznam, v ostrej prevádzke správa len v outboxe); dôvod je v riadku „VÝSLEDOK: CHYBA – …“.
+prázdny interný zoznam, mimo vývoja a ukážky správa len v outboxe); dôvod je v riadku „VÝSLEDOK: CHYBA – …“.
 V tieňovej prevádzke ide správa **len** na `VLAKY_SHADOW_EMAILS` (SMS a Teams sú vypnuté); ostatní príjemcovia
 sa vôbec neskúšajú a `test-notify --kanal sms` či `--kanal teams` nič nepošle – skončí kódom 1 s vysvetlením „SMS
 a Teams sú v tieňovej prevádzke vypnuté – skúša sa len e-mail na VLAKY_SHADOW_EMAILS (test-notify --kanal email) …“
 (pri prázdnom `VLAKY_SHADOW_EMAILS` vyzve nastaviť ho). SMS a Teams vyskúšaj po vypnutí tieňového režimu
 (`VLAKY_SHADOW_MODE=false`). Stav `outbox` (server správ nie je nastavený, správa je len v adresári outbox – zväzok
-`odoslane`) stačí len vo vývoji a v ukážke (`VLAKY_ENV` dev, test, demo); v ostrej prevádzke je to chyba
-doručenia (kapitola 6.5). Kópia každej správy je vo zväzku `odoslane` (audit). Ak správa nepríde: kapitola 6 a
+`odoslane`) stačí len vo vývoji a v ukážke (`VLAKY_ENV` dev, test, demo); inde (aj v tieňovej prevádzke) je to
+chyba doručenia (kapitola 6.5). Kópia každej správy je vo zväzku `odoslane` (audit). Ak správa nepríde: kapitola 6 a
 `docker compose logs --tail 100 agent`.
 
 ### 4.10 Zálohy, kontrola servera a monitoring
@@ -283,7 +283,7 @@ Podrobnosti: [deploy/backup/README.md](../deploy/backup/README.md) a
 - [ ] prvá záloha, záloha mimo servera a `restore.sh --test` úspešné
 - [ ] `ssh root@…` a prihlásenie heslom nefungujú; SSH len z povolenej IP/VPN
 - [ ] `.env`, `/etc/vlaky/ops.env`, heslo k zálohám sú v trezore hesiel
-- [ ] DPIA a informovanie zamestnancov (kapitola 14) pred ostrou prevádzkou
+- [ ] DPIA a informovanie zamestnancov (kapitola 14) pred spustením – už pred tieňovou prevádzkou
 
 ## 5. Schránka agenta
 
@@ -507,16 +507,17 @@ na poštovom serveri (PROMPT.md 2.2 – „SMTP relé odmietne iné adresy“):
   odvolania (zrušená, odvolaná alebo znova posunutá výluka sa už nepripomína), upozornenie na udalosti len kým
   niektorá z nich čaká vo fronte a plánovač s ňou nevie počítať (po potvrdení alebo zamietnutí už nie). Kým
   neprídu, zdravie ich počíta ako nedoručené – iná doručená správa ich nevybaví. Hlásenie rušňovodiča uvádza čas
-  nahlásenia („Nahlásené: …“) a aplikácia rušňovodičovi ukáže, že upozornenie sa zatiaľ nepodarilo odoslať. Nedoručené odporúčanie sa sleduje podľa odporúčania a príjemcu: po obnovení servera ho vybaví
-  doručenie toho istého odporúčania, aj keď sa medzitým posunul odchod.
-- **Server správ nie je nastavený:** v ostrej prevádzke (`VLAKY_ENV` iné ako dev, test, demo) je kanál
-  s príjemcami bez servera správ (chýba `VLAKY_SMTP_HOST`, pri `VLAKY_NOTIFY_TRANSPORT=graph` úplné nastavenie
-  `VLAKY_GRAPH_*`, pri číslach vo `VLAKY_NOTIFY_PHONES` brána `VLAKY_SMS_GATEWAY_URL` – prípadne preklep v názve
-  premennej) chybou doručenia „Chyba kanála: … server správ nie je nastavený (…) – správa je len v outboxe“, nie
-  odoslanou správou. Opakuje sa ako pri výpadku. Agent to vypíše pri štarte, hlási v každom cykle („nastavenie
-  odosielania: …“, heartbeat `/fail`), aj keď práve nič neodchádza, a v zdraví (detail `konfiguracia`). Vo vývoji,
-  v testoch a v ukážke stačí kópia v adresári outbox (stav `outbox`). Neznáme premenné `VLAKY_*` sa len uvedú
-  v detaile `konfiguracia` (chybu nespôsobia).
+  nahlásenia („Nahlásené: …“) a aplikácia rušňovodičovi ukáže, že upozornenie sa zatiaľ nepodarilo odoslať.
+  Nedoručené odporúčanie sa sleduje podľa odporúčania a príjemcu: po obnovení servera ho vybaví doručenie toho
+  istého odporúčania, aj keď sa medzitým posunul odchod.
+- **Server správ nie je nastavený:** mimo vývoja, testov a ukážky (`VLAKY_ENV` iné ako dev, test, demo – aj v
+  tieňovej prevádzke) je kanál s príjemcami bez servera správ (chýba `VLAKY_SMTP_HOST`, pri
+  `VLAKY_NOTIFY_TRANSPORT=graph` úplné nastavenie `VLAKY_GRAPH_*`, pri číslach vo `VLAKY_NOTIFY_PHONES` brána
+  `VLAKY_SMS_GATEWAY_URL` – prípadne preklep v názve premennej) chybou doručenia „Chyba kanála: … server správ
+  nie je nastavený (…) – správa je len v outboxe“, nie odoslanou správou. Opakuje sa ako pri výpadku. Agent to
+  vypíše pri štarte, hlási v každom cykle („nastavenie odosielania: …“, heartbeat `/fail`), aj keď práve nič
+  neodchádza, a v zdraví (detail `konfiguracia`). Vo vývoji, v testoch a v ukážke stačí kópia v adresári outbox
+  (stav `outbox`). Neznáme premenné `VLAKY_*` sa len uvedú v detaile `konfiguracia` (chybu nespôsobia).
 
 Sledovanie nedoručených správ: kapitola 12; postup: kapitola 13 („Upozornenia sa nedoručujú“).
 
@@ -679,7 +680,7 @@ Podrobný návod: [deploy/monitoring/README.md](../deploy/monitoring/README.md).
 | Záloha | `backup.sh` → `BACKUP_HEARTBEAT_URL` | `/fail` alebo chýba > 26 h |
 | Doručovanie upozornení | kým ostáva niečo nedoručené, agent v každom cykle hlási chybu „doručenie: N správ sa nepodarilo doručiť (kanály)“ (1 správu, 2 – 4 správy) (heartbeat `/fail`, bez adries príjemcov); `python -m vlaky health` vráti chybu (kontajner agenta je „unhealthy“, `update.sh` a `check.sh` to ohlásia) s detailom `dorucenie` – rovnako stránka `/zdravie` a denná správa (riadok „Doručovanie správ“). Nedoručené sa počítajú po správe a príjemcovi (odporúčanie podľa odporúčania – po obnovení servera zmiznú, hneď ako odporúčanie príde); denná správa uvádza „nedoručené správy: N (neúspešné pokusy o doručenie za 24 h: M)“ | `/fail` alebo kontajner agenta „unhealthy“ |
 | Schránka | `python -m vlaky health` (detail `schranka`) a `/zdravie`: čas poslednej úplnej kontroly („pred N min“). Nahromadená pošta sa dočítava po dávkach 50 e-mailov (ďalšia dávka o 5 s); „dočítava sa (…), posledná úplná kontrola pred N min“ je v poriadku, kým od poslednej úplnej kontroly neuplynulo 30 min, potom je to chyba zdravia aj cyklu „schránka: dočítava sa … (viac ako 30 min!)“ | `/fail` alebo kontajner agenta „unhealthy“ |
-| Nastavenie odosielania | detail `konfiguracia`: kanál s príjemcami bez servera správ, chýbajúci e-mail dispečerov `VLAKY_NOTIFY_EMAILS` (v tieňovej prevádzke prázdny `VLAKY_SHADOW_EMAILS`) – v ostrej prevádzke chyba zdravia aj cyklu „nastavenie odosielania: …“; neznáme premenné `VLAKY_*` a v tieňovej prevádzke chýbajúci `VLAKY_NOTIFY_EMAILS` sú len upozornenie; agent ho vypíše aj pri štarte | `/fail` |
+| Nastavenie odosielania | detail `konfiguracia`: kanál s príjemcami bez servera správ, chýbajúci e-mail dispečerov `VLAKY_NOTIFY_EMAILS` (v tieňovej prevádzke prázdny `VLAKY_SHADOW_EMAILS`) – mimo vývoja, testov a ukážky (`VLAKY_ENV`) chyba zdravia aj cyklu „nastavenie odosielania: …“; neznáme premenné `VLAKY_*` a v tieňovej prevádzke chýbajúci `VLAKY_NOTIFY_EMAILS` sú len upozornenie; agent ho vypíše aj pri štarte | `/fail` |
 | Chybné odporúčanie | odporúčanie, ktorého správu sa nedá pripraviť (chyba programu alebo neočakávané údaje), hlási každý cyklus ako „odporúčanie #N: …“ (heartbeat `/fail`, detail so stopou v `/zdravie`, komponent „Plánovanie (prepočet vlakov)“); ostatné odporúčania sa doručujú normálne | `/fail` |
 
 Externý monitoring musí bežať **mimo tohto servera** a upozorňovať aspoň dvoch ľudí.
@@ -745,7 +746,7 @@ Postup:
    a príjemca, nie počet pokusov), kanály a poslednú skutočnú chybu (správa odložená ističom „Neodoslané – kanál …
    je teraz nedostupný“ patrí k tomu istému výpadku a zdravie ju neukazuje namiesto príčiny): „Chyba kanála: …“ =
    výpadok servera alebo spojenia (krok 3); „Chyba kanála: … server správ nie je nastavený (…) – správa je len
-   v outboxe“ = v ostrej prevádzke chýba nastavenie servera správ (detail `konfiguracia`, kapitola 6.5); iný text
+   v outboxe“ = mimo vývoja a ukážky chýba nastavenie servera správ (detail `konfiguracia`, kapitola 6.5); iný text
    (napr. `SMTPRecipientsRefused`/550, HTTP 403 alebo 404 SMS brány) = odmietnutie konkrétnej správy alebo
    príjemcu (krok 4).
 3. **E-mail:** dostupnosť SMTP servera alebo relé, heslo alebo konektor (kapitola 6.1), pri Microsoft Graph
@@ -822,8 +823,8 @@ Porušenie ochrany osobných údajov sa hlási Úradu na ochranu osobných údaj
 
 ## 14. GDPR a bezpečnosť
 
-- **Posúdenie vplyvu (DPIA)** – pred ostrou prevádzkou je povinné: systém spracúva polohu rušňov
-  a pracovný čas rušňovodičov (sledovanie zamestnancov). Zapoj zodpovednú osobu (DPO); zamestnancov
+- **Posúdenie vplyvu (DPIA)** – pred spustením (už pred tieňovou prevádzkou) je povinné: systém spracúva polohu
+  rušňov a pracovný čas rušňovodičov (sledovanie zamestnancov). Zapoj zodpovednú osobu (DPO); zamestnancov
   a ich zástupcov treba vopred informovať a rozsah kontroly s nimi prerokovať (Zákonník práce, § 13 ods. 4 –
   over s právnikom). Spracovanie zapíš do záznamov o spracovateľských činnostiach.
 - **Zmluvy (DPA):** poskytovateľ VPS, poštová služba, poskytovateľ LLM, SMS brána, úložisko záloh,
