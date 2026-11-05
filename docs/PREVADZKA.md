@@ -298,9 +298,13 @@ Prevádzkové e-maily musia **naďalej chodiť aj ľuďom** – agent dostáva k
 - **nepoužívaj** preposielanie pravidlom v Outlooku/Gmaile používateľa – mení odosielateľa a overenie
   odosielateľa by zlyhalo (správy by skončili v karanténe).
 
-E-mail z distribučného zoznamu (hlavičky zoznamu, názov Bulletin, Spravodaj, Newsletter, odosielateľ prepísaný
-zoznamom) s výlukou s číslom ROV, SROV, TLG či POTR a s termínom alebo úsekom agent spracuje ako prevádzkové
-oznámenie s poznámkou „overte“ (vždy ho potvrdzuje dispečer), nie ako newsletter; pravidlá karantény sa nemenia.
+E-mail s hlavičkami distribučného zoznamu (`Precedence: bulk/list/junk`, `List-Unsubscribe`, `List-Id`), ktorý
+zároveň vyzerá ako hromadný (predmet Bulletin, Spravodaj, Newsletter či tlačová správa, alebo adresa typu
+newsletter@, spravodaj@), s výlukou s číslom ROV, SROV, TLG či POTR a s termínom alebo úsekom agent spracuje
+ako prevádzkové oznámenie s poznámkou „overte“ a vždy ho potvrdzuje dispečer (dôvod „e-mail prišiel cez
+distribučný zoznam alebo vyzerá ako hromadný – overte, že ide o prevádzkové oznámenie“; odosielateľa mohol
+prepísať zoznam) – nie ako newsletter. Prevádzková správa OR len s hlavičkami zoznamu sa spracuje normálne;
+pravidlá karantény sa nemenia.
 
 **Kópie vlastných správ agenta** (odosielateľ `VLAKY_SMTP_FROM`, pri odosielaní cez Microsoft Graph aj
 `VLAKY_GRAPH_MAILBOX`, alebo hlavička `X-Agent-Dispecer`, ktorá ostane aj po prepísaní odosielateľa distribučným
