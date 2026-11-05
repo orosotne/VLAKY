@@ -316,6 +316,13 @@ def validate_event(session: Session, kind: str, data: dict, *, confidence: float
                 data.get("from_station") and data.get("to_station")):
             res.errors.append("Zrušenie výluky neobsahuje číslo výluky ani úsek – nedá sa priradiť.")
             res.blocking.append("chýba číslo výluky aj úsek")
+        if kind == "vyluka_zrusenie" and data.get("partial") and not data.get("start") and not data.get("end"):
+            # e-mail ruší len časť výluky (dni v týždni bez dátumu, čas bez dňa, „s výnimkou …“), rušený termín sa však
+            # nepodarilo určiť – zápis bez termínu by zrušil celú výluku (nikdy); dispečer doplní rušený termín alebo
+            # upraví termín výluky v registri výluk
+            res.errors.append("Zrušenie sa týka len časti výluky a rušený termín nie je určený – celú výluku nemožno "
+                              "zrušiť. Doplňte rušený termín alebo upravte termín výluky v registri výluk.")
+            res.blocking.append("zrušenie len časti výluky bez rušeného termínu")
     elif kind == "objednavka":
         station_field("origin", True)
         station_field("destination", True)
@@ -523,7 +530,8 @@ def confirmation_needed(kind: str, data: dict, confidence: float, verdict: str, 
     s = settings()
     reasons: list[str] = []
     if confidence < s.confirm_threshold:
-        reasons.append(f"istota {confidence:.2f} je pod prahom {s.confirm_threshold:.2f}")
+        # desatinná čiarka („istota 0,50 je pod prahom 0,80“) – text je vo fronte pre dispečera
+        reasons.append(f"istota {confidence:.2f} je pod prahom {s.confirm_threshold:.2f}".replace(".", ","))
     if res.errors:
         reasons.append("validácia našla chyby")
     if any("približne" in w for w in res.warnings):
