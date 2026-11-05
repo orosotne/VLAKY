@@ -130,7 +130,8 @@ def test_zmena_odoberajuca_cas_vzdy_potvrdzuje_dispecer(cfg):
         need, reasons = confirmation_needed("vyluka_zmena", {"zamer": zamer, "start": later, "end": later}, 0.95,
                                             "ok", ValidationResult(data={}), now_utc())
         assert need and any("odobrať zatvorený čas" in r for r in reasons), (zamer, reasons)
-    # doplnenie a predĺženie čas výluky nikdy neodoberú – istá zmena ďaleko vopred sa zapíše automaticky
+    # doplnenie a predĺženie čas výluky nikdy neodoberú – validácia nepridá tento dôvod (na dispečera aj tak čakajú:
+    # register uvedie plán zápisu medzi dôvodmi potvrdenia – spracovanie._register_check)
     for zamer in ("doplnenie", "predlzenie", "predĺženie"):
         need, reasons = confirmation_needed("vyluka_zmena", {"zamer": zamer, "start": later, "end": later}, 0.95,
                                             "ok", ValidationResult(data={}), now_utc())
@@ -147,3 +148,30 @@ def test_zamer_zmeny_vo_fronte_po_slovensky():
     assert _display("zamer", "doplnenie", "text") == "doplnenie ďalšieho termínu"
     assert _display("zamer", "zmena_casu", "text") == "zmena času"
     assert FIELD_LABELS["partial"].startswith("Zrušenie len časti výluky")
+
+
+def test_zamer_zmeny_je_vyber_vo_formulari_fronty():
+    """Pole „Zámer zmeny“ je výber s názvami po slovensky (ako druh výluky); neznámy zámer z e-mailu je prvá voľba
+    s upozornením, uloží sa len známy kód a ten istý zámer inak zapísaný nie je úprava dispečera."""
+    from vlaky.web.views_prehlad import event_fields, parse_event_edits
+
+    def field(value):
+        fields = event_fields({"zamer": value, "from_station": "Kysak"}, "vyluka_zmena")
+        (f,) = [x for x in fields if x["key"] == "zamer"]
+        return f
+
+    f = field("presun")
+    assert f["kind"] == "choice" and f["value"] == "presun" and ("presun", "presun termínu") in f["options"], f
+    assert field(None)["value"] == "" and field(None)["options"][0] == ("", "— neurčený —")
+    assert field("zmena času")["value"] == "zmena_casu"
+    odd = field("iny")
+    assert odd["value"] == "iny" and odd["options"][0] == ("iny", "iny – neznámy zámer, vyberte zo zoznamu"), odd
+
+    data = {"zamer": "presun", "from_station": "Kysak"}
+    assert parse_event_edits({"f__zamer": "doplnenie"}, data, "vyluka_zmena") == ({"zamer": "doplnenie"}, {})
+    assert parse_event_edits({"f__zamer": ""}, data, "vyluka_zmena") == ({"zamer": None}, {})
+    assert parse_event_edits({"f__zamer": "presun"}, data, "vyluka_zmena") == ({}, {})
+    assert parse_event_edits({"f__zamer": "zmena_casu"}, {"zamer": "zmena času"}, "vyluka_zmena") == ({}, {})
+    assert parse_event_edits({"f__zamer": ""}, {"zamer": None}, "vyluka_zmena") == ({}, {})
+    edits, errors = parse_event_edits({"f__zamer": "posun o týždeň"}, data, "vyluka_zmena")
+    assert not edits and "neznámy zámer" in errors["zamer"], errors
