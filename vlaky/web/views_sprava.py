@@ -31,7 +31,24 @@ audit_perm = require("audit")
 # pripravenosťou vlaku) – preklep (napr. hodiny namiesto minút, 4200 namiesto 42) by vlak držal pred úsekom dni po
 # výluke a prepočet každého vlaku by prechádzal mesiace okien výluk
 BUFFER_PARAMS = ("buffer_before_closure_min", "buffer_after_closure_min")
-BUFFER_MAX_MIN = 24 * 60
+BUFFER_MAX_MIN = 24 * 60  # rovnaký limit ako v plánovači (planovac.BUFFER_MAX_MIN)
+
+
+def _buffer_warning(key: str, value) -> str:
+    """Upozornenie pri uloženej rezerve nad limitom (staršia verzia formulára dovolila až 1 000 000 min): čo s ňou robí
+    plánovač a čo treba urobiť – inak by vedúci videl len hodnotu „4200.0“ a pri uložení inej zmeny chybu."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if key not in BUFFER_PARAMS or v <= BUFFER_MAX_MIN:
+        return ""
+    label = PARAM_META.get(key, (key,))[0]
+    return (f"{label}: uložená hodnota {fmt_num(v)} min ({fmt_num(v / 60, 1)} h) je nad limitom {fmt_num(BUFFER_MAX_MIN)} "
+            f"min (24 h) – zrejme preklep zo staršej verzie formulára (napr. hodiny namiesto minút). Plánovač s ňou "
+            f"zatiaľ počíta: vlak drží pred úsekom výluky zodpovedajúco dlhšie, okná výluk ďalej ako 24 h počíta "
+            f"súhrnne (prísnejšie) a vlaky, ktorých plán také okno zasahuje, nedostanú ZELENÚ. Opravte hodnotu a uložte "
+            f"novú sadu parametrov – kým je nad limitom, formulár neuloží ani inú zmenu.")
 
 
 def _param_groups(values: dict, defaults: dict) -> list:
@@ -41,8 +58,14 @@ def _param_groups(values: dict, defaults: dict) -> list:
         groups.setdefault(group, []).append({"key": key, "label": label, "unit": unit, "value": values.get(key),
                                              "default": defaults[key], "integer": key in INT_PARAMS,
                                              "prob": key in PROB_PARAMS,
-                                             "max": BUFFER_MAX_MIN if key in BUFFER_PARAMS else None})
+                                             "max": BUFFER_MAX_MIN if key in BUFFER_PARAMS else None,
+                                             "warning": _buffer_warning(key, values.get(key))})
     return [{"name": name, "items": items} for name, items in groups.items()]
+
+
+def _saved_warnings(values: dict) -> list:
+    """Upozornenia k platnej (uloženej) sade parametrov – rezerva nad limitom formulára (_buffer_warning)."""
+    return [w for w in (_buffer_warning(k, values.get(k)) for k in BUFFER_PARAMS) if w]
 
 
 def _settings_overview() -> list:
@@ -80,7 +103,8 @@ def settings_page(request: Request, user=Depends(params_perm)):
         extra = {k: v for k, v in ((current.values or {}) if current else {}).items() if k not in defaults}
         return render(request, "nastavenia.html", {
             "groups": _param_groups(values, defaults), "current": current, "history": history, "now": now,
-            "overview": _settings_overview(), "errors": {}, "form_values": {}, "note": "", "extra": extra}, user=user)
+            "overview": _settings_overview(), "errors": {}, "form_values": {}, "note": "", "extra": extra,
+            "saved_warnings": _saved_warnings(values)}, user=user)
 
 
 @router.post("/nastavenia")
@@ -121,12 +145,14 @@ def settings_save(request: Request, user=Depends(params_perm), form=Depends(csrf
     note = reader.text("note", "Dôvod zmeny", required=True, maxlen=2000)
     with session_scope() as s:
         if not reader.ok:
-            values = {**current_params(s, now), **new_values}
+            saved = current_params(s, now)
+            values = {**saved, **new_values}
             history = list(s.scalars(select(ParameterSet).order_by(ParameterSet.valid_from.desc()).limit(20)))
             return render(request, "nastavenia.html", {
                 "groups": _param_groups(values, defaults), "current": current_param_set(s, now),
                 "history": history, "now": now, "overview": _settings_overview(), "errors": reader.errors,
-                "form_values": reader.values(), "note": note}, user=user, status_code=422)
+                "form_values": reader.values(), "note": note, "saved_warnings": _saved_warnings(saved)},
+                user=user, status_code=422)
         before = current_params(s, now)
         changes = {k: [before.get(k), v] for k, v in new_values.items() if before.get(k) != v}
         if not changes and valid_from <= now:

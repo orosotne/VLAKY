@@ -18,6 +18,13 @@ def _t(iso: str | None) -> str:
         return str(iso)
 
 
+# druhy výluk po slovensky – register výluk, fronta (web) aj odovzdávka služby
+CLOSURE_KIND = {
+    "uplna": "úplná výluka úseku", "kolaj": "výluka koľaje", "trakcne_vedenie": "vypnuté trakčné vedenie",
+    "pomala_jazda": "pomalá jazda", "obmedzenie": "obmedzenie (dĺžka, hmotnosť)", "mimoriadnost": "mimoriadnosť",
+}
+
+
 def eur(value, digits: int = 0) -> str:
     """Suma v eurách po slovensky: tisíce oddelené medzerou, desatinná čiarka („1 593 €“, „12,50 €“) – ako na
     webe. Formát Pythonu „1,593 €“ by dispečer čítal ako 1,59 €."""
@@ -127,11 +134,20 @@ def departure_line(rec: Recommendation) -> str:
     return f"Odchod: {_t(ch.get('depart'))}"
 
 
+def variant_departure_unknown(v: dict) -> bool:
+    """Termín varianty nie je známy (``do_odvolania`` – čakala by na koniec výluky do odvolania alebo by vošla do ďalšieho
+    okna výluky za koncom prehľadávaného obdobia): ani čas odchodu nie je skutočný – vlak by z neho len čakal pred
+    výlukou (napr. odchod 26.11. 04:00 vnútri výluky do odvolania na prvom úseku trasy). Texty ho neuvedú, rovnako
+    ako príchod a náklad."""
+    return bool(v.get("do_odvolania"))
+
+
 def variant_columns(rec: Recommendation, v: dict) -> tuple:
     """(čas, rozhodnutie) varianty v porovnaní variantov – rovnako pre e-mail aj web. Idúci vlak: pokračovanie bez
     čakania je „POKRAČOVAŤ“ „ihneď“ (nie VYPRAVIŤ s časom prepočtu); zvolená varianta vlaku, ktorý čaká pred
     zatvoreným cieľom dlhšie, ako siaha prehľadávané obdobie (``chosen["until_entry"]``), nemá čas odchodu (hranica
-    výpočtu nič nehovorí) – „po uvoľnení vjazdu“."""
+    výpočtu nič nehovorí) – „po uvoľnení vjazdu“; varianta, ktorej termín nie je známy (variant_departure_unknown),
+    nemá čas odchodu – „nie je známy“."""
     ch = rec.chosen or {}
     kind = v.get("kind", "")
     if ch.get("until_entry") and kind == "POČKAŤ" and v.get("depart") == ch.get("depart") and \
@@ -139,6 +155,8 @@ def variant_columns(rec: Recommendation, v: dict) -> tuple:
         return "po uvoľnení vjazdu", kind
     if is_running(rec) and kind == "VYPRAVIŤ":
         return "ihneď", "POKRAČOVAŤ"
+    if variant_departure_unknown(v):
+        return "nie je známy", kind
     return _t(v.get("depart")), kind
 
 

@@ -496,7 +496,9 @@ def test_t2_odovzdavka_a_fronta_uvadzaju_vyluku_do_odvolania(env, session):
     line = next(x for x in content.splitlines() if f"{A} – {B}" in x)
     assert "od 23.11. 08:00 do odvolania (technický koniec 23.12. 08:00)" in line, line
     assert "23.11. 08:00 – 23.12. 08:00" not in content
-    assert any("Kraľovany – Ružomberok 24.11. 08:00 – 24.11. 14:00" in x for x in content.splitlines()), content
+    # (8c) riadok výluky uvádza aj jej druh (odovzdávka – odovzdavka.closure_line)
+    assert any("Kraľovany – Ružomberok: úplná výluka úseku, 24.11. 08:00 – 24.11. 14:00" in x
+               for x in content.splitlines()), content
     session.commit()
     with TestClient(create_app(auto_evaluate=False)) as client:
         login_as(client, "dispecer")

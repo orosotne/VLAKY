@@ -77,8 +77,9 @@
       <thead><tr><th scope="col">Trasa</th><th scope="col">Odchod</th><th scope="col">Varianta</th><th scope="col">Semafor</th><th scope="col">P(včas)</th><th scope="col">Príchod P50 / P90</th><th scope="col">Náklad</th><th scope="col">Dôvody</th></tr></thead>
       <tbody>
       {% for v in plan.get("variants") %}
-        <tr><td>{{ v.get("route") }}</td><td class="nowrap">{{ v.get("depart")|t }}</td><td>{{ v.get("kind") }}</td><td>{{ m.semafor(v.get("status")) }}</td>
-            {# varianta, ktorej príchod nie je známy (výluka do odvolania, nadväzujúce okná výluk): ani náklad #}
+        {# varianta, ktorej termín nie je známy (výluka do odvolania, nadväzujúce okná výluk): bez času odchodu,
+           príchodu aj nákladu #}
+        <tr><td>{{ v.get("route") }}</td><td class="nowrap">{% if v.get("do_odvolania") %}nie je známy{% else %}{{ v.get("depart")|t }}{% endif %}</td><td>{{ v.get("kind") }}</td><td>{{ m.semafor(v.get("status")) }}</td>
             <td>{{ v.get("p_on_time")|pct }}</td><td class="nowrap">{% if v.get("do_odvolania") and not v.get("arrival_p50") %}nie je známy{% else %}{{ v.get("arrival_p50")|t }} / {{ v.get("arrival_p90")|tt }}{% endif %}</td>
             <td class="nowrap">{% if v.get("do_odvolania") or v.get("expected_cost") is none %}nie je známy{% else %}{{ v.get("expected_cost")|eur }}{% endif %}</td><td class="small">{{ (v.get("reasons") or [])|join("; ") }}</td></tr>
       {% endfor %}

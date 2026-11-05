@@ -8,6 +8,8 @@
   {% if current %}<p class="small">Platná sada #{{ current.id }} od {{ current.valid_from|tfull }} ({{ current.created_by }}){% if current.note %}: „{{ current.note }}“{% endif %}</p>{% else %}<p class="small">Platia predvolené hodnoty (zatiaľ žiadna uložená sada).</p>{% endif %}
 </div>
 {% if errors %}<div class="flash flash-chyba" role="alert">Formulár obsahuje chyby: {{ errors.values()|join(" ") }}</div>{% endif %}
+{# uložená sada zo staršej verzie formulára s hodnotou nad dnešným limitom – plánovač s ňou počíta, vedúci ju má opraviť #}
+{% for w in saved_warnings or [] %}<div class="flash flash-varovanie" role="alert">Platná sada parametrov: {{ w }}</div>{% endfor %}
 <form method="post" action="/nastavenia" class="card form-grid" novalidate>
   {{ m.csrf() }}
   {% for g in groups %}
@@ -16,11 +18,11 @@
     <div class="param-grid">
     {% for p in g["items"] %}
       {% set shown = form_values.get(p.key, p.value) %}
-      <div class="field{% if errors.get(p.key) %} has-error{% endif %}">
+      <div class="field{% if errors.get(p.key) or p.warning %} has-error{% endif %}">
         <label for="par-{{ p.key }}">{{ p.label }}{% if p.unit %} <span class="muted">[{{ p.unit }}]</span>{% endif %}</label>
-        <input id="par-{{ p.key }}" name="{{ p.key }}" type="number" value="{{ shown }}" step="{{ '1' if p.integer else ('0.01' if p.prob else 'any') }}" min="0"{% if p.prob %} max="1"{% elif p.max %} max="{{ p.max }}"{% endif %} required{% if errors.get(p.key) %} aria-invalid="true"{% endif %}>
+        <input id="par-{{ p.key }}" name="{{ p.key }}" type="number" value="{{ shown }}" step="{{ '1' if p.integer else ('0.01' if p.prob else 'any') }}" min="0"{% if p.prob %} max="1"{% elif p.max %} max="{{ p.max }}"{% endif %} required{% if errors.get(p.key) or p.warning %} aria-invalid="true"{% endif %}>
         <small class="help"><code>{{ p.key }}</code> · predvolené {{ p.default|numg }}</small>
-        {% if errors.get(p.key) %}<small class="error">{{ errors.get(p.key) }}</small>{% endif %}
+        {% if errors.get(p.key) %}<small class="error">{{ errors.get(p.key) }}</small>{% elif p.warning %}<small class="error">{{ p.warning }}</small>{% endif %}
       </div>
     {% endfor %}
     </div>

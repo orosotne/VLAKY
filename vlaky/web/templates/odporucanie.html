@@ -119,12 +119,13 @@
     {% for v in variants %}
       {% set is_chosen = chosen and v.get("route") == chosen.get("route") and v.get("depart") == chosen.get("depart") and v.get("kind") == chosen.get("kind") %}
       {# idúci vlak: pokračovanie v jazde nie je vypravenie (jeho „odchod“ je len čas prepočtu); čakanie pred vjazdom
-         do zatvoreného cieľa nemá čas odchodu – je to len hranica výpočtu, posúva sa s každým prepočtom #}
+         do zatvoreného cieľa nemá čas odchodu – je to len hranica výpočtu, posúva sa s každým prepočtom; varianta,
+         ktorej termín nie je známy (výluka do odvolania, nadväzujúce okná výluk), nemá ani čas odchodu #}
       {% set continues = running and v.get("kind") == "VYPRAVIŤ" %}
       {% set until_entry = is_chosen and chosen.get("until_entry") %}
       <tr{% if is_chosen %} class="chosen" aria-current="true"{% endif %}>
         <td>{{ v.get("route") }}{% if is_chosen %} <span class="badge {{ 'badge-ok' if v.shown_status == 'ZELENÁ' else 'badge-warn' }}">odporúčaná</span>{% endif %}</td>
-        <td class="nowrap">{% if until_entry %}po uvoľnení vjazdu{% elif continues %}v jazde{% else %}{{ v.get("depart")|t }}{% endif %}</td>
+        <td class="nowrap">{% if until_entry %}po uvoľnení vjazdu{% elif continues %}v jazde{% elif v.get("do_odvolania") %}nie je známy{% else %}{{ v.get("depart")|t }}{% endif %}</td>
         <td>{{ "POKRAČOVAŤ" if continues else v.get("kind") }}</td>
         <td>{{ m.semafor(v.shown_status) }}</td>
         <td>{{ v.get("p_on_time")|pct }}</td>
