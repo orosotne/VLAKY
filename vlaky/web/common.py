@@ -144,6 +144,7 @@ AUDIT_ACTION = {
     "vyluka_navrh_na_potvrdenie": "výluka z e-mailu čaká na potvrdenie",
     "vyluka_navrh_zlyhal": "zápis výluky z e-mailu zlyhal", "vyluka_do_odvolania_predlzena": "výluka do odvolania predĺžená",
     "vyluka_poistka_zrusenia": "poistka: zrušenie z e-mailu bez výluky v registri (môže ísť o novú výluku)",
+    "vyluka_zmena_samostatne": "potvrdený termín zapísaný ako samostatná výluka (výluku zmenila novšia udalosť)",
     "email_prijaty": "e-mail prijatý", "email_extrakcia": "udalosti z e-mailu", "email_neulozeny": "e-mail neuložený",
     "email_nahradeny_overenou_kopiou": "e-mail nahradený overenou kópiou",
     "email_message_id_kolizia": "iný e-mail s rovnakým Message-ID", "posta_cyklus": "spracovanie schránky",
