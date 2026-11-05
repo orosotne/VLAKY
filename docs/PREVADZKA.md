@@ -298,6 +298,10 @@ Prevádzkové e-maily musia **naďalej chodiť aj ľuďom** – agent dostáva k
 - **nepoužívaj** preposielanie pravidlom v Outlooku/Gmaile používateľa – mení odosielateľa a overenie
   odosielateľa by zlyhalo (správy by skončili v karanténe).
 
+E-mail z distribučného zoznamu (hlavičky zoznamu, názov Bulletin, Spravodaj, Newsletter, odosielateľ prepísaný
+zoznamom) s výlukou s číslom ROV, SROV, TLG či POTR a s termínom alebo úsekom agent spracuje ako prevádzkové
+oznámenie s poznámkou „overte“ (vždy ho potvrdzuje dispečer), nie ako newsletter; pravidlá karantény sa nemenia.
+
 **Kópie vlastných správ agenta** (odosielateľ `VLAKY_SMTP_FROM`, pri odosielaní cez Microsoft Graph aj
 `VLAKY_GRAPH_MAILBOX`, alebo hlavička `X-Agent-Dispecer`, ktorá ostane aj po prepísaní odosielateľa distribučným
 zoznamom) sa neukladajú ani nespracúvajú – v audite je len záznam `email_vlastny_preskoceny` s výsledkom overenia
@@ -770,6 +774,10 @@ Postup:
   ostáva vo fronte s upozornením a plánovač s ňou do potvrdenia nepočíta – vlaky, ktorých sa môže týkať, preto
   nedostanú ZELENÚ. Rovnaký záznam (s dôvodom) má aj odmietnutý zápis potvrdenej výluky, napr. zrušenie časti
   výluky do odvolania – udalosť ostáva vo fronte so štítkom „potvrdené – zápis zlyhal“.
+- `vyluka_poistka_zrusenia` – agent zapísal záznam „navrh“ poistky zrušenia bez cieľa: zrušenie z e-mailu nemalo
+  v registri čo zrušiť (môže ísť o nesprávne prečítané oznámenie novej výluky), preto plánovač do vybavenia udalosti
+  počíta s výlukou v úseku a čase zrušenia (`Closure.source = email_poistka`; dispečeri dostali upozornenie
+  DÔLEŽITÉ). Opakované zrušenie už zrušenej výluky či dňa poistku nevytvára.
 - `zmeny_zrusenej_vyluky_odstranene` – potvrdené zrušenie výluky odstránilo dočasné záznamy starších čakajúcich
   zmien tej istej výluky; ich potvrdenie už nič nezapíše.
 - `closure_update_conflict` – dispečer ukladal zastaraný formulár výluky (uloženie odmietnuté, výluka sa nezmenila);
