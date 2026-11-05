@@ -264,6 +264,20 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
             summary["errors"].append(f"nastavenie odosielania: {conf_text}")
     except Exception as exc:  # noqa: BLE001
         summary["errors"].append(f"kontrola nastavení: {exc!r}")
+    # rezerva pred výlukou či po nej nad limitom formulára (staršia sada parametrov): plánovač je prísnejší a vlaky
+    # s výlukou na trase nedostanú ZELENÚ – chyba každého cyklu (zdravie, heartbeat) a jedno upozornenie DÔLEŽITÉ
+    # dispečerom k platnej sade parametrov, kým ju vedúci neopraví
+    try:
+        from .zdravie import params_status
+
+        with session_scope() as s:
+            par_ok, par_text, ps_id = params_status(s)
+            if not par_ok:
+                summary["errors"].append(f"nastavenia rozhodovania: {par_text}")
+                record(s, "nastavenia", "warn", text=par_text)
+                _notify_params(s, par_text, ps_id)
+    except Exception as exc:  # noqa: BLE001
+        summary["errors"].append(f"kontrola nastavení rozhodovania: {exc!r}")
 
     # 4) heartbeat
     with session_scope() as s:
@@ -274,6 +288,25 @@ def _run_cycle(now: datetime | None, force_evaluate: bool) -> dict:
             ping_heartbeat(not summary["errors"], "; ".join(summary["errors"])[:1000])
             set_kv(s, "heartbeat", {"ts": now.isoformat()})
     return summary
+
+
+def _notify_params(session, text: str, ps_id) -> None:
+    """Jedno upozornenie DÔLEŽITÉ k platnej sade parametrov s rezervou nad limitom formulára (kľúč podľa sady – po
+    oprave a novej chybnej sade príde znova): kto ho dostal, nedostane ho druhý raz; komu sa ho nepodarilo doručiť,
+    tomu sa zopakuje s odstupom ako ostatné správy (retry_targets)."""
+    from ..notifikacie.odosielanie import retry_targets, send_internal
+
+    key = f"nastavenia:{ps_id or 0}"
+    targets = retry_targets(session, key)  # None = zatiaľ nikomu, inak len tým, ktorým neprišlo (po odstupe)
+    if targets is not None and not targets:
+        return
+    body = (f"Agent dispečer: {text[:1].upper()}{text[1:]}.\n\n"
+            f"Plánovač s uloženou hodnotou blokuje úseky výluk (vlaky drží pred výlukou či po nej zodpovedajúco dlhšie) "
+            f"a vlaky, ktorých plán zasahujú vzdialenejšie okná výluk, nedostanú ZELENÚ. Vedúci dispečer: opravte "
+            f"rezervu v Nastaveniach a uložte novú sadu parametrov.\n"
+            f"Nastavenia: {settings().public_url.rstrip('/')}/nastavenia")
+    send_internal(session, "upozornenie", "[AGENT][DÔLEŽITÉ] Nastavenia rozhodovania: rezerva nad limitom 24 h", body,
+                  "DÔLEŽITÉ", dedup_key=key, channels=["email"], only=targets)
 
 
 def propose_new_orders(now: datetime, errors: list | None = None) -> int:

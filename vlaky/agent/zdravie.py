@@ -16,7 +16,7 @@ MAILBOX_MAX_AGE_MIN = 30  # bez úspešnej (úplnej) kontroly schránky za posle
 # položky stavu agenta (health_status) po slovensky – web /zdravie aj denná správa (bez surových kľúčov)
 HEALTH_DETAIL_LABELS = {"db": "Databáza", "cyklus": "Posledný cyklus agenta",
                         "schranka": "Posledná kontrola schránky", "konfiguracia": "Nastavenie odosielania správ",
-                        "dorucenie": "Doručovanie správ", "stav": "Stav"}
+                        "nastavenia": "Nastavenia rozhodovania", "dorucenie": "Doručovanie správ", "stav": "Stav"}
 
 
 def detail_lines(detail: dict) -> list:
@@ -301,6 +301,29 @@ def config_status() -> tuple:
     return not (problems and not outbox_counts_as_sent()), "; ".join(parts) or "ok"
 
 
+def params_status(session) -> tuple:
+    """(v poriadku, popis, id platnej sady parametrov) nastavení rozhodovania: rezerva pred výlukou alebo po nej nad
+    limitom formulára 1 440 min (24 h) – uložila ju staršia verzia formulára (dovolila až 1 000 000 min, napr. hodiny
+    namiesto minút). Plánovač s ňou počíta (vlaky drží pred úsekom zodpovedajúco dlhšie, vzdialenejšie okná výluk počíta
+    súhrnne – prísnejšie), vedúci dispečer ju má opraviť v Nastaveniach."""
+    from ..models import ParameterSet
+    from ..notifikacie.texty import number
+    from ..planovanie.planovac import _BUFFER_TEXT, _buffer_excess, current_params
+
+    excess = _buffer_excess(current_params(session))
+    if not excess:
+        return True, "ok", None
+    ps = session.scalar(select(ParameterSet).where(ParameterSet.valid_from <= now_utc())
+                        .order_by(ParameterSet.valid_from.desc(), ParameterSet.id.desc()))
+    vals = " a ".join(f"{_BUFFER_TEXT.get(k, k)} {number(v)} min" for k, v in excess.items())
+    many = len(excess) > 1
+    text = (f"{'rezervy' if many else 'rezerva'} {vals} v platnej sade parametrov{f' #{ps.id}' if ps else ''} "
+            f"{'sú' if many else 'je'} nad limitom 1 440 min (24 h) – zrejme preklep zo staršej verzie formulára; "
+            f"plánovač s {'nimi' if many else 'ňou'} počíta (prísnejšie, vzdialenejšie okná výluk súhrnne), opravte "
+            f"{'ich' if many else 'ju'} v Nastaveniach")
+    return False, text, ps.id if ps else None
+
+
 def health_status(ignore_keys: tuple = ()) -> tuple:
     """(ok, detail) – DB dostupná, posledný cyklus agenta a kontrola schránky nie sú staré, správy sa doručujú,
     kanály s príjemcami majú nastavený server správ.
@@ -315,6 +338,10 @@ def health_status(ignore_keys: tuple = ()) -> tuple:
             detail["db"] = "ok"
             cycle = get_kv(s, "agent_last_cycle")
             mail = get_kv(s, "mail_last_ok")
+            try:
+                par_ok, par_text, _ps = params_status(s)
+            except Exception as exc:  # noqa: BLE001 – kontrola nastavení nesmie zastaviť kontrolu zdravia
+                par_ok, par_text = False, f"kontrola zlyhala: {exc!r}"[:300]
     except Exception as exc:  # noqa: BLE001
         return False, {"db": f"chyba: {exc!r}"}
     now = now_utc()
@@ -330,6 +357,11 @@ def health_status(ignore_keys: tuple = ()) -> tuple:
             detail["cyklus"] += " (viac ako 10 min!)"
     mail_ok, detail["schranka"] = mailbox_status(mail, now)
     ok = ok and mail_ok
+    if not par_ok:
+        # rezerva nad limitom formulára: plánovač je prísnejší a vlaky s výlukou na trase nedostanú ZELENÚ – vedúci ju
+        # má opraviť (len pri probléme, inak sa riadok neuvádza)
+        detail["nastavenia"] = par_text
+        ok = False
     try:
         conf_ok, detail["konfiguracia"] = config_status()
         ok = ok and conf_ok

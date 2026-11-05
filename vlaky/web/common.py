@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from ..agent.zdravie import HEALTH_DETAIL_LABELS
 from ..cas import ensure_utc, fmt, local, local_naive_to_utc, now_utc
 from ..config import settings
+from ..notifikacie.texty import CLOSURE_KIND  # noqa: F401  (druhy výluk – aj odovzdávka služby)
 
 log = logging.getLogger("vlaky.web")
 
@@ -69,10 +70,6 @@ TRAIN_STATUS = {
     "planovany": "plánovaný", "na_ceste_k_hranici": "na ceste k hranici", "prevzaty": "prevzatý",
     "v_jazde": "v jazde", "odstaveny": "odstavený", "odovzdany": "odovzdaný", "ukonceny": "ukončený",
     "zruseny": "zrušený",
-}
-CLOSURE_KIND = {
-    "uplna": "úplná výluka úseku", "kolaj": "výluka koľaje", "trakcne_vedenie": "vypnuté trakčné vedenie",
-    "pomala_jazda": "pomalá jazda", "obmedzenie": "obmedzenie (dĺžka, hmotnosť)", "mimoriadnost": "mimoriadnosť",
 }
 CLOSURE_STATUS = {"navrh": "návrh", "overene": "overené", "zrusene": "zrušené"}
 

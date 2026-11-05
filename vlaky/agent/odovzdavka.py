@@ -122,6 +122,50 @@ def _crew_now(session: Session, train: Train, rec, now: datetime, p, near_min: f
                       f"{_minutes(left)}{who}"), note
 
 
+def _track_part(track: str) -> str:
+    """Koľaj výluky koľaje v texte za druhom výluky: „výluka koľaje 1“, „výluka koľají 1 a 2“, „výluka oboch koľají“,
+    iný zápis z registra v zátvorke („výluka koľaje (1. TK)“); neuvedená koľaj „(koľaj neuvedená)“."""
+    import re
+
+    from ..planovanie.planovac import ALL_TRACKS, _track_numbers
+    from ..siet.graf import norm
+
+    t = " ".join((track or "").split())
+    if not t:
+        return "výluka koľaje (koľaj neuvedená)"
+    nums = _track_numbers(t)
+    if ALL_TRACKS in nums:
+        return "výluka oboch koľají" if norm(t).startswith("ob") else "výluka všetkých koľají"
+    if re.fullmatch(r"\d+", t):
+        return f"výluka koľaje {t}"
+    if re.fullmatch(r"\d+(?:\s*(?:,|a)\s*\d+)+", t):
+        return f"výluka koľají {t}"
+    return f"výluka koľaje ({t})"
+
+
+def closure_line(c: Closure) -> str:
+    """Výluka registra jedným riadkom (odovzdávka služby) – druh ako v registri výluk a vo fronte, pri výluke koľaje
+    koľaj, denné okno a obdobie: „výluka koľaje 1, denne 08:00 – 14:00, od 23.11. 08:00 do odvolania (technický koniec
+    23.12. 08:00)“, „úplná výluka úseku, 24.11. 08:00 – 24.11. 14:00“. Výluka do odvolania nemá koniec – technický
+    koniec nie je koniec výluky (agent ho posúva, kým ju ŽSR neodvolá); denná výluka nie je celé obdobie zatvorená."""
+    from ..notifikacie.texty import CLOSURE_KIND, number
+
+    kind = _track_part(c.track) if c.kind == "kolaj" else \
+        (CLOSURE_KIND.get(c.kind) or f"{c.kind} (neznámy druh – počíta sa ako úplná výluka)")
+    if c.kind == "pomala_jazda" and c.speed_kmh:
+        kind += f" (max {number(c.speed_kmh)} km/h)"
+    elif c.electric_only and c.kind != "trakcne_vedenie":
+        kind += " (len elektrická trakcia)"  # ako stĺpec Dopad v registri výluk
+    parts = [kind]
+    if c.daily_from or c.daily_to:
+        parts.append(f"denne {c.daily_from or '?'} – {c.daily_to or '?'}")
+    if c.until_revoked:
+        parts.append(f"od {fmt(c.start_utc)} do odvolania (technický koniec {fmt(c.end_utc)})")
+    else:
+        parts.append(f"{'v období ' if len(parts) > 1 else ''}{fmt(c.start_utc)} – {fmt(c.end_utc)}")
+    return ", ".join(parts)
+
+
 def _stale_advice(fresh: dict) -> str:
     """Čo robiť, keď údaje agenta nie sú čerstvé – podľa dôvodu (zdravie.data_freshness „codes“). Výpadok (agent
     nebeží, schránka sa nekontroluje) odkáže na kapitolu 12; samotné dočítavanie nahromadenej pošty nie je výpadok –
@@ -218,7 +262,7 @@ def build_report(session: Session, now: datetime | None = None, hours: int = 12)
         return f"{kind}, {'overená' if c.status == 'overene' else 'NEPOTVRDENÁ'}"
 
     lines += ["", f"Nové alebo zmenené výluky za {hours} h:"]
-    lines += [f"  - {c.from_station} – {c.to_station} {fmt(c.start_utc)} – {fmt(c.end_utc)} ({_state(c)})"
+    lines += [f"  - {c.from_station} – {c.to_station}: {closure_line(c)} ({_state(c)})"
               for c in new_closures] or ["  (žiadne)"]
     # fronta rovnako ako na webe (/fronta, počítadlo v hlavičke): čakajúce udalosti, automaticky zapísané výluky,
     # ktoré dispečer ešte neoveril, aj potvrdené udalosti so zlyhaným zápisom

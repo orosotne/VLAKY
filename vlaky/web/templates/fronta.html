@@ -207,7 +207,8 @@
       <span class="badge badge-warn">nepotvrdená</span>
       <span class="badge">istota {{ ev.confidence|pct }}</span>
     </div>
-    <p><strong>{{ c.from_station }} – {{ c.to_station }}</strong> · {{ kind_text(c.kind) }} · {{ c.start_utc|t }} – {{ c.end_utc|t }}{% if c.daily_from %} (denne {{ c.daily_from }}–{{ c.daily_to }}){% endif %}</p>
+    {# výluka do odvolania: technický koniec nie je koniec výluky (ako register výluk) #}
+    <p><strong>{{ c.from_station }} – {{ c.to_station }}</strong> · {{ kind_text(c.kind) }} · {% if c.until_revoked %}od {{ c.start_utc|t }} do odvolania <span class="small muted">(technický koniec {{ c.end_utc|t }})</span>{% else %}{{ c.start_utc|t }} – {{ c.end_utc|t }}{% endif %}{% if c.daily_from %} (denne {{ c.daily_from }}–{{ c.daily_to }}){% endif %}</p>
     {% if item.register %}
     <p class="small">Upravené v registri výluk – potvrdenie úpravy ponechá: {% for r in item.register %}{{ r.label }} {{ r.mail }} → <strong>{{ r.register }}</strong>{% if not loop.last %}; {% endif %}{% endfor %}</p>
     {% endif %}
