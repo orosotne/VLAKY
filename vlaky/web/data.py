@@ -111,8 +111,13 @@ def route_info(train: Train, compute: bool = True) -> Optional[RouteInfo]:
 
 # ---------------------------------------------------------------- výluky
 def closure_spans(c: Closure, start: datetime, end: datetime) -> list:
-    """Konkrétne časové intervaly výluky v [start, end] (rozbalí denné opakovanie v miestnom čase)."""
+    """Konkrétne časové intervaly výluky v [start, end] (rozbalí denné opakovanie v miestnom čase). Výluka do odvolania
+    platí aj po technickom konci (ako v plánovači – planovac.closure_windows): celé obdobie siaha po ``end``, denné okno
+    má skutočný denný koniec."""
     cs, ce = ensure_utc(c.start_utc), ensure_utc(c.end_utc)
+    open_end = bool(getattr(c, "until_revoked", False))
+    if open_end:
+        ce = max(ce, end)
     if ce < start or cs > end:
         return []
     if not (c.daily_from and c.daily_to):
@@ -130,7 +135,7 @@ def closure_spans(c: Closure, start: datetime, end: datetime) -> list:
         we = datetime(day.year, day.month, day.day, h2, m2, tzinfo=tz())
         if we <= ws:
             we += timedelta(days=1)
-        ws, we = max(ensure_utc(ws), cs), min(ensure_utc(we), ce)
+        ws, we = max(ensure_utc(ws), cs), (ensure_utc(we) if open_end else min(ensure_utc(we), ce))
         if we > ws and we >= start and ws <= end:
             out.append((ws, we))
         day += timedelta(days=1)
@@ -193,7 +198,9 @@ def closure_geometry(c: Closure) -> Optional[dict]:
 
 
 def closures_between(s: Session, od: datetime, do: datetime, include_cancelled: bool = False) -> list:
-    q = select(Closure).where(Closure.end_utc >= od - timedelta(days=1), Closure.start_utc <= do)
+    # výluka do odvolania platí aj po technickom konci (agent ho posúva, pri výpadku agenta môže byť už za ním)
+    q = select(Closure).where((Closure.end_utc >= od - timedelta(days=1)) | Closure.until_revoked.is_(True),
+                              Closure.start_utc <= do)
     if not include_cancelled:
         q = q.where(Closure.status != "zrusene")
     out = []
@@ -214,6 +221,8 @@ def closure_feature(c: Closure, spans: list, now: datetime) -> dict:
             "id": c.id, "druh": c.kind, "druh_text": closure_kind_text(c.kind),
             "od_stanice": c.from_station, "do_stanice": c.to_station, "trat": c.line_ref, "kolaj": c.track,
             "zaciatok": iso(c.start_utc), "koniec": iso(c.end_utc), "denne_od": c.daily_from,
+            # do odvolania: koniec v registri je len technický (agent ho posúva) – mapa ukáže „do odvolania“
+            "do_odvolania": bool(c.until_revoked),
             "denne_do": c.daily_to, "stav": c.status, "stav_text": CLOSURE_STATUS.get(c.status, c.status),
             "len_elektricka": bool(c.electric_only or c.kind == "trakcne_vedenie"), "rychlost": c.speed_kmh,
             "zdroj": c.source, "cislo": c.external_ref, "poznamka": c.note,
@@ -667,6 +676,8 @@ def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = 
                         "id": c.id, "druh": c.kind, "druh_text": closure_kind_text(c.kind),
                         "od_stanice": c.from_station, "do_stanice": c.to_station, "od": iso(nxt[0]),
                         "do": iso(nxt[1]), "aktivna": nxt[0] <= now <= nxt[1], "stav": c.status,
+                        # interval výluky do odvolania bez denného okna nemá skutočný koniec (len hranica zobrazenia)
+                        "do_odvolania": bool(c.until_revoked) and not (c.daily_from and c.daily_to),
                         "intervaly": [[iso(a), iso(b)] for a, b in spans if b >= now][:10]})
             route_closures.sort(key=lambda x: x["od"] or "")
         color = rec.color if rec is not None else None

@@ -68,7 +68,8 @@
       <dt>P(včas)</dt><dd>{{ chosen.get("p_on_time")|pct }}</dd>
       <dt>P(zadržania pred výlukou)</dt><dd>{{ chosen.get("p_hold")|pct }}</dd>
       {% if chosen.get("p_crew_relief") is not none %}<dt>P(prekročenia pracovného času)</dt><dd>{{ chosen.get("p_crew_relief")|pct }}</dd>{% endif %}
-      <dt>Príchod P50 / P90</dt><dd>{{ chosen.get("arrival_p50")|t }} / {{ chosen.get("arrival_p90")|t }}</dd>
+      {# vlak čaká, kým ŽSR výluku do odvolania neodvolá: príchod nie je známy (koniec výluky nie je známy) #}
+      <dt>Príchod P50 / P90</dt><dd>{% if chosen.get("do_odvolania") %}nie je známy – {{ chosen.get("do_odvolania") }}{% else %}{{ chosen.get("arrival_p50")|t }} / {{ chosen.get("arrival_p90")|t }}{% endif %}</dd>
       <dt>Očakávaný náklad</dt><dd>{{ chosen.get("expected_cost")|eur }}</dd>
       {% endif %}
     </dl>

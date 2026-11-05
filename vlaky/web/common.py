@@ -584,6 +584,10 @@ def render(request: Request, template: str, ctx: Optional[dict] = None, user=Non
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
+TRAIN_MAX_AHEAD_DAYS = 366   # čas vlaku (pripravenosť, odchod, termín, avízo) najviac rok dopredu – preklep v roku
+MAX_AHEAD_TEXT = {TRAIN_MAX_AHEAD_DAYS: "1 rok"}
+
+
 class FormReader:
     """Načítanie a kontrola polí formulára; chyby sa zbierajú do self.errors (pole → text)."""
 
@@ -644,8 +648,10 @@ class FormReader:
             return default if default is not None else (allowed[0] if allowed else "")
         return v
 
-    def local_dt(self, name: str, label: str, required: bool = False) -> Optional[datetime]:
-        """Miestny čas z <input type="datetime-local"> → UTC."""
+    def local_dt(self, name: str, label: str, required: bool = False,
+                 max_ahead_days: Optional[int] = None) -> Optional[datetime]:
+        """Miestny čas z <input type="datetime-local"> → UTC. ``max_ahead_days`` – najviac toľko dní od teraz (preklep
+        v roku, napr. 2072 namiesto 2027: vlak o roky dopredu nedáva zmysel a plánovač by ho zbytočne prepočítaval)."""
         v = self.raw(name)
         if not v:
             if required:
@@ -653,9 +659,14 @@ class FormReader:
             return None
         for pattern in ("%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M", "%d.%m.%Y %H:%M"):
             try:
-                return local_naive_to_utc(datetime.strptime(v, pattern))
-            except ValueError:
+                value = local_naive_to_utc(datetime.strptime(v, pattern))
+            except (ValueError, OverflowError):
                 continue
+            limit = now_utc() + timedelta(days=max_ahead_days) if max_ahead_days is not None else None
+            if limit is not None and value > limit:
+                self.errors[name] = (f"{label}: najviac {MAX_AHEAD_TEXT.get(max_ahead_days, f'{max_ahead_days} dní')} "
+                                     f"dopredu (do {fmt_date(limit)}) – skontrolujte dátum, najmä rok.")
+            return value
         self.errors[name] = f"{label}: neplatný dátum a čas."
         return None
 

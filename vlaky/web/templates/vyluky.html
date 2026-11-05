@@ -21,7 +21,7 @@
     <tr id="vyluka-{{ c.id }}"{% if row.active %} class="row-active"{% endif %}>
       <td><strong>{{ c.from_station }} – {{ c.to_station }}</strong>{% if c.line_ref %}<div class="small muted">trať {{ c.line_ref }}{% if c.track %}, koľaj {{ c.track }}{% endif %}</div>{% endif %}{% if c.external_ref %}<div class="small muted">č. {{ c.external_ref }}</div>{% endif %}</td>
       <td>{{ kind_text(c.kind) }}</td>
-      <td class="nowrap">{{ c.start_utc|t }} – {{ c.end_utc|t }}{% if row.active %} <span class="badge badge-bad">platí teraz</span>{% elif row.next %}<div class="small muted">najbližšie {{ row.next|t }}</div>{% endif %}</td>
+      <td class="nowrap">{% if c.until_revoked %}od {{ c.start_utc|t }} do odvolania <span class="small muted">(technický koniec {{ c.end_utc|t }})</span>{% else %}{{ c.start_utc|t }} – {{ c.end_utc|t }}{% endif %}{% if row.active %} <span class="badge badge-bad">platí teraz</span>{% elif row.next %}<div class="small muted">najbližšie {{ row.next|t }}</div>{% endif %}</td>
       <td>{% if c.daily_from %}{{ c.daily_from }}–{{ c.daily_to }}{% else %}—{% endif %}</td>
       <td class="small">{% if c.electric_only or c.kind == "trakcne_vedenie" %}len elektrická trakcia{% elif c.kind == "pomala_jazda" %}max {{ c.speed_kmh|num }} km/h{% else %}všetky vlaky{% endif %}</td>
       <td><span class="badge status-{{ c.status }}">{{ CLOSURE_STATUS.get(c.status, c.status) }}</span>{% if c.status == "navrh" %} <span class="badge badge-warn">nepotvrdená</span>{% endif %}{% if c.version and c.version > 1 %} <span class="muted small">v{{ c.version }}</span>{% endif %}</td>
