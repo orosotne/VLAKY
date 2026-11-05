@@ -333,16 +333,17 @@ def test_potvrdenie_neodoberie_cas_pridany_inou_udalostou_bez_upozornenia(env, s
     assert res.get("action") == "aktualizovane", res
 
 
-def test_skratenie_po_presune_neodoberie_novy_termin_bez_upozornenia(env, session):
+def test_skratenie_po_presune_neodoberie_novy_termin(env, session):
     """ROV 23.11.; čaká presun na 25.11. a skrátenie „dňa 23.11. bude 08 – 10“. Po potvrdení presunu sa skrátenie
-    výluky na 25.11. netýka – bez nového upozornenia ju nevráti na 23.11."""
+    výluky na 25.11. netýka (skrátiť sa dá len termín, ktorý výluka má) – výluku nevráti na 23.11., jeho termín je
+    ďalšia výluka (prísnejší prípad, s vysvetlením vo výsledku)."""
     _one(env, session, SUBJ, ROV1)
     move = _one(env, session, ZSUBJ, MOVE_23_25)
     short = _one(env, session, ZSUBJ, SHORT_23)
     _confirm(session, move)
     res = _confirm(session, short)
-    assert res.get("ok") is False, res
-    assert _closed(session, 2026, 11, 25, 10)
+    assert res.get("action") == "vytvorene" and "netýka" in str(res.get("note")), res
+    assert _closed(session, 2026, 11, 25, 10) and _closed(session, 2026, 11, 23, 9)
 
 
 def test_dva_presuny_za_sebou_sa_zapisu_bez_noveho_potvrdenia(env, session):

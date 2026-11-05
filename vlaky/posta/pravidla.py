@@ -5792,6 +5792,12 @@ _INTENT_MOVE = re.compile(r"\bpresuv\w*|\bpresun\w*|\bposuv\w*|\bposun\w*|\bprek
                           r"\bz[eo]?\s+(?:terminu\s+|dna\s+)?\d{1,2}\s?\.\s?\d{1,2}\.[^.;]{0,30}?\bna\s+(?:den\s+|dna\s+)?"
                           r"\d{1,2}\s?\.")
 
+# nový čas jedného dňa bez slova o presune („sa mení: dňa 23.11.2026 bude od 10:00 do 16:00“) – zmena času toho dňa,
+# nie presun výluky na ten deň (posudzuje sa až po slovách presunu: „presúva sa na 25.11., dňa 25.11. bude od …“ je
+# presun)
+_INTENT_DAY_TIME = re.compile(rf"\bdna\s+\d{{1,2}}\s?\.\s?\d{{1,2}}\s?\.(?:\s?\d{{4}})?\s+(?:\w+\s+){{0,2}}?bude\s+"
+                              rf"(?:\w+\s+){{0,2}}?od\s+(?:{_TIME_TOKEN})")
+
 
 def _intent_of(text: str, open_end: bool = False) -> Optional[str]:
     """Zámer zmeny podľa slov v texte (:data:`_INTENT_ADD` …) – None, ak ho text neuvádza.
@@ -5814,6 +5820,8 @@ def _intent_of(text: str, open_end: bool = False) -> Optional[str]:
         return "presun"
     if open_end and not short:
         return "predlzenie"           # „ROV … sa mení: od 27.11. 18:00 do odvolania“ – koniec sa otvára
+    if _INTENT_DAY_TIME.search(text):
+        return "zmena_casu"
     return None
 
 

@@ -56,3 +56,31 @@ def test_avizo_s_prichodom_daleko_od_dnes_caka_na_dispecera(session, fixed_now):
     far = {"train_number": "47250", "border": "Čadca", "eta": "2027-02-03T12:35:00+00:00"}
     vr = validate_event(session, "avizo", dict(far), confidence=0.99)
     assert vr.needs_confirmation and any("ďaleko od dnešného dňa" in r for r in vr.reasons), vr.reasons
+
+
+def test_opakovane_zrusenie_vyluky_do_odvolania_neuvadza_technicky_koniec(env, session):
+    """Výluka do odvolania, potvrdené zrušenie a to isté zrušenie znova: upozornenie fronty o opakovanom zrušení uvádza
+    „od 20.11. 08:00 do odvolania“, nie technický koniec výluky v registri."""
+    from vlaky.models import Closure
+    from vlaky.posta.spracovanie import confirm_event
+
+    subj = "ROV c. 2400/2026 Ruzomberok - Liptovsky Mikulas"
+    _mail(env, session, "ur.eml", subj, ROV_UR, utc(2026, 11, 10, 8, 2), "Tue, 10 Nov 2026 09:00:00 +0100")
+    c = session.query(Closure).one()
+    assert c.until_revoked
+    technical = f"{c.end_utc:%d.%m.}"
+    cancel = ("Dobrý deň,\n\núplná výluka v úseku Ružomberok – Liptovský Mikuláš (ROV č. 2400/2026) sa ruší.\n\n"
+              "OR Žilina\n")
+    _s, (z1,) = _mail(env, session, "z1.eml", "Zrusenie ROV c. 2400/2026", cancel, utc(2026, 11, 12, 8, 2),
+                      "Thu, 12 Nov 2026 09:00:00 +0100")
+    confirm_event(session, z1.id, "dispecer1")
+    session.commit()
+    session.refresh(c)
+    assert c.status == "zrusene", (c.status, z1.validation)
+    _s, (z2,) = _mail(env, session, "z2.eml", "Zrusenie ROV c. 2400/2026", cancel, utc(2026, 11, 13, 8, 2),
+                      "Fri, 13 Nov 2026 09:00:00 +0100")
+    texts = list((z2.validation or {}).get("warnings") or []) + list(
+        (z2.validation or {}).get("confirmation_reasons") or [])
+    mine = [t for t in texts if f"#{c.id}" in t]
+    assert mine and any("od 20.11. 08:00 do odvolania" in t for t in mine), texts
+    assert not any(technical in t for t in mine), (technical, mine)
