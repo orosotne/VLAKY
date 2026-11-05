@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -565,7 +566,8 @@ def process_email(session: Session, email: Email, *, reprocess: bool = False) ->
             data_in = _register_start(session, it.kind, it.data, email, notes)
             vr = validate_event(session, it.kind, data_in, confidence=conf, verdict=email.verdict)
             extra = _source_reasons(email, it) + ([_BULK_REASON] if bulk else [])
-            target_reasons, target_warnings = _register_check(session, it.kind, vr.data, now, email=email)
+            seen: dict = {}
+            target_reasons, target_warnings = _register_check(session, it.kind, vr.data, now, email=email, seen=seen)
             orphan = _orphan_cancel(session, it.kind, vr.data, email) if it.kind == "vyluka_zrusenie" else ""
             if orphan:
                 target_reasons.append(ORPHAN_CANCEL_REASON)
@@ -576,6 +578,8 @@ def process_email(session: Session, email: Email, *, reprocess: bool = False) ->
                           "field_source": dict(it.field_source), "unverified_fields": list(it.unverified)}
             if orphan:
                 validation[_ORPHAN_KEY] = {"why": orphan}
+            if seen:
+                validation["register_seen"] = seen
             validation["confirmation_reasons"] = reasons
             validation["warnings"] = list(vr.warnings) + [w for w in target_warnings if w not in vr.warnings]
             prepared.append(ExtractedEvent(
@@ -1065,8 +1069,9 @@ def _bulk_operational_note(email: Any) -> str:
 
 
 def _register_check(session: Session, kind: str, data: dict, now: datetime,
-                    email: Optional[Email] = None) -> tuple[list[str], list[str]]:
-    """Čo by udalosť zmenila v registri: dôvody na potvrdenie (M5, 72 h) a informácie pre dispečera."""
+                    email: Optional[Email] = None, seen: Optional[dict] = None) -> tuple[list[str], list[str]]:
+    """Čo by udalosť zmenila v registri: dôvody na potvrdenie (M5, 72 h) a informácie pre dispečera. ``seen`` – sem
+    sa zapíše výluka, ku ktorej udalosť priradila (stav, o ktorom fronta hovorí – :func:`_seen_gain`)."""
     reasons: list[str] = []
     warnings: list[str] = []
     issuer = mail_issuer(email) if email is not None else None
@@ -1075,6 +1080,8 @@ def _register_check(session: Session, kind: str, data: dict, now: datetime,
             fields, _notes = _closure_values(kind, data, now)
             target, how = _find_closure(session, None, kind, data, fields["start_utc"], loose=kind == "vyluka_zmena",
                                         issuer=issuer)
+            if seen is not None and target is not None:
+                seen.update(closure=target.id, fields=_snapshot(target, _SEEN_FIELDS))
             if target is not None and kind == "vyluka_zmena":
                 _inherit_track(fields, target)
             plan = _change_plan(session, target, fields, None, email, zamer=_intent(data)) \
@@ -1236,11 +1243,24 @@ def apply_event(session: Session, event: ExtractedEvent, actor: str = "agent") -
     event.status = "aplikovane"
     session.flush()
     if event.kind not in CLOSURE_EVENT_KINDS:
-        _drop_pending(session, event, f"Udalosť #{event.id} zapísaná ako {KIND_LABELS.get(event.kind, event.kind)}.")
+        # záznamy, ktoré udalosť práve zapísala (napr. ostávajúce časti výluky po zrušení len jej časti – majú stav
+        # pôvodnej výluky, nepotvrdená ostáva „navrh“), nie sú jej návrhom – nesmú sa zrušiť
+        _drop_pending(session, event, f"Udalosť #{event.id} zapísaná ako {KIND_LABELS.get(event.kind, event.kind)}.",
+                      keep=_written_closures(result))
     audit(session, actor, "udalost_aplikovana", "ExtractedEvent", event.id, druh=event.kind,
           popis=describe_event(event),
           vysledok={k: v for k, v in result.items() if k not in ("before", "train_before")})
     return result
+
+
+def _written_closures(result: dict) -> set[int]:
+    """Čísla záznamov výluk, ktoré zápis udalosti zapísal (výsledok :func:`apply_event`): záznam, časti rozdelenej výluky,
+    ďalšie samostatne zapísané termíny."""
+    if not isinstance(result, dict) or result.get("entity") != "Closure":
+        return set()
+    ids = {result.get("id")} | set(result.get("parts") or []) | set(result.get("added") or [])
+    ids |= {t.get("id") for t in result.get("terms") or [] if isinstance(t, dict)}
+    return {i for i in ids if isinstance(i, int)}
 
 
 def _require_confirmation(session: Session, ev: ExtractedEvent, reasons: list[str]) -> None:
@@ -1909,12 +1929,25 @@ def _section_narrowed(c: Closure, fields: dict) -> bool:
     return bool(old) and not set(new) >= set(old)
 
 
-def _removal_parts(c: Closure, fields: dict) -> tuple[bool, list[str]]:
+_FULL_KINDS = ("uplna", "mimoriadnost")       # druhy, ktoré trať uzatvárajú pre všetky vlaky
+
+
+def _kind_covers(strong: Any, weak: Any) -> bool:
+    """Druh obmedzenia ``strong`` je aspoň taký prísny ako ``weak`` (rovnaký druh; úplná výluka či mimoriadnosť
+    pokrýva každý druh). Iné dvojice (výluka koľaje a pomalá jazda, vypnuté trakčné vedenie a výluka koľaje) sa
+    porovnať nedajú."""
+    a, b = str(strong or "uplna"), str(weak or "uplna")
+    return a == b or a in _FULL_KINDS
+
+
+def _removal_parts(c: Closure, fields: dict, *, ordered: bool = False) -> tuple[bool, list[str]]:
     """(odobral by sa čas, zoznam zmiernení obmedzenia) pri zápise ``fields`` do výluky ``c``
-    (:func:`_removal_reason`)."""
+    (:func:`_removal_reason`). Druh obmedzenia: každá zmena druhu je zmiernením (automatický zápis ju nesmie urobiť
+    bez dispečera); ``ordered`` – len zmena na druh, ktorý pôvodný nepokrýva (:func:`_kind_covers`)."""
     time_lost = not _term_contained(c, fields) or (bool(c.until_revoked) and not fields.get("until_revoked"))
     softer = []
-    if str(fields.get("kind") or "uplna") != str(c.kind or "uplna"):
+    kind_new, kind_old = str(fields.get("kind") or "uplna"), str(c.kind or "uplna")
+    if kind_new != kind_old and not (ordered and _kind_covers(kind_new, kind_old)):
         softer.append(f"druh {_restriction_text(c.kind)} → {_restriction_text(fields.get('kind'))}")
     if _tracks_narrowed(c, fields):
         softer.append(f"koľaj {str(c.track or '').strip() or 'neuvedená'} → "
@@ -2035,7 +2068,7 @@ def _removed_by_newer(session: Session, target: Closure, ev: ExtractedEvent, tri
         if not isinstance(before, dict):
             return False                     # záznam založil novší zapisovateľ – staršia udalosť ho v ňom nemala
         snap = _snapshot_fields(before)
-        if snap is not None and not any(_removal_parts(trial, snap)):
+        if snap is not None and not any(_removal_parts(trial, snap, ordered=True)):
             return True
         oid = before.get("source_event_id")
     return False
@@ -2058,20 +2091,31 @@ def _keep_extra_term(session: Session, ev: ExtractedEvent, target: Closure, row:
     if cancelled:
         if row is None or row.status == "zrusene":
             return None
-        term = _term_desc(fields["start_utc"], fields["end_utc"], fields.get("daily_from"), fields.get("daily_to"))
+        mark = (ev.validation or {}).get(_CANCELLED_TARGET)
+        mark = mark if isinstance(mark, dict) and mark.get("closure") == target.id else {}
+        if mark.get("whole"):
+            return None                  # zrušenie celej výluky – zmena tej výluky nemá čo pridať
+        terms = _outside_terms(fields, mark.get("terms") or [])
+        if not terms:
+            return None                  # zrušenie pokrýva celý termín udalosti (aj s opravami dispečera)
+        term = "; ".join(_term_desc(t["start_utc"], t["end_utc"], t.get("daily_from"), t.get("daily_to"))
+                         for t in terms)
         why = (f"výluku #{target.id} zrušila novšia udalosť #{owner.id}, termín tejto udalosti ({term}) však zrušenie "
                "nepokrýva")
     else:
         trial = Closure(id=row.id if row is not None else None,
                         **{k: fields.get(k) for k in _closure_fields_of(target)})
-        time_extra, stricter = _removal_parts(trial, _closure_fields_of(target))
+        time_extra, stricter = _removal_parts(trial, _closure_fields_of(target), ordered=True)
         if not time_extra and not stricter:
             return None
         if _removed_by_newer(session, target, ev, trial):
             return None              # novšia udalosť tento čas výluke zámerne odobrala (presun, iný čas) – neobnoví sa
-        terms = _terms_outside(target, fields)
+        # o dňoch, ktoré výluka má, rozhodla novšia zmena výluky (napr. zmena toho istého dňa – čas, ktorý staršia
+        # udalosť v ten deň pridáva, novšia zmena vyvracia); opakované oznámenie či prehľad výluk (nie zmena) čas
+        # staršej udalosti nevyvracia – zapíše sa celý termín udalosti (prekrytie s výlukou nevadí)
+        terms = _terms_outside(target, fields) if owner.kind == "vyluka_zmena" else [dict(fields)]
         if not terms:
-            return None              # o dňoch udalosti rozhodla novšia udalosť (napr. zmena toho istého dňa)
+            return None              # o dňoch udalosti rozhodla novšia zmena (napr. zmena toho istého dňa)
         term = "; ".join(_term_desc(t["start_utc"], t["end_utc"], t.get("daily_from"), t.get("daily_to"))
                          for t in terms)
         what = (f"termín tejto udalosti ({term}) však výluka v registri nemá" if time_extra else
@@ -2079,10 +2123,28 @@ def _keep_extra_term(session: Session, ev: ExtractedEvent, target: Closure, row:
         why = f"výluku #{target.id} medzitým zapísala novšia udalosť #{owner.id} (aj opakované oznámenie), {what}"
     if not confirmed:
         raise NeedsConfirmation([why + " – overte, ktorý termín platí"])
+    # rovnaký termín už register má ako samostatnú výluku (napr. ten istý e-mail prišiel dvakrát – z dvoch zoznamov
+    # adries) – druhýkrát sa nezapíše
+    def settled(c: Closure) -> bool:
+        """Záznam v registri, nie návrh čakajúcej udalosti (ten môže dispečer zamietnuť)."""
+        if c.status == "overene" or not c.source_event_id:
+            return c.status in ("navrh", "overene")
+        w = session.get(ExtractedEvent, c.source_event_id)
+        return c.status == "navrh" and (w is None or w.status == "aplikovane")
+
+    live = [c for c in _active_closures(session, ev.id) if settled(c) and (row is None or c.id != row.id)]
+    same = [next((c for c in live if not _closure_changes(c, t)), None) for t in terms]
+    if all(x is not None for x in same):
+        text = (f"Potvrdené dispečerom (udalosť #{ev.id}): {why} – rovnaký termín už register má (výluka "
+                f"{', '.join('#' + str(x.id) for x in same)}), nezapísal sa znova.")
+        for x in same:
+            x.note = "\n".join(filter(None, [x.note or "", text]))
+        _drop_pending(session, ev, text, own=True, delete_own=True)
+        return {"entity": "Closure", "id": same[0].id, "action": "bez_zmeny", "status": same[0].status,
+                "matched_by": how, "before": None, "superseded_by": owner.id, "note": text}
+    terms = [t for t, x in zip(terms, same) if x is None]
     note = (f"Potvrdené dispečerom (udalosť #{ev.id}): {why} – zapísaný ako samostatná výluka (prísnejší prípad). Ak "
             f"nahrádza termín výluky #{target.id}, upravte ju v registri výluk.")
-    if cancelled:
-        terms = [fields]
     if row is None or row.status == "zrusene":
         row = Closure(status="overene", source="email", source_event_id=ev.id)
         session.add(row)
@@ -2112,6 +2174,83 @@ def _keep_extra_term(session: Session, ev: ExtractedEvent, target: Closure, row:
     if len(rows) > 1:
         out["added"] = [r.id for r in rows[1:]]
     return out
+
+
+_SEEN_FIELDS = ("kind", "from_station", "to_station", "line_ref", "track", "start_utc", "end_utc", "daily_from", "daily_to",
+                "electric_only", "speed_kmh", "external_ref", "until_revoked")
+
+
+def _seen_gain(ev: ExtractedEvent, target: Closure) -> Optional[str]:
+    """Výluka ``target`` má oproti stavu, o ktorom fronta pri udalosti hovorila (výluka pri spracovaní e-mailu –
+    ``validation.register_seen``), zatvorený čas či prísnejšie obmedzenie navyše (napr. medzitým potvrdené predĺženie
+    či iná zmena): popis jej terajšieho termínu, inak None (aj staršie udalosti bez údaja a iná výluka, než ku ktorej
+    udalosť priradila – napr. dispečer pri potvrdení opravil číslo výluky)."""
+    val = ev.validation if isinstance(ev.validation, dict) else {}
+    seen = val.get("register_seen")
+    if not isinstance(seen, dict) or seen.get("closure") != target.id:
+        return None
+    snap = _snapshot_fields(seen["fields"]) if isinstance(seen.get("fields"), dict) else None
+    if snap is None:
+        return None
+    gained, stricter = _removal_parts(target, snap, ordered=True)
+    if not gained and not stricter:
+        return None
+    return _term_desc(target.start_utc, target.end_utc, target.daily_from, target.daily_to) + \
+        (", do odvolania" if target.until_revoked else "")
+
+
+def _split_drops_time(c: Closure, plan: _Plan, fields: dict) -> bool:
+    """Rozdelenie výluky ``c`` podľa ``plan`` (nedotknuté časti a nový termín ``fields``) by jej odobralo zatvorený
+    čas (okno výluky, ktoré nepokrýva ani jedna časť ani nový termín). Okná, ktoré sa nedajú vypočítať – áno."""
+    slack = timedelta(minutes=1)
+    old = _windows(c.start_utc, c.end_utc, c.daily_from, c.daily_to)
+    specs = [(s, e, c.daily_from if keep else "", c.daily_to if keep else "") for s, e, keep in plan.parts]
+    specs.append((fields.get("start_utc"), fields.get("end_utc"), fields.get("daily_from"), fields.get("daily_to")))
+    new: list = []
+    for s, e, df, dt in specs:
+        w = _windows(s, e, df, dt)
+        if w is None:
+            return True
+        new += w
+    if old is None:
+        return True
+    merged: list = []
+    for a, b in sorted(new):
+        if merged and a <= merged[-1][1] + slack:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else:
+            merged.append((a, b))
+    return not all(any(m0 <= w0 + slack and w1 <= m1 + slack for m0, m1 in merged) for w0, w1 in old)
+
+
+def _stale_matters(ev: ExtractedEvent, target: Closure, fields: dict) -> bool:
+    """Má sa pri potvrdení kontrolovať, či výluka medzitým nezískala čas, ktorý by zápis odobral (:func:`_seen_gain`)?
+    Opakované oznámenie, týždenný prehľad, nová výluka, pomalá jazda či mimoriadnosť (zapíše sa ich termín, nie zmena):
+    áno – o čase pridanom inou udalosťou (predĺženie, doplnenie) nehovoria. Presun termínu výluky: nie – novšia zmena
+    určuje termín celej výluky (aj po staršom presune). Skrátenie či zmena času: len ak sa nový termín výluky v registri
+    vôbec nedotýka (výluku medzitým presunula iná udalosť – skrátiť sa dá len to, čo výluka má)."""
+    if ev.kind != "vyluka_zmena":
+        return True
+    if _intent(ev.data) in ("skratenie", "zmena_casu"):
+        return not _overlaps(target, fields.get("start_utc"), fields.get("end_utc"))
+    return False
+
+
+def _stale_prefix(c: Closure) -> str:
+    return f"Výluka #{c.id} {c.from_station} – {c.to_station} sa od spracovania e-mailu zmenila"
+
+
+def _refuse_stale(ev: ExtractedEvent, target: Closure, now_desc: str, what: str) -> None:
+    """Potvrdenie by výluke odobralo čas či zmiernilo obmedzenie, ktoré jej medzitým pridala iná udalosť – fronta
+    o ňom pri tejto udalosti nehovorila (upozornenie z čias spracovania e-mailu). Nezapíše sa: udalosť dostane nové
+    upozornenie so stavom výluky a dispečer ju potvrdí znova (potom sa zapíše) alebo zamietne."""
+    val = dict(ev.validation or {})
+    val["register_seen"] = {"closure": target.id, "fields": _snapshot(target, _SEEN_FIELDS)}
+    warn = (f"{_stale_prefix(target)} (teraz {now_desc}) – {what}. Skontrolujte výluku v registri výluk a udalosť "
+            "potvrďte znova (zapíše sa), alebo ju zamietnite.")
+    val["warnings"] = [w for w in (val.get("warnings") or []) if not str(w).startswith(_stale_prefix(target))] + [warn]
+    ev.validation = val
+    raise ApplyError(warn, retry=False)
 
 
 def _closure_guard(session: Session, c: Closure, now: datetime, ev_id: Optional[int]) -> list[str]:
@@ -2164,6 +2303,21 @@ def _agrees(session: Session, t: Closure, ev: ExtractedEvent, d: dict, start: da
     if ev.kind != "vyluka_zmena":
         return (_same_term(t, start) and _same_restriction(t, ev.kind, d)) or _newer_writer(session, t, ev.id)
     return True
+
+
+def _ref_siblings(session: Session, c: Closure, ev: ExtractedEvent) -> bool:
+    """Číslo výluky ``c`` má v tom istom úseku aj iná výluka rovnakého druhu (platná či zrušená, nie dočasný záznam
+    ani návrh udalosti ``ev``) – podľa čísla samotného nemožno určiť, ktorej sa udalosť týka."""
+    if not c.external_ref:
+        return False
+    q = select(Closure).where(Closure.id != c.id, Closure.proposed_change_of.is_(None),
+                              or_(Closure.source.is_(None), Closure.source != ORPHAN_SOURCE))
+    for x in session.scalars(q):
+        if x.source_event_id == ev.id or not x.external_ref or not refs_match(x.external_ref, c.external_ref):
+            continue
+        if _same_section(x, c.from_station, c.to_station) and _closure_family(x) == _closure_family(c):
+            return True
+    return False
 
 
 def _split_parts(session: Session, c: Closure) -> list[Closure]:
@@ -2240,11 +2394,31 @@ def _apply_closure(session: Session, ev: ExtractedEvent, confirmed: bool) -> dic
                     target, how = near[0], "časť rozdelenej výluky"
             else:
                 target, how = t, "navrhovaná zmena výluky"
+        elif owner is None and temp is not None and t is not None and t.status == "zrusene" and \
+                _agrees(session, t, ev, d, fields["start_utc"]):
+            # výluku, ktorej sa udalosť týka, zrušila staršia udalosť (zrušenie prišlo skôr) – udalosť sa nepriradí inej
+            # výluke s rovnakým číslom (iný termín ROV, samostatne zapísaný doplnený termín): tá by stratila svoj termín;
+            # novšia udalosť platí – jej termín je samostatná výluka
+            if not confirmed:
+                raise NeedsConfirmation([f"výluku #{t.id}, ktorej sa udalosť týka, zrušila staršia udalosť – overte, či "
+                                         "termín udalosti platí"])
+            target, how, promote = temp, "dočasný záznam", True
+            notes.append(f"Výluku #{t.id}, ktorej sa udalosť týka, medzitým zrušila staršia udalosť – termín tejto "
+                         "(novšej) udalosti zapísaný ako samostatná výluka; iné výluky s rovnakým číslom sa nemenia.")
     if target is None and own is not None and not rebind:
         target, how = own, "rovnaká udalosť"
     if target is None:
         target, how = _find_closure(session, ev.id, ev.kind, d, fields["start_utc"], loose=ev.kind == "vyluka_zmena",
                                     skip_own=True, issuer=_event_issuer(session, ev))
+        if rebind and target is not None and ev.kind == "vyluka_zmena" and \
+                not _overlaps(target, fields["start_utc"], fields["end_utc"]) and _ref_siblings(session, target, ev):
+            # zmena, ktorú pri spracovaní e-mailu nebolo možné priradiť, a výluka s rovnakým číslom, ktorej sa nový
+            # termín nedotýka, nie je nutne tá, ktorej sa zmena týka (ROV má viac termínov, niektorý zrušený či doplnený)
+            # – jej termín sa nenahradí, nový termín je samostatná výluka (prísnejší prípad)
+            notes.append(f"Zmena sa nedala jednoznačne priradiť: výluka #{target.id} s rovnakým číslom má iný termín a "
+                         "číslo má aj iná (aj zrušená) výluka – nový termín zapísaný ako samostatná výluka. Ak nahrádza "
+                         f"termín výluky #{target.id}, upravte ju v registri výluk.")
+            target, how = own, "rovnaká udalosť"
     if target is None and own is not None:
         target, how = own, "rovnaká udalosť"                       # výluka v registri nie je – návrh sa stáva záznamom
     if target is None and temp is not None and confirmed:
@@ -2270,6 +2444,10 @@ def _apply_closure(session: Session, ev: ExtractedEvent, confirmed: bool) -> dic
             raise NeedsConfirmation([plan.text])
         target = session.get(Closure, target.id, with_for_update=True, populate_existing=True) or target
         if plan.kind == "rozdelit":
+            gain = _seen_gain(ev, target)
+            if gain and _split_drops_time(target, plan, fields):
+                _refuse_stale(ev, target, gain, "potvrdenie by výluku rozdelilo a odobralo jej aj zatvorený čas, ktorý "
+                                                "medzitým pribudol (fronta o ňom pri tejto udalosti nehovorila)")
             return _split_closure(session, ev, target, plan, how, fields=fields, notes=notes + [source_line],
                                   drop=[x for x in (temp, own if placeholder else None) if x is not None])
         if plan.kind == "bez_zmeny":
@@ -2304,6 +2482,15 @@ def _apply_closure(session: Session, ev: ExtractedEvent, confirmed: bool) -> dic
     # zámok riadku (PostgreSQL): súbežná úprava v registri výluk (/vyluky) sa nestratí ani neprepíše
     target = session.get(Closure, target.id, with_for_update=True, populate_existing=True) or target
     owner = _newer_owner(session, target, ev)
+    if owner is not None and confirmed:
+        now_changes = _closure_changes(target, fields)
+        if fields.get("until_revoked") and "end_utc" in now_changes and _utc(target.end_utc) > fields["end_utc"]:
+            now_changes = [k for k in now_changes if k != "end_utc"]
+        if not now_changes:
+            # potvrdená udalosť má rovnaký obsah ako záznam novšej udalosti (napr. pôvodný ROV po rovnakom opakovanom
+            # oznámení) – výluka sa len overí; jej zapisovateľom ostáva novšia udalosť
+            return _verify_only(session, ev, target, owner, how, source_line,
+                                [x for x in (temp, own if placeholder else None) if x is not None and x is not target])
     if owner is not None:
         mine = temp if temp is not None and temp is not target else \
             (own if placeholder and own is not None and own is not target else None)
@@ -2328,6 +2515,20 @@ def _apply_closure(session: Session, ev: ExtractedEvent, confirmed: bool) -> dic
             reasons.append(removal)
         if reasons:
             raise NeedsConfirmation(reasons)
+    if confirmed and changes and not first_write and target is not own and _stale_matters(ev, target, fields):
+        # dispečer potvrdzoval podľa stavu výluky pri spracovaní e-mailu; ak jej medzitým iná udalosť pridala čas (napr.
+        # predĺženie), potvrdenie ho bez nového upozornenia neodoberie
+        gain = _seen_gain(ev, target)
+        if gain:
+            lost, softer = _removal_parts(target, fields)
+            if lost or softer:
+                new_desc = _term_desc(fields.get("start_utc"), fields.get("end_utc"), fields.get("daily_from"),
+                                      fields.get("daily_to")) + (", do odvolania" if fields.get("until_revoked") else "")
+                what = " a ".join(filter(None, [
+                    f"potvrdenie by jej odobralo zatvorený čas (nový termín {new_desc})" if lost else "",
+                    ("potvrdenie by " if not lost else "") + f"zmiernilo obmedzenie ({'; '.join(softer)})"
+                    if softer else ""]))
+                _refuse_stale(ev, target, gain, what)
     before = None if first_write else _snapshot(target, _CLOSURE_FIELDS)
     for k in changes:
         setattr(target, k, fields[k])
@@ -2368,6 +2569,28 @@ def _apply_closure(session: Session, ev: ExtractedEvent, confirmed: bool) -> dic
         result["temp_removed"] = removed
     if own_removed:
         result["own_removed"] = own_removed
+    return result
+
+
+def _verify_only(session: Session, ev: ExtractedEvent, target: Closure, owner: ExtractedEvent, how: str,
+                 source_line: str, drop: Iterable[Closure]) -> dict:
+    """Potvrdená staršia udalosť s rovnakým obsahom, aký výluka má (zapísala ho novšia udalosť ``owner``): výluka sa
+    overí, zapisovateľom ostáva novšia udalosť; dočasné záznamy udalosti sa odstránia. Zamietnutie udalosti vráti len
+    overenie (:func:`_rollback`)."""
+    before = _snapshot(target, _CLOSURE_FIELDS)
+    target.status = "overene"
+    target.note = "\n".join(filter(None, [target.note or "", f"Overené podľa udalosti #{ev.id} ({how}) – rovnaký obsah "
+                                                            f"ako záznam novšej udalosti #{owner.id}. {source_line}"]))
+    removed = []
+    for x in drop:
+        _carry_note(target, x)
+        removed.append(x.id)
+        session.delete(x)
+    session.flush()
+    result = {"entity": "Closure", "id": target.id, "action": "potvrdene", "status": target.status, "matched_by": how,
+              "before": before, "verified_only": True}
+    if removed:
+        result["temp_removed"] = removed[0]
     return result
 
 
@@ -3108,6 +3331,7 @@ def _split_closure(session: Session, ev: ExtractedEvent, c: Closure, plan: _Plan
             _carry_note(new_row, x)
             session.delete(x)
     session.flush()
+    _repin_newer_same(session, c, ev)      # novšie čakajúce oznámenie celej výluky ostáva pre plánovač
     terms = [{"id": r.id, "start": _utc(r.start_utc).isoformat(), "end": _utc(r.end_utc).isoformat(),
               "daily": f"{r.daily_from}–{r.daily_to}" if r.daily_from else "", "status": r.status,
               "part": t} for t, r in rows]
@@ -3225,6 +3449,7 @@ def _undo_split(session: Session, ev: ExtractedEvent, applied: dict) -> str:
     session.flush()
     if c.status != "zrusene":
         _repin_older_changes(session, c)
+    _recheck_same(session, {c.id} | {p.id for p in parts})
     return f"rozdelenie výluky vrátené – výluka #{c.id} má pôvodný termín"
 
 
@@ -3831,16 +4056,78 @@ def _cancelled_kept_warning(closure_id: int, ev_id: int) -> str:
             "ŽSR zrušila tiež, udalosť zamietnite).")
 
 
-def _cancel_covers(ev: ExtractedEvent, t: Closure) -> bool:
-    """Zrušenie ``ev`` pokrýva termín dočasného záznamu ``t``: zrušenie celej výluky (bez termínu) alebo termín zrušenia
-    sa s termínom záznamu prekrýva. Termín mimo zrušeného termínu (presun na iný deň, doplnenie) zrušenie nevyvracia."""
+def _cancelled_part_warning(closure_id: int, ev_id: int, rest: str) -> str:
+    return (f"Výluku #{closure_id}, ktorej sa táto zmena týka, zrušila novšia udalosť #{ev_id}; zrušenie pokrýva len časť "
+            f"termínu tejto zmeny – zvyšok ({rest}) plánovač ďalej počíta a po potvrdení sa zapíše ako samostatná výluka "
+            "(ak ho ŽSR zrušila tiež, udalosť zamietnite).")
+
+
+def _cancel_warning_prefix(closure_id: int, ev_id: Any) -> str:
+    return f"Výluku #{closure_id}, ktorej sa táto zmena týka, zrušila novšia udalosť #{ev_id}"
+
+
+def _cancel_term(ev: ExtractedEvent) -> Optional[tuple[datetime, datetime]]:
+    """Rušený termín zrušenia ``ev`` (bez konca: deň od začiatku); None – zrušenie celej výluky (bez termínu)."""
     d = ev.data if isinstance(ev.data, dict) else {}
     cs, ce = parse_utc(d.get("start")), parse_utc(d.get("end"))
-    if cs is None or t.start_utc is None or t.end_utc is None:
-        return True
+    if cs is None:
+        return None
     if ce is None or ce <= cs:
         ce = cs + timedelta(days=1)
-    return _utc(t.start_utc) < ce and _utc(t.end_utc) > cs
+    return cs, ce
+
+
+def _outside_terms(fields: dict, cancelled: Iterable[Any]) -> list[dict]:
+    """Termín ``fields`` bez rušených termínov ``cancelled`` (dvojice začiatok – koniec): zvyšné obdobia (denné okno ostáva
+    – plánovač ho oreže obdobím). [] – zrušenia pokrývajú celý termín."""
+    s, e = fields.get("start_utc"), fields.get("end_utc")
+    if s is None or e is None:
+        return [fields]
+    pieces = [(_utc(s), _utc(e))]
+    for term in cancelled:
+        try:
+            cs, ce = (parse_utc(x) if isinstance(x, str) else x for x in term)
+        except (TypeError, ValueError):
+            continue
+        if cs is None or ce is None:
+            continue
+        cs, ce = _utc(cs), _utc(ce)
+        nxt = []
+        for a, b in pieces:
+            if b <= cs or a >= ce:
+                nxt.append((a, b))
+                continue
+            if a < cs:
+                nxt.append((a, cs))
+            if b > ce:
+                nxt.append((ce, b))
+        pieces = nxt
+    out = []
+    for a, b in pieces:
+        if fields.get("daily_from") and fields.get("daily_to"):
+            wins = _windows(a, b, fields.get("daily_from"), fields.get("daily_to"))
+            if wins is not None and not wins:
+                continue                   # v zvyšku obdobia nie je ani jedno denné okno (priveľa okien – ostáva)
+        f = dict(fields)
+        f["start_utc"], f["end_utc"] = a, b
+        out.append(f)
+    return out
+
+
+def _cancel_covers(ev: ExtractedEvent, t: Closure) -> str:
+    """Ako zrušenie ``ev`` pokrýva termín dočasného záznamu ``t``: „cely“ – zrušenie celej výluky (bez termínu) alebo
+    termín zrušenia obsahuje celý termín záznamu; „cast“ – prekrýva sa len s časťou (napr. predĺženie do ďalšieho dňa,
+    doplnenie cez dva dni); „nic“ – termín záznamu leží mimo zrušeného termínu (presun na iný deň, doplnenie). Termín
+    mimo zrušeného termínu zrušenie nevyvracia."""
+    term = _cancel_term(ev)
+    if term is None or t.start_utc is None or t.end_utc is None:
+        return "cely"
+    rest = _outside_terms(_closure_fields_of(t), [term])
+    if not rest:
+        return "cely"
+    if len(rest) == 1 and rest[0]["start_utc"] == _utc(t.start_utc) and rest[0]["end_utc"] == _utc(t.end_utc):
+        return "nic"
+    return "cast"
 
 
 def _unpin_older_changes(session: Session, c: Closure, ev: ExtractedEvent) -> list[int]:
@@ -3852,15 +4139,31 @@ def _unpin_older_changes(session: Session, c: Closure, ev: ExtractedEvent) -> li
     out: list[int] = []
     rows = list(session.scalars(select(Closure).where(Closure.proposed_change_of == c.id,
                                                       Closure.status != "zrusene")))
+    term = _cancel_term(ev)
     for t in rows:
         pev = session.get(ExtractedEvent, t.source_event_id) if t.source_event_id else None
         if pev is None or pev.id >= ev.id or pev.status == "aplikovane":
             continue
-        if _cancel_covers(ev, t):
+        cover = _cancel_covers(ev, t)
+        if cover == "cely":
             session.delete(t)
             _set_pending_info(pev, None, c.id, f"výluku #{c.id} zrušila novšia udalosť #{ev.id} – dočasný záznam "
                                                "zmeny odstránený")
             warn = _cancelled_warning(c.id, ev.id)
+        elif cover == "cast":
+            # zrušenie pokrýva len časť termínu zmeny (predĺženie do ďalšieho dňa, doplnenie cez dva dni) – zvyšok zrušenie
+            # nevyvracia: dočasný záznam sa oreže na zvyšok (jeden súvislý zvyšok; inak ostáva celý – prísnejší prípad),
+            # po potvrdení sa zapíše len zvyšok (_keep_extra_term)
+            rest = _outside_terms(_closure_fields_of(t), [term] if term else [])
+            if len(rest) == 1:
+                old_end = _utc(t.end_utc)
+                t.start_utc, t.end_utc = rest[0]["start_utc"], rest[0]["end_utc"]
+                if rest[0]["end_utc"] != old_end:
+                    t.until_revoked = False          # zrušenie odrezalo koniec – zvyšok má pevný koniec
+            _set_pending_info(pev, t.id, c.id, f"výluku #{c.id} zrušila novšia udalosť #{ev.id} – zrušenie pokrýva len "
+                                               "časť termínu zmeny, dočasný záznam ostáva so zvyškom")
+            warn = _cancelled_part_warning(c.id, ev.id, "; ".join(
+                _term_desc(r["start_utc"], r["end_utc"], r.get("daily_from"), r.get("daily_to")) for r in rest))
         else:
             # termín zmeny (presun na iný deň, doplnenie) leží mimo zrušeného termínu – zrušenie ho nevyvracia,
             # plánovač s ním ďalej počíta; po potvrdení sa zapíše ako samostatná výluka (_keep_extra_term)
@@ -3869,8 +4172,12 @@ def _unpin_older_changes(session: Session, c: Closure, ev: ExtractedEvent) -> li
             warn = _cancelled_kept_warning(c.id, ev.id)
         val = dict(pev.validation or {})
         val["warnings"] = [w for w in (val.get("warnings") or [])
-                           if w not in (_cancelled_warning(c.id, ev.id), _cancelled_kept_warning(c.id, ev.id))] + [warn]
-        val[_CANCELLED_TARGET] = {"closure": c.id, "event": ev.id}
+                           if not str(w).startswith(_cancel_warning_prefix(c.id, ev.id))] + [warn]
+        prev = val.get(_CANCELLED_TARGET) if isinstance(val.get(_CANCELLED_TARGET), dict) else {}
+        terms = list(prev.get("terms") or []) if prev.get("closure") == c.id else []
+        if term is not None:
+            terms.append([term[0].isoformat(), term[1].isoformat()])
+        val[_CANCELLED_TARGET] = {"closure": c.id, "event": ev.id, "terms": terms, "whole": term is None}
         pev.validation = val
         out.append(pev.id)
     if out:
@@ -3880,28 +4187,11 @@ def _unpin_older_changes(session: Session, c: Closure, ev: ExtractedEvent) -> li
 
 
 def _repin_newer_same(session: Session, c: Closure, ev: ExtractedEvent) -> list[int]:
-    """Výluku ``c`` zmenila či zrušila udalosť ``ev``: novšie čakajúce udalosti, ktorým sa pri spracovaní e-mailu
-    nezaložil záznam „navrh“, lebo výluka ich termín už obsahovala („rovnaká výluka … už v registri je“ – napr.
+    """Výluku ``c`` zmenila, zrušila či rozdelila udalosť ``ev``: novšie čakajúce udalosti, ktorým sa pri spracovaní
+    e-mailu nezaložil záznam „navrh“, lebo výluka ich termín už obsahovala („rovnaká výluka … už v registri je“ – napr.
     opakovaný ROV do 72 h), by inak plánovaču zmizli – dostanú záznam podľa svojho termínu (novšia správa ŽSR platí,
-    kým ju dispečer nevybaví). Vráti čísla udalostí, ktorým záznam pribudol."""
-    out: list[int] = []
-    rows = list(session.scalars(select(ExtractedEvent).where(
-        ExtractedEvent.status == "navrh", ExtractedEvent.needs_confirmation.is_(True),
-        ExtractedEvent.kind.in_(CLOSURE_EVENT_KINDS), ExtractedEvent.id > ev.id)))
-    for pev in rows:
-        info = (pev.validation or {}).get("pending_closure") if isinstance(pev.validation, dict) else None
-        if not isinstance(info, dict) or info.get("id") or info.get("proposed_change_of") != c.id:
-            continue
-        own, temp = _event_closures(session, pev.id)
-        if own is not None or temp is not None:
-            continue
-        val = dict(pev.validation or {})
-        val.pop("pending_closure", None)
-        pev.validation = val
-        session.flush()
-        if _write_pending_safe(session, pev) is not None:
-            out.append(pev.id)
-    return out
+    kým ju dispečer nevybaví; :func:`_recheck_same`). Vráti čísla udalostí, ktorým záznam pribudol."""
+    return _recheck_same(session, {c.id})
 
 
 def _repin_older_changes(session: Session, c: Closure) -> list[int]:
@@ -3917,8 +4207,8 @@ def _repin_older_changes(session: Session, c: Closure) -> list[int]:
             continue
         val.pop(_CANCELLED_TARGET, None)
         val.pop("pending_closure", None)
-        gone = (_cancelled_warning(c.id, mark.get("event")), _cancelled_kept_warning(c.id, mark.get("event")))
-        val["warnings"] = [w for w in (val.get("warnings") or []) if w not in gone]
+        prefix = _cancel_warning_prefix(c.id, mark.get("event"))
+        val["warnings"] = [w for w in (val.get("warnings") or []) if not str(w).startswith(prefix)]
         pev.validation = val
         session.flush()
         _write_pending_safe(session, pev)
@@ -3927,10 +4217,104 @@ def _repin_older_changes(session: Session, c: Closure) -> list[int]:
 
 
 # ---------------------------------------------------------------------- nepotvrdené výluky (záznam „navrh“)
-def _set_pending_info(ev: ExtractedEvent, closure_id: Optional[int], target_id: Optional[int], note: str) -> None:
+def _set_pending_info(ev: ExtractedEvent, closure_id: Optional[int], target_id: Optional[int], note: str,
+                      **extra: Any) -> None:
     val = dict(ev.validation or {})
-    val["pending_closure"] = {"id": closure_id, "proposed_change_of": target_id, "note": note}
+    val["pending_closure"] = {"id": closure_id, "proposed_change_of": target_id, "note": note, **extra}
     ev.validation = val
+
+
+def _same_key(c: Closure) -> str:
+    """Otlačok termínu a obmedzenia výluky (udalosť „rovnaká výluka #c už v registri je“ – :func:`_write_pending`):
+    zmena výluky (termín, obmedzenie, zrušenie, rozdelenie, vrátenie zamietnutím) ho zmení. Technický koniec výluky do
+    odvolania sa posúva – do otlačku nepatrí."""
+    f = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in _closure_fields_of(c).items()}
+    if c.until_revoked:
+        f["end_utc"] = None
+    f["zrusena"] = c.status == "zrusene"
+    return hashlib.sha1(json.dumps(f, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()[:16]
+
+
+def _same_info(ev: ExtractedEvent) -> Optional[dict]:
+    """Údaje čakajúcej udalosti „rovnaká výluka #c už v registri je“ (bez vlastného záznamu „navrh“ – výluka jej termín
+    obsahovala), inak None. Udalosť, ktorej dočasný záznam zámerne odstránilo novšie zrušenie výluky
+    (:func:`_unpin_older_changes`), sem nepatrí."""
+    val = ev.validation if isinstance(ev.validation, dict) else {}
+    info = val.get("pending_closure")
+    if not isinstance(info, dict) or info.get("id") or not isinstance(info.get("proposed_change_of"), int):
+        return None
+    if "same_key" not in info and not str(info.get("note") or "").startswith("rovnaká výluka #"):
+        return None
+    mark = val.get(_CANCELLED_TARGET)
+    if isinstance(mark, dict) and mark.get("closure") == info["proposed_change_of"]:
+        return None
+    return info
+
+
+def _written_by_newer(session: Session, c: Closure, ev: ExtractedEvent) -> bool:
+    """Výluku ``c`` naposledy zapísala (zmenila, zrušila, rozdelila) zapísaná udalosť novšia ako ``ev`` – jej stav má
+    prednosť pred staršou čakajúcou udalosťou."""
+    oid = c.source_event_id
+    if not oid or ev.id is None or oid <= ev.id:
+        return False
+    w = session.get(ExtractedEvent, oid)
+    return w is not None and w.status != "zamietnute"      # aj udalosť, ktorá sa práve zapisuje
+
+
+def _stale_same(session: Session, ev: ExtractedEvent) -> Optional[int]:
+    """Čakajúca udalosť „rovnaká výluka #c už v registri je“, ktorej výluka #c sa odvtedy zmenila (zmena termínu či
+    obmedzenia, zrušenie, rozdelenie, vrátenie zamietnutím) a nezmenila ju novšia udalosť (tá má prednosť): plánovač
+    by o termíne udalosti nevedel (falošná ZELENÁ). Vráti číslo výluky, inak None."""
+    info = _same_info(ev)
+    if info is None:
+        return None
+    c = session.get(Closure, info["proposed_change_of"])
+    if c is not None:
+        key = info.get("same_key")
+        if key is None:
+            if c.status != "zrusene":
+                return None          # staršie údaje bez otlačku: len zrušená výluka (otlačok doplní _recheck_same)
+        elif key == _same_key(c):
+            return None
+        if _written_by_newer(session, c, ev):
+            return None
+    return info["proposed_change_of"]
+
+
+def _recheck_same(session: Session, closures: Optional[Iterable[int]] = None) -> list[int]:
+    """Čakajúce udalosti „rovnaká výluka #c už v registri je“, ktorých výluka sa odvtedy zmenila (:func:`_stale_same`),
+    dostanú záznam „navrh“ podľa svojho termínu – novšia správa ŽSR platí, kým ju dispečer nevybaví (inak by plánovaču
+    zmizli – napr. po zrušení či zmene len časti výluky, po zamietnutí zapísanej udalosti či zmene v registri výluk).
+    ``closures`` – len udalosti týchto výluk. Staršie údaje bez otlačku dostanú otlačok (alebo záznam). Vráti čísla
+    udalostí, ktorým záznam pribudol."""
+    only = set(closures) if closures is not None else None
+    out: list[int] = []
+    rows = list(session.scalars(select(ExtractedEvent).where(
+        ExtractedEvent.status == "navrh", ExtractedEvent.needs_confirmation.is_(True),
+        ExtractedEvent.kind.in_(CLOSURE_EVENT_KINDS)).order_by(ExtractedEvent.id)))
+    for pev in rows:
+        info = _same_info(pev)
+        if info is None or (only is not None and info["proposed_change_of"] not in only):
+            continue
+        if "same_key" in info:
+            if _stale_same(session, pev) is None:
+                continue
+        else:
+            c = session.get(Closure, info["proposed_change_of"])
+            if c is not None and _written_by_newer(session, c, pev):
+                continue
+        own, temp = _event_closures(session, pev.id)
+        if own is not None or temp is not None:
+            continue
+        val = dict(pev.validation or {})
+        val.pop("pending_closure", None)
+        pev.validation = val
+        session.flush()
+        if _write_pending_safe(session, pev) is not None:
+            out.append(pev.id)
+    if out:
+        session.flush()
+    return out
 
 
 # validation: stĺpce dočasného záznamu „navrh“, ktoré upravil agent (koľaj pôvodnej výluky, čas predĺženia) – nie sú
@@ -4004,7 +4388,8 @@ def _write_pending(session: Session, ev: ExtractedEvent) -> Optional[Closure]:
     _mark_adjusted(ev, mail_fields, fields)
     if row is None:
         if target is not None and not _closure_changes(target, fields):
-            _set_pending_info(ev, None, target.id, f"rovnaká výluka #{target.id} už v registri je")
+            _set_pending_info(ev, None, target.id, f"rovnaká výluka #{target.id} už v registri je",
+                              same_key=_same_key(target))
             return None
         target_id = target.id if target is not None else None
         row = Closure(status="navrh", source="email", source_event_id=ev.id, proposed_change_of=target_id, **fields)
@@ -4099,14 +4484,18 @@ def _write_pending_safe(session: Session, ev: ExtractedEvent) -> Optional[Closur
 
 
 def _drop_pending(session: Session, ev: ExtractedEvent, note: str, own: bool = True,
-                  delete_own: bool = False) -> Optional[str]:
+                  delete_own: bool = False, keep: Iterable[int] = ()) -> Optional[str]:
     """Odstráni záznamy „navrh“ nepotvrdenej udalosti: dočasný záznam zmeny zmaže, vlastný návrh zruší.
 
-    Mení len záznamy, ktoré udalosti stále patria (``source_event_id``).
+    Mení len záznamy, ktoré udalosti stále patria (``source_event_id``); záznamy ``keep`` (zapísané výsledkom udalosti)
+    nemení.
     """
     msgs = []
+    kept = set(keep)
     for c in list(session.scalars(select(Closure).where(Closure.source_event_id == ev.id,
                                                         Closure.status != "zrusene"))):
+        if c.id in kept:
+            continue
         if c.proposed_change_of is not None:
             msgs.append(f"dočasný záznam výluky #{c.id} odstránený")
             session.delete(c)
@@ -4690,6 +5079,17 @@ def _rollback(session: Session, ev: ExtractedEvent, applied: dict) -> Optional[s
     obj = session.get(model, applied.get("id"))
     if obj is None:
         return None
+    if entity == "Closure" and applied.get("verified_only"):
+        # udalosť výluku len overila (obsah zapísala novšia udalosť) – zamietnutie vráti len overenie, ak výluka
+        # odvtedy obsah nezmenila
+        snap = _snapshot_fields(before) if isinstance(before, dict) else None
+        if not isinstance(before, dict) or before.get("status") != "navrh":
+            return "udalosť výluku len overila (overená bola už predtým) – nie je čo vrátiť"
+        if obj.status == "overene" and snap is not None and not _closure_changes(obj, snap):
+            obj.status = "navrh"
+            obj.note = "\n".join(filter(None, [obj.note or "", f"Overenie podľa udalosti #{ev.id} vrátené (zamietnutá)."]))
+            return "overenie výluky vrátené"
+        return "výluka sa odvtedy zmenila – overenie ostáva, skontrolujte ju"
     if obj.source_event_id != ev.id:
         return _foreign_owner(entity, obj, ev)
     if action == "vytvorene":
@@ -4710,6 +5110,10 @@ def _rollback(session: Session, ev: ExtractedEvent, applied: dict) -> Optional[s
         if entity == "Closure" and action == "zrusene" and obj.status != "zrusene":
             session.flush()
             _repin_older_changes(session, obj)      # čakajúce zmeny výluky znova dostanú záznam pre plánovač
+        if entity == "Closure":
+            session.flush()
+            # čakajúce oznámenie, ktoré opakovalo zamietnutý stav výluky, ostáva pre plánovač (výluka ho už nemá)
+            _recheck_same(session, {obj.id} | set(applied.get("added") or []))
         if entity == "Handover":
             tb = applied.get("train_before") or {}
             tr = session.get(Train, obj.train_id)
@@ -4728,6 +5132,8 @@ def _undo_creation(session: Session, ev: ExtractedEvent, entity: str, obj: Any, 
             if extra is not None and extra.source_event_id == ev.id and extra.status != "zrusene":
                 extra.status = "zrusene"
                 extra.note = "\n".join(filter(None, [extra.note or "", f"Zamietnuté dispečerom (udalosť #{ev.id})."]))
+        session.flush()
+        _recheck_same(session, {obj.id} | set(applied.get("added") or []))
         return "výluka zrušená"
     if entity == "Path":
         _pin_standing(session, obj.train_id)
@@ -4955,6 +5361,11 @@ def _blind_reason(session: Session, ev: ExtractedEvent, with_rows: Optional[set]
     if ev.kind not in CLOSURE_EVENT_KINDS:
         return ""
     info = val.get("pending_closure") if isinstance(val.get("pending_closure"), dict) else {}
+    stale = _stale_same(session, ev)
+    if stale is not None:
+        # výluka, ktorú udalosť opakovala, sa medzitým zmenila – záznam pre plánovač doplní najbližší cyklus agenta
+        # (_recheck_same); dovtedy poistka čakajúcej udalosti
+        return (f"výluka #{stale}, ktorú e-mail opakuje, sa medzitým zmenila – termín udalosti v registri nemusí byť")
     if info.get("proposed_change_of") or info.get("bez_vplyvu"):
         # výluka je v registri, zrušila ju novšia udalosť, alebo udalosť zámerne nemá záznam a plánovač nemení
         # (napr. oznámenie o ukončení mimoriadnosti – ``pending_closure.bez_vplyvu``)
@@ -5298,6 +5709,13 @@ def _backfill_pending(session: Session, errors: list[str]) -> list[str]:
     Vráti popisy udalostí, ktorým záznam pribudol (plán sa prepočíta v tom istom cykle)."""
     written: list[str] = []
     try:
+        lock_register(session)
+        # čakajúce „rovnaké“ oznámenia, ktorých výluka sa medzitým zmenila (aj v registri výluk), dostanú záznam
+        for ev_id in _recheck_same(session):
+            ev = session.get(ExtractedEvent, ev_id)
+            if ev is not None:
+                written.append(describe_event(ev) + " – čaká na potvrdenie")
+        session.commit()
         rows = list(session.scalars(select(ExtractedEvent).where(
             ExtractedEvent.status == "navrh", ExtractedEvent.needs_confirmation.is_(True),
             ExtractedEvent.kind.in_(CLOSURE_EVENT_KINDS)).order_by(ExtractedEvent.id)))
