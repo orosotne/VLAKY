@@ -134,7 +134,9 @@ def test_fc5_v_noci_na_den_e2e(env, session):
 
 def test_fc6_predlzenie_e2e_cakajuca_poistka(env, session):
     """[FC6] Denná výluka 23. – 27.11. 08:00 – 14:00; „… sa predlžuje do 29.11.2026, denne od 08:00 do 14:00 hod.“ –
-    predĺženie bez začiatku (nie jednodňový termín 29.11.) čaká na dispečera a vlak 28.11. o 10:00 nie je ZELENÝ."""
+    predĺženie bez začiatku (nie jednodňový termín 29.11.): začiatok doplní register podľa výluky, ktorej sa týka
+    (posta.spracovanie._register_start – 23.11. 08:00), udalosť čaká na dispečera a vlak 28.11. o 10:00 nie je
+    ZELENÝ."""
     _closure(session, "Ružomberok", "Liptovský Mikuláš", loc(2026, 11, 23, 8), loc(2026, 11, 27, 14), "2609/2026",
              daily=("08:00", "14:00"))
     _mail(env, "Predĺženie výluky – ROV č. 2609/2026", "výluka Ružomberok – Liptovský Mikuláš podľa ROV č. 2609/2026 sa "
@@ -142,7 +144,8 @@ def test_fc6_predlzenie_e2e_cakajuca_poistka(env, session):
     _process(session, utc(2026, 11, 21, 8, 2))
     (ev,) = events(session)
     assert (ev.kind, ev.data.get("zamer"), _l(ev.data.get("start")), _l(ev.data.get("end"))) == \
-        ("vyluka_zmena", "predlzenie", None, "29.11. 14:00"), ev.data
+        ("vyluka_zmena", "predlzenie", "23.11. 08:00", "29.11. 14:00"), ev.data
+    assert ev.status == "navrh" and ev.needs_confirmation, (ev.status, ev.validation)
     r = _decide(session, "61061", "Ružomberok", "Liptovský Mikuláš", loc(2026, 11, 28, 10), loc(2026, 11, 28, 8))
     assert _not_green(r), r.summary
 

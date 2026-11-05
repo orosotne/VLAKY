@@ -252,12 +252,39 @@ def _direct_change_1142(env, mid: str = "zmena-1142") -> None:
                                           "Mikulas", CHANGE_1142_BODY))
 
 
-def test_p2_confirming_older_event_does_not_revert_newer_change(env, session):
-    """01 a priama zmena 1142 sú zapísané automaticky; potvrdenie staršieho 01 nesmie vrátiť koniec 16:00 na 14:00."""
+def _confirm_change_1142(env, session) -> None:
+    """Priama zmena 1142 (posun termínu) výluke odoberá zatvorený čas – agent ju nezapíše sám, čaká na dispečera
+    (do potvrdenia ostáva pôvodná výluka a nový termín má dočasný záznam); dispečer ju potvrdí."""
+    _direct_change_1142(env)
+    s = process_mailbox(session)
+    assert s["auto_applied"] == 0 and s["waiting_confirmation"] == 1, s
+    ev = events(session)[-1]
+    assert ev.kind == "vyluka_zmena" and ev.status == "navrh"
+    assert any("odobrať zatvorený čas" in r for r in ev.validation["confirmation_reasons"])
+    confirm_event(session, ev.id, "dispecer1")
+    session.commit()
+
+
+def test_p2_change_removing_closed_time_waits_for_dispatcher(env, session):
+    """Priama zmena 1142 (09:30 – 16:00 namiesto 08:00 – 14:00) by odobrala čas 08:00 – 09:30: do potvrdenia ostáva
+    pôvodná výluka a nový termín je dočasný záznam „navrh“ – plánovač počíta s oboma."""
     drop(env, "01_rov_vyluka_kolaje_poprad_lm.eml")
     process_mailbox(session)
     _direct_change_1142(env)
-    assert process_mailbox(session)["auto_applied"] == 1
+    assert process_mailbox(session)["auto_applied"] == 0
+    e1, e2 = events(session)
+    rows = sorted(active(session), key=lambda c: c.id)
+    assert [(c.source_event_id, as_utc(c.start_utc), as_utc(c.end_utc)) for c in rows] == [
+        (e1.id, utc(2026, 11, 12, 7), utc(2026, 11, 12, 13)), (e2.id, utc(2026, 11, 12, 8, 30), utc(2026, 11, 12, 15))]
+    assert rows[1].proposed_change_of == rows[0].id and e2.needs_confirmation
+
+
+def test_p2_confirming_older_event_does_not_revert_newer_change(env, session):
+    """01 je zapísaný automaticky, priamu zmenu 1142 potvrdí dispečer; potvrdenie staršieho 01 potom nesmie vrátiť
+    koniec 16:00 na 14:00."""
+    drop(env, "01_rov_vyluka_kolaje_poprad_lm.eml")
+    process_mailbox(session)
+    _confirm_change_1142(env, session)
     e1, e2 = events(session)
     (c,) = active(session)
     assert c.source_event_id == e2.id and as_utc(c.end_utc) == utc(2026, 11, 12, 15)
@@ -265,7 +292,7 @@ def test_p2_confirming_older_event_does_not_revert_newer_change(env, session):
     session.commit()
     session.refresh(c)
     assert as_utc(c.start_utc) == utc(2026, 11, 12, 8, 30) and as_utc(c.end_utc) == utc(2026, 11, 12, 15)
-    assert c.status == "navrh" and c.source_event_id == e2.id         # zmena e2 stále nepotvrdená
+    assert c.status == "overene" and c.source_event_id == e2.id
     assert e1.status == "aplikovane" and e1.validation["apply_result"]["action"] == "nahradene"
     assert e2.status == "aplikovane" and len(active(session)) == 1
 
@@ -295,8 +322,7 @@ def test_p2_rejecting_superseded_original_keeps_closure_of_newer_change(env, ses
     """Zamietnutie staršieho 01 nesmie zrušiť výluku, ktorú už vlastní novšia (platná) zmena."""
     drop(env, "01_rov_vyluka_kolaje_poprad_lm.eml")
     process_mailbox(session)
-    _direct_change_1142(env)
-    process_mailbox(session)
+    _confirm_change_1142(env, session)
     e1, e2 = events(session)
     reject_event(session, e1.id, "dispecer1", "nahradené zmenou ROV")
     session.commit()
@@ -309,13 +335,14 @@ def test_p2_rejecting_newest_change_restores_last_valid_version(env, session):
     """Dve zmeny za sebou: zamietnutie staršej zmenu nechá, zamietnutie novšej obnoví pôvodný ROV (nie zamietnutý stav)."""
     drop(env, "01_rov_vyluka_kolaje_poprad_lm.eml")
     process_mailbox(session)
-    _direct_change_1142(env)
-    process_mailbox(session)
+    _confirm_change_1142(env, session)
     drop_raw(env, "z2.eml", mail("zmena-1142-b", "Zmena ROV c. 1142/2026 - dalsi posun",
                                  CHANGE_1142_BODY.replace("od 12.11.2026 09:30 do 12.11.2026 16:00",
                                                           "od 12.11.2026 10:00 do 12.11.2026 17:00")))
     process_mailbox(session)
     e1, e2, e3 = events(session)
+    confirm_event(session, e3.id, "dispecer1")        # aj ďalší posun odoberá čas – potvrdí ho dispečer
+    session.commit()
     (c,) = active(session)
     assert c.source_event_id == e3.id and as_utc(c.end_utc) == utc(2026, 11, 12, 16)
     reject_event(session, e2.id, "dispecer1", "neplatí")

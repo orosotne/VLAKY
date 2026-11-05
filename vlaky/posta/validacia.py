@@ -525,6 +525,18 @@ def validate_event(session: Session, kind: str, data: dict, *, confidence: float
     return res
 
 
+# zámer zmeny výluky, ktorá nikdy neodoberá zatvorený čas: register nový termín pridá ako ďalšiu výluku (doplnenie)
+# alebo len posunie koniec výluky (predĺženie) – posta.spracovanie._change_plan
+ADDITIVE_INTENTS = ("doplnenie", "predlzenie")
+
+
+def change_intent(data: dict) -> str:
+    """Zámer zmeny výluky (``zamer``) v tvare registra (bez diakritiky, „zmena času“ → „zmena_casu“); "" – neuvedený."""
+    from .text import fold
+
+    return re.sub(r"[\s\-]+", "_", fold(str(data.get("zamer") or "")).strip())
+
+
 def confirmation_needed(kind: str, data: dict, confidence: float, verdict: str, res: ValidationResult,
                         now: datetime) -> tuple[bool, list[str]]:
     s = settings()
@@ -549,6 +561,13 @@ def confirmation_needed(kind: str, data: dict, confidence: float, verdict: str, 
         reasons.append(f"e-mail má verdikt {verdict}")
     if kind in ALWAYS_CONFIRM:
         reasons.append(f"{KIND_LABELS.get(kind, kind)} vždy potvrdzuje dispečer")
+    if kind == "vyluka_zmena" and change_intent(data) not in ADDITIVE_INTENTS:
+        # zmena, ktorá môže výluke odobrať zatvorený čas: presun, skrátenie, iný čas – aj zmena bez určeného zámeru,
+        # ktorú register zapíše ako presun termínu. Pri zle prečítanom termíne by pôvodný – skutočný – čas výluky
+        # ostal pre plánovač otvorený; agent ju preto nikdy nezapíše sám (ako zrušenie výluky). Do potvrdenia ostáva
+        # pôvodná výluka v registri a nový termín má dočasný záznam „navrh“ – plánovač počíta s oboma.
+        reasons.append("zmena výluky môže odobrať zatvorený čas (presun, skrátenie, zmena času alebo neurčený zámer) "
+                       "– vždy ju potvrdzuje dispečer")
     if kind == "ine":
         reasons.append("nerozpoznaný e-mail – skontrolujte originál")
     start = effective_start(kind, data)

@@ -64,7 +64,11 @@ FIELD_LABELS = {
     "eta": "Predpokladaný príchod (avízo)", "earliest_departure": "Najskorší odchod", "deadline": "Termín doručenia",
     "accept_by": "Akceptovať do", "date": "Dátum", "offer": "Ponuka trasy (treba akceptovať)",
     "until_revoked": "Do odvolania", "via": "Cez", "border_code": "Kód priechodu", "zamer": "Zámer zmeny",
+    "partial": "Zrušenie len časti výluky (termín neurčený)",
 }
+# zámer zmeny výluky (``vyluka_zmena.zamer`` z pravidiel) po slovensky – ako ho uvádza register (spracovanie)
+ZAMER_LABELS = {"presun": "presun termínu", "skratenie": "skrátenie", "zmena_casu": "zmena času",
+                "doplnenie": "doplnenie ďalšieho termínu", "predlzenie": "predĺženie"}
 _ISO_DT = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _HHMM = re.compile(r"^\d{2}:\d{2}$")
@@ -129,6 +133,8 @@ def _display(key: str, value: Any, kind: str) -> str:
         return f"{value:g}".replace(".", ",") if isinstance(value, float) else str(value)
     if key == "kind":
         return CLOSURE_KIND.get(str(value)) or PATH_KIND.get(str(value)) or f"{value} (neznámy druh – overte)"
+    if key == "zamer":
+        return ZAMER_LABELS.get(str(value), str(value))
     if key == "points" and isinstance(value, list):
         return "; ".join(_point_text(p) for p in value)
     if kind == "json":

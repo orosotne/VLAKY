@@ -115,3 +115,35 @@ def test_odkazy_na_udalost_vo_vylukach_a_po_chybe_potvrdenia_vedu_na_formular():
     assert evidencia.count('/fronta?udalost={event_id}#udalost-{event_id}') >= 2
     fronta = (root / "vlaky" / "web" / "templates" / "fronta.html").read_text(encoding="utf-8")
     assert "(a.size / 1024)|num(1)" in fronta and "|round(1) }} kB" not in fronta
+
+
+# ------------------------------------------------- posledné kolo: zmena, ktorá odoberá zatvorený čas, a zámer vo fronte
+def test_zmena_odoberajuca_cas_vzdy_potvrdzuje_dispecer(cfg):
+    from datetime import timedelta
+
+    from vlaky.cas import now_utc
+    from vlaky.posta.validacia import ValidationResult, confirmation_needed
+
+    later = (now_utc() + timedelta(days=20)).isoformat()   # ďaleko za horizontom potvrdzovania
+    # presun, skrátenie, iný čas – aj zmena bez zámeru (register ju zapíše ako presun) či s neznámym zámerom
+    for zamer in ("presun", "skratenie", "zmena_casu", "zmena času", None, "", "iny"):
+        need, reasons = confirmation_needed("vyluka_zmena", {"zamer": zamer, "start": later, "end": later}, 0.95,
+                                            "ok", ValidationResult(data={}), now_utc())
+        assert need and any("odobrať zatvorený čas" in r for r in reasons), (zamer, reasons)
+    # doplnenie a predĺženie čas výluky nikdy neodoberú – istá zmena ďaleko vopred sa zapíše automaticky
+    for zamer in ("doplnenie", "predlzenie", "predĺženie"):
+        need, reasons = confirmation_needed("vyluka_zmena", {"zamer": zamer, "start": later, "end": later}, 0.95,
+                                            "ok", ValidationResult(data={}), now_utc())
+        assert not need and not reasons, (zamer, reasons)
+    # nová výluka sa nemení
+    need, reasons = confirmation_needed("vyluka_nova", {"start": later, "end": later}, 0.95, "ok",
+                                        ValidationResult(data={}), now_utc())
+    assert not need, reasons
+
+
+def test_zamer_zmeny_vo_fronte_po_slovensky():
+    from vlaky.web.views_prehlad import FIELD_LABELS, _display
+
+    assert _display("zamer", "doplnenie", "text") == "doplnenie ďalšieho termínu"
+    assert _display("zamer", "zmena_casu", "text") == "zmena času"
+    assert FIELD_LABELS["partial"].startswith("Zrušenie len časti výluky")
