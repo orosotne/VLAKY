@@ -18,7 +18,7 @@
       {% set shown = form_values.get(p.key, p.value) %}
       <div class="field{% if errors.get(p.key) %} has-error{% endif %}">
         <label for="par-{{ p.key }}">{{ p.label }}{% if p.unit %} <span class="muted">[{{ p.unit }}]</span>{% endif %}</label>
-        <input id="par-{{ p.key }}" name="{{ p.key }}" type="number" value="{{ shown }}" step="{{ '1' if p.integer else ('0.01' if p.prob else 'any') }}" min="0"{% if p.prob %} max="1"{% endif %} required{% if errors.get(p.key) %} aria-invalid="true"{% endif %}>
+        <input id="par-{{ p.key }}" name="{{ p.key }}" type="number" value="{{ shown }}" step="{{ '1' if p.integer else ('0.01' if p.prob else 'any') }}" min="0"{% if p.prob %} max="1"{% elif p.max %} max="{{ p.max }}"{% endif %} required{% if errors.get(p.key) %} aria-invalid="true"{% endif %}>
         <small class="help"><code>{{ p.key }}</code> · predvolené {{ p.default|numg }}</small>
         {% if errors.get(p.key) %}<small class="error">{{ errors.get(p.key) }}</small>{% endif %}
       </div>

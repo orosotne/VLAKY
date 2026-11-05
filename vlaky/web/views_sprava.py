@@ -27,13 +27,21 @@ audit_perm = require("audit")
 
 
 # ================================================================ NASTAVENIA (M14)
+# rezerva pred výlukou a po nej: najviac 24 h. Plánovač hľadá okná výluk podľa nej (pohľad späť, okná pred
+# pripravenosťou vlaku) – preklep (napr. hodiny namiesto minút, 4200 namiesto 42) by vlak držal pred úsekom dni po
+# výluke a prepočet každého vlaku by prechádzal mesiace okien výluk
+BUFFER_PARAMS = ("buffer_before_closure_min", "buffer_after_closure_min")
+BUFFER_MAX_MIN = 24 * 60
+
+
 def _param_groups(values: dict, defaults: dict) -> list:
     groups: dict = {}
     for key in defaults:
         label, unit, group = PARAM_META.get(key, (key, "", "Ostatné"))
         groups.setdefault(group, []).append({"key": key, "label": label, "unit": unit, "value": values.get(key),
                                              "default": defaults[key], "integer": key in INT_PARAMS,
-                                             "prob": key in PROB_PARAMS})
+                                             "prob": key in PROB_PARAMS,
+                                             "max": BUFFER_MAX_MIN if key in BUFFER_PARAMS else None})
     return [{"name": name, "items": items} for name, items in groups.items()]
 
 
@@ -90,6 +98,12 @@ def settings_save(request: Request, user=Depends(params_perm), form=Depends(csrf
             v = reader.number(key, label, required=True, minimum=0, maximum=2 ** 31 - 1, integer=True)
         elif key == "crew_max_duty_min":
             v = reader.number(key, label, required=True, minimum=60, maximum=24 * 60)
+        elif key in BUFFER_PARAMS:
+            v = reader.number(key, label, required=True, minimum=0, maximum=BUFFER_MAX_MIN)
+            if v is not None and v > BUFFER_MAX_MIN:
+                reader.errors[key] = (f"{label}: najviac {fmt_num(BUFFER_MAX_MIN)} min (24 h) – rezerva sa zadáva "
+                                      f"v minútach; dlhšia rezerva by vlak držala pred úsekom viac ako deň pred výlukou "
+                                      f"či po nej (skontrolujte, či nejde o preklep).")
         else:
             v = reader.number(key, label, required=True, minimum=0, maximum=1_000_000)
         if v is not None:

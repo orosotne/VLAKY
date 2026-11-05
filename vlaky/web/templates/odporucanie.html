@@ -70,7 +70,8 @@
       {% if chosen.get("p_crew_relief") is not none %}<dt>P(prekročenia pracovného času)</dt><dd>{{ chosen.get("p_crew_relief")|pct }}</dd>{% endif %}
       {# vlak čaká, kým ŽSR výluku do odvolania neodvolá: príchod nie je známy (koniec výluky nie je známy) #}
       <dt>Príchod P50 / P90</dt><dd>{% if chosen.get("do_odvolania") %}nie je známy – {{ chosen.get("do_odvolania") }}{% else %}{{ chosen.get("arrival_p50")|t }} / {{ chosen.get("arrival_p90")|t }}{% endif %}</dd>
-      <dt>Očakávaný náklad</dt><dd>{{ chosen.get("expected_cost")|eur }}</dd>
+      {# náklad je vypočítaný z príchodu – pri neznámom príchode nie je známy ani on #}
+      <dt>Očakávaný náklad</dt><dd>{% if chosen.get("do_odvolania") or chosen.get("expected_cost") is none %}nie je známy{% else %}{{ chosen.get("expected_cost")|eur }}{% endif %}</dd>
       {% endif %}
     </dl>
   </section>
@@ -128,9 +129,11 @@
         <td>{{ m.semafor(v.shown_status) }}</td>
         <td>{{ v.get("p_on_time")|pct }}</td>
         <td>{{ v.get("p_hold")|pct }}</td>
-        <td class="nowrap">{{ v.get("arrival_p50")|t }}</td>
-        <td class="nowrap">{{ v.get("arrival_p90")|t }}</td>
-        <td class="nowrap">{{ v.get("expected_cost")|eur }}</td>
+        {# varianta, ktorej príchod nie je známy (výluka do odvolania, nadväzujúce okná výluk): ani náklad #}
+        {% set unknown = v.get("do_odvolania") %}
+        <td class="nowrap">{% if v.get("arrival_p50") %}{{ v.get("arrival_p50")|t }}{% elif unknown %}nie je známy{% else %}—{% endif %}</td>
+        <td class="nowrap">{% if v.get("arrival_p90") %}{{ v.get("arrival_p90")|t }}{% elif unknown %}nie je známy{% else %}—{% endif %}</td>
+        <td class="nowrap">{% if unknown or v.get("expected_cost") is none %}nie je známy{% else %}{{ v.get("expected_cost")|eur }}{% endif %}</td>
         <td>{{ "áno" if v.get("needs_new_path") else "nie" }}</td>
         <td class="small">{{ (v.get("reasons") or [])|join("; ") }}</td>
       </tr>

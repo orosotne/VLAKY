@@ -217,8 +217,15 @@ def build_report(session: Session, now: datetime | None = None, hours: int = 12)
         kind = "nová" if created >= since else f"zmenená (verzia {c.version})"
         return f"{kind}, {'overená' if c.status == 'overene' else 'NEPOTVRDENÁ'}"
 
+    def _term(c) -> str:
+        """Termín výluky ako v registri výluk: výluka do odvolania „od … do odvolania (technický koniec …)“ – technický
+        koniec nie je koniec výluky (agent ho posúva, kým ju ŽSR neodvolá)."""
+        if c.until_revoked:
+            return f"od {fmt(c.start_utc)} do odvolania (technický koniec {fmt(c.end_utc)})"
+        return f"{fmt(c.start_utc)} – {fmt(c.end_utc)}"
+
     lines += ["", f"Nové alebo zmenené výluky za {hours} h:"]
-    lines += [f"  - {c.from_station} – {c.to_station} {fmt(c.start_utc)} – {fmt(c.end_utc)} ({_state(c)})"
+    lines += [f"  - {c.from_station} – {c.to_station} {_term(c)} ({_state(c)})"
               for c in new_closures] or ["  (žiadne)"]
     # fronta rovnako ako na webe (/fronta, počítadlo v hlavičke): čakajúce udalosti, automaticky zapísané výluky,
     # ktoré dispečer ešte neoveril, aj potvrdené udalosti so zlyhaným zápisom
