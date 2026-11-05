@@ -1969,6 +1969,55 @@ def _snapshot_fields(snap: dict) -> Optional[dict]:
     return out
 
 
+def _day_pieces(start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
+    """Súvislý čas rozdelený na kusy po miestnych dňoch (polnoc miestneho času)."""
+    out, s = [], start
+    while s < end:
+        nxt = _utc(_local_at(local(s).date() + timedelta(days=1), (0, 0)))
+        e = min(end, nxt)
+        out.append((s, e))
+        s = e
+    return out
+
+
+def _term_days(start: Any, end: Any, daily_from: Any, daily_to: Any) -> tuple[list, set]:
+    """(kusy času, miestne dni): denná výluka po oknách (deň = deň začiatku okna), súvislá po dňoch."""
+    if start is None or end is None:
+        return [], set()
+    s, e = _utc(start), _utc(end)
+    wins = _windows(s, e, daily_from, daily_to) if (daily_from and daily_to) else None
+    pieces = wins if wins is not None else _day_pieces(s, e)
+    return pieces, {local(p[0]).date() for p in pieces}
+
+
+def _terms_outside(target: Closure, fields: dict) -> list[dict]:
+    """Termíny z ``fields`` v dňoch, ktoré výluka ``target`` nemá (po súvislých úsekoch dní): o dňoch výluky rozhodla
+    jej novšia udalosť (aj o čase, ktorý ten deň predtým nemal – napr. novšia zmena toho istého dňa), iné dni sú
+    čas, ktorý staršia udalosť pridáva (presun na iný deň, doplnenie, predĺžený deň)."""
+    _tp, tdays = _term_days(target.start_utc, target.end_utc, target.daily_from, target.daily_to)
+    daily = bool(fields.get("daily_from") and fields.get("daily_to"))
+    pieces, _days = _term_days(fields.get("start_utc"), fields.get("end_utc"), fields.get("daily_from") if daily
+                               else "", fields.get("daily_to") if daily else "")
+    kept = [p for p in pieces if local(p[0]).date() not in tdays]
+    runs: list[list] = []
+    for p in kept:
+        prev = runs[-1][-1] if runs else None
+        joined = prev is not None and ((not daily and p[0] <= prev[1]) or
+                                       (daily and local(p[0]).date() == local(prev[0]).date() + timedelta(days=1)))
+        if joined:
+            runs[-1].append(p)
+        else:
+            runs.append([p])
+    out = []
+    for run in runs:
+        f = dict(fields)
+        f["start_utc"], f["end_utc"] = run[0][0], run[-1][1]
+        if not daily:
+            f["daily_from"] = f["daily_to"] = ""
+        out.append(f)
+    return out
+
+
 def _removed_by_newer(session: Session, target: Closure, ev: ExtractedEvent, trial: Closure) -> bool:
     """Termín ``trial`` staršej udalosti ``ev`` výluka ``target`` už mala a odobrala jej ho novšia udalosť (napr.
     pôvodný ROV a potom potvrdený presun či zmena času) – staršia udalosť ho neobnoví. Prechádza zapisovateľov výluky
@@ -1980,6 +2029,9 @@ def _removed_by_newer(session: Session, target: Closure, ev: ExtractedEvent, tri
         applied = (writer.validation or {}).get("applied") if writer is not None and \
             isinstance(writer.validation, dict) else None
         before = applied.get("before") if isinstance(applied, dict) else None
+        if isinstance(before, list):         # rozdelenie výluky: snímka pôvodného záznamu (podľa čísla, inak prvá)
+            before = next((b for b in before if isinstance(b, dict) and b.get("id") == target.id),
+                          next((b for b in before if isinstance(b, dict)), None))
         if not isinstance(before, dict):
             return False                     # záznam založil novší zapisovateľ – staršia udalosť ho v ňom nemala
         snap = _snapshot_fields(before)
@@ -2017,7 +2069,11 @@ def _keep_extra_term(session: Session, ev: ExtractedEvent, target: Closure, row:
             return None
         if _removed_by_newer(session, target, ev, trial):
             return None              # novšia udalosť tento čas výluke zámerne odobrala (presun, iný čas) – neobnoví sa
-        term = _term_desc(trial.start_utc, trial.end_utc, trial.daily_from, trial.daily_to)
+        terms = _terms_outside(target, fields)
+        if not terms:
+            return None              # o dňoch udalosti rozhodla novšia udalosť (napr. zmena toho istého dňa)
+        term = "; ".join(_term_desc(t["start_utc"], t["end_utc"], t.get("daily_from"), t.get("daily_to"))
+                         for t in terms)
         what = (f"termín tejto udalosti ({term}) však výluka v registri nemá" if time_extra else
                 f"výluka v registri však má miernejšie obmedzenie ako táto udalosť ({'; '.join(stricter)})")
         why = f"výluku #{target.id} medzitým zapísala novšia udalosť #{owner.id} (aj opakované oznámenie), {what}"
@@ -2025,6 +2081,8 @@ def _keep_extra_term(session: Session, ev: ExtractedEvent, target: Closure, row:
         raise NeedsConfirmation([why + " – overte, ktorý termín platí"])
     note = (f"Potvrdené dispečerom (udalosť #{ev.id}): {why} – zapísaný ako samostatná výluka (prísnejší prípad). Ak "
             f"nahrádza termín výluky #{target.id}, upravte ju v registri výluk.")
+    if cancelled:
+        terms = [fields]
     if row is None or row.status == "zrusene":
         row = Closure(status="overene", source="email", source_event_id=ev.id)
         session.add(row)
@@ -2032,18 +2090,28 @@ def _keep_extra_term(session: Session, ev: ExtractedEvent, target: Closure, row:
     else:
         keep = [ln for ln in (row.note or "").splitlines()
                 if ln.strip() and not ln.startswith("NÁVRH – čaká na potvrdenie")]
-    for k, v in fields.items():
-        setattr(row, k, v)
-    row.proposed_change_of = None
-    row.status = "overene"
-    row.source = "email"
-    row.source_event_id = ev.id
-    row.note = "\n".join(keep + [note])
+    rows = [row]
+    for t in terms[1:]:
+        extra = Closure(status="overene", source="email", source_event_id=ev.id)
+        session.add(extra)
+        rows.append(extra)
+    for r, t in zip(rows, terms):
+        for k, v in t.items():
+            setattr(r, k, v)
+        r.proposed_change_of = None
+        r.status = "overene"
+        r.source = "email"
+        r.source_event_id = ev.id
+        r.note = "\n".join((keep if r is row else []) + [note])
     session.flush()
-    audit(session, "agent", "vyluka_zmena_samostatne", "Closure", row.id, udalost=ev.id, vyluka=target.id,
-          novsia_udalost=owner.id)
-    return {"entity": "Closure", "id": row.id, "action": "vytvorene", "status": row.status, "matched_by": how,
-            "before": None, "superseded_by": owner.id, "note": note}
+    for r in rows:
+        audit(session, "agent", "vyluka_zmena_samostatne", "Closure", r.id, udalost=ev.id, vyluka=target.id,
+              novsia_udalost=owner.id)
+    out = {"entity": "Closure", "id": row.id, "action": "vytvorene", "status": row.status, "matched_by": how,
+           "before": None, "superseded_by": owner.id, "note": note}
+    if len(rows) > 1:
+        out["added"] = [r.id for r in rows[1:]]
+    return out
 
 
 def _closure_guard(session: Session, c: Closure, now: datetime, ev_id: Optional[int]) -> list[str]:
@@ -4655,6 +4723,11 @@ def _undo_creation(session: Session, ev: ExtractedEvent, entity: str, obj: Any, 
     if entity == "Closure":
         obj.status = "zrusene"
         obj.note = "\n".join(filter(None, [obj.note or "", f"Zamietnuté dispečerom (udalosť #{ev.id})."]))
+        # ďalšie termíny tej istej udalosti zapísané ako samostatné výluky (_keep_extra_term) – ak jej ešte patria
+        for extra in (session.get(Closure, i) for i in applied.get("added") or []):
+            if extra is not None and extra.source_event_id == ev.id and extra.status != "zrusene":
+                extra.status = "zrusene"
+                extra.note = "\n".join(filter(None, [extra.note or "", f"Zamietnuté dispečerom (udalosť #{ev.id})."]))
         return "výluka zrušená"
     if entity == "Path":
         _pin_standing(session, obj.train_id)
