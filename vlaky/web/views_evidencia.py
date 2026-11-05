@@ -401,6 +401,10 @@ def _read_closure_form(reader: FormReader) -> dict:
         reader.errors["daily_to"] = "Denné opakovanie: zadajte čas od aj do (alebo nechajte obe prázdne)."
     if v["kind"] == "pomala_jazda" and v["speed_kmh"] is None and "speed_kmh" not in reader.errors:
         reader.errors["speed_kmh"] = "Pri pomalej jazde zadajte obmedzenú rýchlosť."
+    if v["kind"] == "kolaj" and not str(v["track"] or "").strip() and "track" not in reader.errors:
+        # výluka koľaje bez koľaje nehovorí, či ostáva zjazdná iná koľaj (FE1) – inak úplná výluka
+        reader.errors["track"] = ("Pri výluke koľaje zadajte koľaj (napr. 1 alebo 2) – bez nej nie je známe, či ostáva "
+                                  "zjazdná iná koľaj; ak to nie je známe, zvoľte úplnú výluku.")
     # od = do je výluka alebo mimoriadnosť v jednej dopravni (všetky koľaje v jej obvode) – napr. telefonicky
     # nahlásená mimoriadnosť; úsek, ktorý sa v sieti nenájde, odmietne kontrola nižšie
     if reader.ok:

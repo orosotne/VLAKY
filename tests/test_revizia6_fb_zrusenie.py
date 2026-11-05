@@ -191,8 +191,13 @@ def test_fc0_do_odvolania_nezrusi_vyluku_s_pevnym_koncom(env, session):
             res = _confirm(session, e.id)
             if e.kind == "vyluka_zrusenie":
                 assert res.get("ok") is False and res.get("retry") is False, res
-    assert [(as_utc(c.start_utc), as_utc(c.end_utc)) for c in _active(session) if c.source != "email_poistka"][:1] \
-        == [(loc(2026, 11, 23, 8), loc(2026, 11, 27, 18))]
+    # výluka ostáva a pokrýva celý pôvodný termín (pravidlá, ktoré oznámenie čítajú ako zmenu do odvolania, ju môžu aj
+    # predĺžiť – prísnejší prípad; nikdy ju neskrátia ani nezrušia)
+    live = [c for c in _active(session) if c.source != "email_poistka" and c.proposed_change_of is None]
+    assert live, "výluka sa stratila"
+    c = min(live, key=lambda x: as_utc(x.start_utc))
+    assert as_utc(c.start_utc) <= loc(2026, 11, 23, 8), (c.start_utc, c.end_utc, c.until_revoked)
+    assert as_utc(c.end_utc) >= loc(2026, 11, 27, 18) or c.until_revoked, (c.start_utc, c.end_utc, c.until_revoked)
     for day in (24, 26):
         r = _decide(session, f"7617{day}", "Kraľovany", "Ružomberok", loc(2026, 11, day, 10), loc(2026, 11, day, 7))
         assert not _green(r), r.summary

@@ -560,7 +560,10 @@ def process_email(session: Session, email: Email, *, reprocess: bool = False) ->
             # zmena, zrušenie či nový termín len s číslom ROV (bez úseku) sa z registra výluk nedopĺňa: ostáva udalosťou
             # bez miesta (poistka pre celý vozový park, upozornenie DÔLEŽITÉ) – výluky s týmto číslom ukáže fronta ako
             # návrh (:func:`register_candidates`) a úsek vyberie či opraví dispečer
-            vr = validate_event(session, it.kind, it.data, confidence=conf, verdict=email.verdict)
+            # predĺženie či skrátenie bez začiatku („sa predĺži do 29.11.“ – začiatok ostáva podľa registra): začiatok
+            # podľa výluky, ktorej sa zmena týka (číslo a úsek) – inak by sa zmena nedala zapísať ani dočasne
+            data_in = _register_start(session, it.kind, it.data, email, notes)
+            vr = validate_event(session, it.kind, data_in, confidence=conf, verdict=email.verdict)
             extra = _source_reasons(email, it) + ([_BULK_REASON] if bulk else [])
             target_reasons, target_warnings = _register_check(session, it.kind, vr.data, now, email=email)
             orphan = _orphan_cancel(session, it.kind, vr.data, email) if it.kind == "vyluka_zrusenie" else ""
@@ -833,15 +836,155 @@ def _orphan_cancel(session: Session, kind: str, d: dict, email: Optional[Email])
         target = None
     if target is not None:
         plan = _cancel_plan(session, target, d, None)
-        if plan is not None and plan.kind == "odmietnut" and "neprekrývajú" in plan.text:
+        if _other_term(plan):
+            if _repeat_cancel(session, None, d, issuer) is not None:
+                return ""                      # opakované zrušenie termínu, ktorý je už zrušený
             return (f"zodpovedá len výluke #{target.id} {target.from_station} – {target.to_station} v inom termíne "
                     f"({_term_desc(target.start_utc, target.end_utc, target.daily_from, target.daily_to)}).")
         return ""
     if _pending_change_matches(session, d):
         return ""
+    if _repeat_cancel(session, None, d, issuer) is not None or _quoted_reply_only(email):
+        # výluka (či rušený termín rozdelenej výluky) je už zrušená – znova poslané, preposlané zrušenie, zrušenie po
+        # zrušení v registri výluk – alebo zrušenie je len v citácii odpovede („Ďakujeme za informáciu“ s citovaným
+        # zrušením): nie nová výluka
+        return ""
     why, _specific = _no_target(session, None, kind, d, issuer)
     # viac výluk s číslom (nejednoznačné priradenie) – cieľ má, len ho treba vybrať
     return "" if "jednoznačne" in why else why
+
+
+def _other_term(plan: Optional["_Plan"]) -> bool:
+    """Plán zrušenia odmietnutý preto, že sa termín zrušenia s výlukou neprekrýva (zrušenie iného termínu)."""
+    return plan is not None and plan.kind == "odmietnut" and "neprekrývajú" in plan.text
+
+
+def _already_cancelled(session: Session, ev_id: Optional[int], d: dict, issuer: Optional[str]) -> Optional[Closure]:
+    """Výluka, ktorej sa zrušenie týka, je v registri už zrušená – znova poslané zrušenie, zrušenie preposlané
+    kontrolným dispečerom, zrušenie po zrušení výluky dispečerom v registri výluk: rovnaké číslo a úsek (zrušenie bez
+    úseku len číslo, a ak sa OR dá určiť, rovnaká OR), bez čísla rovnaký úsek; termín zrušenia sa s ňou prekrýva (bez
+    termínu stačí číslo). Zrušenie s iným termínom (môže ísť o nesprávne prečítaný nový termín výluky s rovnakým
+    číslom) opakovaným zrušením nie je – ostáva poistkou. None – taká zrušená výluka nie je."""
+    a, b, ref = d.get("from_station"), d.get("to_station"), d.get("external_ref")
+    start, end = parse_utc(d.get("start")), parse_utc(d.get("end"))
+    if not ref and not (a and start is not None):
+        return None
+    fam = _event_family("vyluka_zrusenie", d)
+    for c in sorted(_active_closures(session, ev_id, cancelled=True), key=lambda x: -(x.id or 0)):
+        if ref and not (c.external_ref and refs_match(c.external_ref, ref)):
+            continue
+        if a and not _same_section(c, a, b):
+            continue
+        if fam is not None and _closure_family(c) != fam:
+            continue
+        if start is not None and not _overlaps(c, start, end if end is not None and end > start else None):
+            continue
+        if not a and issuer and _closure_issuer(session, c) not in (None, issuer):
+            continue
+        return c
+    return None
+
+
+def _cancelled_text(session: Session, c: Closure) -> str:
+    """Upozornenie vo fronte pri opakovanom zrušení už zrušenej výluky."""
+    who = ""
+    ev = session.get(ExtractedEvent, c.source_event_id) if c.source_event_id else None
+    if ev is not None and ev.kind == "vyluka_zrusenie" and ev.status == "aplikovane":
+        who = f" (udalosťou #{ev.id})"
+    return (f"Výluka #{c.id} {c.from_station} – {c.to_station} "
+            f"({_term_desc(c.start_utc, c.end_utc, c.daily_from, c.daily_to)}) je v registri už zrušená{who} – "
+            "zrušenie je opakované (znova poslané či preposlané), potvrdením sa register nezmení.")
+
+
+@dataclass
+class _Repeat:
+    """Opakované zrušenie: termín, ktorý zrušenie ruší, je v registri už zrušený (celá výluka alebo jej časť)."""
+    closure_id: int
+    status: str
+    text: str
+
+
+def _repeat_cancel(session: Session, ev_id: Optional[int], d: dict, issuer: Optional[str]) -> Optional[_Repeat]:
+    """Zrušenie opakuje skoršie zrušenie: výluka je v registri už zrušená (:func:`_already_cancelled`), alebo termín
+    zrušenia už zrušilo skoršie zapísané zrušenie časti tej istej výluky (výluka je rozdelená – zrušený deň v registri
+    nie je, ostali len ostatné dni). Znova poslané či preposlané zrušenie takého termínu nie je „zrušením bez cieľa“ –
+    žiadna poistka (vlaky v zrušenom termíne by inak znova čakali), vo fronte len upozornenie a potvrdenie register
+    nezmení. None – zrušenie nič neopakuje."""
+    c = _already_cancelled(session, ev_id, d, issuer)
+    if c is not None:
+        return _Repeat(c.id, c.status, _cancelled_text(session, c))
+    hit = _cancelled_part(session, ev_id, d, issuer)
+    if hit is None:
+        return None
+    prev, c = hit
+    start, end = parse_utc(d.get("start")), parse_utc(d.get("end"))
+    return _Repeat(c.id, c.status, f"Termín {_cancel_term_text(start, end)} výluky #{c.id} {c.from_station} – "
+                                   f"{c.to_station} je v registri už zrušený (udalosťou #{prev.id} – výluka je "
+                                   "rozdelená, ostali len ostatné dni) – zrušenie je opakované (znova poslané či "
+                                   "preposlané), potvrdením sa register nezmení.")
+
+
+def _cancel_term_text(start: Optional[datetime], end: Optional[datetime]) -> str:
+    """Termín zrušenia na čítanie („10.12.2026“, „10.12. 08:00 – 10.12. 14:00“, „od 25.11. 12:00“)."""
+    if start is None:
+        return "bez termínu"
+    open_end = end is None or end <= start
+    if _local_midnight(start) and (open_end or _local_midnight(end)):
+        return _days_text(start, end if not open_end else start + timedelta(days=1), open_end)
+    return f"od {fmt(start)}" if open_end else f"{fmt(start)} – {fmt(end)}"
+
+
+def _cancelled_part(session: Session, ev_id: Optional[int], d: dict,
+                    issuer: Optional[str]) -> Optional[tuple[ExtractedEvent, Closure]]:
+    """Skoršie zapísané zrušenie časti výluky (udalosť „aplikovane“, ktorá výluku rozdelila), ktorého termín obsahuje
+    termín zrušenia ``d``, a jeho výluka (časť rozdelenej výluky) s rovnakým číslom a úsekom (bez úseku číslo a OR, bez
+    čísla úsek). Termín zrušenia musí ležať v zrušenom termíne – iný termín s rovnakým číslom opakovaním nie je."""
+    a, b, ref = d.get("from_station"), d.get("to_station"), d.get("external_ref")
+    start, end = parse_utc(d.get("start")), parse_utc(d.get("end"))
+    if start is None or not (ref or a):
+        return None
+    last = end if end is not None and end > start else start
+    fam = _event_family("vyluka_zrusenie", d)
+    skip = _sibling_events(session, ev_id) | ({ev_id} if ev_id is not None else set())
+    rows = session.scalars(select(ExtractedEvent).where(ExtractedEvent.kind == "vyluka_zrusenie",
+                                                        ExtractedEvent.status == "aplikovane")
+                           .order_by(ExtractedEvent.id.desc()).limit(500))
+    for prev in rows:
+        val = prev.validation if isinstance(prev.validation, dict) else {}
+        applied = val.get("applied") if isinstance(val.get("applied"), dict) else {}
+        if prev.id in skip or applied.get("action") != "rozdelene":
+            continue
+        p = prev.data if isinstance(prev.data, dict) else {}
+        ps, pe = parse_utc(p.get("start")), parse_utc(p.get("end"))
+        if ps is None or start < ps - MATCH_TOLERANCE:
+            continue
+        if pe is not None and pe > ps and last > pe + MATCH_TOLERANCE:
+            continue
+        ids = [applied.get("id")] + [t.get("id") for t in applied.get("terms") or [] if isinstance(t, dict)]
+        for cid in dict.fromkeys(i for i in ids if isinstance(i, int)):
+            c = session.get(Closure, cid)
+            if c is None or (ref and not (c.external_ref and refs_match(c.external_ref, ref))):
+                continue
+            if (a and not _same_section(c, a, b)) or (fam is not None and _closure_family(c) != fam):
+                continue
+            if not a and issuer and _closure_issuer(session, c) not in (None, issuer):
+                continue
+            return prev, c
+    return None
+
+
+def _quoted_reply_only(email: Optional[Email]) -> bool:
+    """Odpoveď („Re:“, „Odp:“), ktorej vlastný text (bez citácie) nič neruší ani neohlasuje – zrušenie je len v citovanej
+    pôvodnej správe a v predmete (napr. „Ďakujeme za informáciu.“). Taká odpoveď nie je novým oznámením – pôvodná správa
+    sa spracovala, keď prišla."""
+    from .parser import is_reply_subject
+
+    if email is None or not is_reply_subject(str(email.subject or "")) or getattr(email, "forwarded_from", None):
+        return False
+    own = fold(_unquoted(email.body_text or ""))
+    if _CANCEL_WORDS.search(own) or _CLOSURE_VOCAB.search(own) or _CLOSURE_DOC.search(own) or _DATE_RE.search(own):
+        return False
+    return not any(str(getattr(a, "text", "") or "").strip() for a in getattr(email, "attachments", None) or [])
 
 
 def _pending_change_matches(session: Session, d: dict) -> bool:
@@ -974,8 +1117,15 @@ def _register_check(session: Session, kind: str, data: dict, now: datetime,
         elif kind == "vyluka_zrusenie":
             target, how = _find_closure(session, None, kind, data, parse_utc(data.get("start")), loose=True,
                                         issuer=issuer)
+            gone = _repeat_cancel(session, None, data, issuer)
             if target is None:
-                warnings.append(_no_target(session, None, kind, data, issuer)[0])
+                warnings.append(gone.text if gone is not None else _no_target(session, None, kind, data, issuer)[0])
+                if gone is None and _quoted_reply_only(email):
+                    warnings.append("Zrušenie je len v citovanej pôvodnej správe odpovede (vlastný text odpovede nič "
+                                    "neruší ani neohlasuje) – nie je to nové oznámenie; ak sa týka výluky v registri, "
+                                    "overte ju v registri výluk, inak udalosť zamietnite.")
+            elif gone is not None and _other_term(_cancel_plan(session, target, data, None)):
+                warnings.append(gone.text)
             else:
                 stays = _stays_text(email, target, data) if email is not None else ""
                 plan = _cancel_plan(session, target, data, None) if not stays else None
@@ -1302,34 +1452,51 @@ def _sender_issuer(addr: str) -> Optional[str]:
     return found.pop() if len(found) == 1 else None
 
 
+def _text_issuers(text: str) -> set:
+    """OR uvedené v texte („OR Košice“, „Oblastné riaditeľstvo Košice“, „OR KE“, „ORKE“ v podpise)."""
+    return {_OR_STEMS[m.group(1)] if m.group(1) else m.group(2).upper() for m in _OR_TEXT.finditer(fold(text))}
+
+
 def mail_issuer(email: Any) -> Optional[str]:
     """Oblastné riaditeľstvo ŽSR, ktoré e-mail vydalo (kód BA, TT, TN, ZA, ZV, KE), ak sa dá určiť: podľa adresy
-    odosielateľa (vyluky.orke@…, ke.vyluky@zsr…, …@ortt.…), pri preposlanom e-maile podľa adresy pôvodného
-    odosielateľa (``forwarded_from`` – preposlaná príloha message/rfc822 či vložené preposlanie), inak podľa predmetu a
-    vlastného textu e-mailu („OR Košice“, „OR KE“, „ORKE“ v podpise; pri preposlanom e-maile aj preposlaného textu).
-    Viac rôznych OR – nedá sa určiť (None)."""
+    odosielateľa (vyluky.orke@…, ke.vyluky@zsr…, …@ortt.…), inak podľa predmetu a vlastného textu e-mailu („OR Košice“,
+    „OR KE“, „ORKE“ v podpise). Viac rôznych OR – nedá sa určiť (None).
+
+    Preposlaný e-mail (``forwarded_from`` – preposlaná príloha message/rfc822 či vložené preposlanie) vydala OR
+    preposlaného obsahu – adresa pôvodného odosielateľa, inak OR v preposlanom texte (podpis pôvodnej OR) –, nie OR
+    preposielateľa: kontrolný dispečer OR Žilina (kd.orza@…) prepošle aj oznámenie OR Košice, a číslo ROV má každá OR
+    vlastné (zrušenie ROV 15/2026 OR Košice nesmie zrušiť ROV 15/2026 OR Žilina – vlak by dostal ZELENÚ cez platnú
+    výluku). Keď sa OR preposlaného obsahu určiť nedá, OR preposielateľa sa nepoužije (None – fronta upozorní, že OR
+    e-mailu sa nedá určiť); OR z vlastného textu preposielateľa platí, len keď nič nepreposlal."""
     if email is None:
         return None
     code = _sender_issuer(str(getattr(email, "sender", "") or "").strip().lower())
+    body = str(getattr(email, "body_text", "") or "")
+    if getattr(email, "forwarded_from", None):
+        forwarded = [x.strip().lower() for x in str(getattr(email, "forwarded_from", "") or "").split(",")
+                     if "@" in x]
+        found = {c for c in (_sender_issuer(a) for a in forwarded) if c}
+        if not found:
+            found = _text_issuers(_quoted(body))   # podpis pôvodnej OR v preposlanom texte
+        if len(found) == 1:
+            return found.pop()
+        if found:
+            return None
+        # OR preposlaného obsahu sa určiť nedá: preposielateľ s adresou OR mohol preposlať oznámenie inej OR
+        return None if code else _single(_text_issuers(str(getattr(email, "subject", "") or "")))
     if code:
         return code
-    forwarded = [x.strip().lower() for x in str(getattr(email, "forwarded_from", "") or "").split(",") if "@" in x]
-    found = {c for c in (_sender_issuer(a) for a in forwarded) if c}
-    if len(found) == 1:
-        return found.pop()
-    if found:
-        return None
-    body = str(getattr(email, "body_text", "") or "")
-    texts = [str(getattr(email, "subject", "") or ""), _unquoted(body)]
-    if getattr(email, "forwarded_from", None):
-        texts.insert(0, _quoted(body))          # preposlaný text (podpis pôvodnej OR) má prednosť pred podpisom preposielateľa
-    for text in texts:
-        found = {_OR_STEMS[m.group(1)] if m.group(1) else m.group(2).upper() for m in _OR_TEXT.finditer(fold(text))}
+    for text in (str(getattr(email, "subject", "") or ""), _unquoted(body)):
+        found = _text_issuers(text)
         if len(found) == 1:
             return found.pop()
         if found:
             return None
     return None
+
+
+def _single(codes: set) -> Optional[str]:
+    return next(iter(codes)) if len(codes) == 1 else None
 
 
 def _event_issuer(session: Session, ev: Optional[ExtractedEvent]) -> Optional[str]:
@@ -1515,11 +1682,21 @@ def _find_closure(session: Session, ev_id: Optional[int], kind: str, d: dict, st
         if len(hits) == 1:
             return hits[0], "úsek a začiatok"
     if loose and a:
-        hits = [c for c in active if _same_section(c, a, b) and fits(c) and _track_ok(c, track) and ref_ok(c)]
+        on_sec = [c for c in active if _same_section(c, a, b) and fits(c) and _track_ok(c, track) and ref_ok(c)]
+        hits = on_sec
         if start is not None:
             hits = [c for c in hits if abs(_utc(c.start_utc) - start) <= CHANGE_MATCH_WINDOW]
         if len(hits) == 1:
             return hits[0], "úsek a blízky termín" if start is not None else "úsek"
+        if kind == "vyluka_zrusenie" and start is not None:
+            # zrušenie jedného dňa či časti dlhej výluky bez čísla („výluka v úseku … dňa 15.12. sa nekoná“ pri výluke
+            # 01. – 20.12.): začiatok výluky je ďaleko, ale termín zrušenia leží v nej – jediná taká výluka v úseku je
+            # cieľom (plán zrušenia zruší len uvedenú časť); inak by zrušenie bolo „bez cieľa“ (poistka s výzvou, že
+            # môže ísť o novú výluku)
+            end = parse_utc(d.get("end"))
+            over = [c for c in on_sec if _overlaps(c, start, end if end is not None and end > start else None)]
+            if len(over) == 1:
+                return over[0], "úsek a termín v období výluky"
     return None, ""
 
 
@@ -1882,6 +2059,17 @@ def _apply_closure_cancel(session: Session, ev: ExtractedEvent, confirmed: bool)
         # preklasifikoval na zrušenie) – nie je to rušená výluka; ruší sa výluka v registri
         c, how = _find_closure(session, ev.id, ev.kind, d, parse_utc(d.get("start")), loose=True, skip_own=True,
                                issuer=issuer)
+    gone = _repeat_cancel(session, ev.id, d, issuer) if not applied else None
+    if c is not None and gone is not None and not _other_term(_cancel_plan(session, c, d, ev.id)):
+        gone = None
+    if gone is not None and not _orphan(ev):
+        # výluka (či rušený termín rozdelenej výluky) je už zrušená – znova poslané či preposlané zrušenie, zrušenie po
+        # zrušení v registri výluk: opakované zrušenie register nemení a nie je chybou
+        if not confirmed:
+            raise NeedsConfirmation(["zrušenie výluky vždy potvrdzuje dispečer"])
+        return {"entity": "Closure", "id": gone.closure_id, "action": "bez_zmeny", "status": gone.status,
+                "matched_by": "zrušená výluka či termín s rovnakým číslom či úsekom", "before": None,
+                "note": gone.text}
     if c is None:
         text, specific = _no_target(session, ev.id, ev.kind, d, issuer)
         if _orphan(ev):
@@ -2086,15 +2274,19 @@ def _waiting_changes(session: Session, c: Closure, ev_id: Optional[int]) -> list
     return sorted({i for i in ids if i and i != ev_id})
 
 
-def _unsafe_split(session: Session, c: Closure, ev_id: Optional[int], change: bool = False) -> str:
+def _unsafe_split(session: Session, c: Closure, ev_id: Optional[int], change: bool = False,
+                  ending: bool = False) -> str:
     """Prečo výluku ``c`` nemožno bezpečne rozdeliť („“ = možno).
 
     Zmenu (``change``) nezastaví čakajúca zmena, ktorej úsek doplnil register podľa čísla (e-mail úsek neuvádza):
     jej dočasný záznam je len pre plánovač (vlaky v úseku nedostanú ZELENÚ) a pri potvrdení sa priradí k časti
     výluky, s ktorou sa jej termín prekrýva – novšia zapísaná zmena toho istého dňa ju nahradí, zmena iného dňa sa
     zapíše (ako zmena bez úseku, ktorá dočasný záznam nemá). Zrušenie časti výluky taká zmena zastaví (najprv ju
-    vybaví dispečer – inak by staršia zmena zrušený deň znova založila)."""
-    if c.until_revoked:
+    vybaví dispečer – inak by staršia zmena zrušený deň znova založila).
+
+    Výluku do odvolania (technický koniec) rozdeliť nemožno – okrem jej ukončenia (``ending``: zrušenie od času T bez
+    konca, „výluka vyhlásená do odvolania sa ruší od 25.11. 12:00“): ostane časť pred T s pevným koncom T."""
+    if c.until_revoked and not ending:
         return "výluka platí do odvolania (jej koniec je len technický)"
     owner = _pending_owner(session, c, ev_id)
     if owner is not None:
@@ -2181,6 +2373,70 @@ def _contains(c: Closure, fields: dict) -> bool:
                for n in new)
 
 
+_START_FROM_REGISTER = ("predlzenie", "skratenie")
+
+
+def _register_start(session: Session, kind: str, d: dict, email: Optional[Email], notes: list,
+                    ev_id: Optional[int] = None) -> dict:
+    """Dáta zmeny výluky so začiatkom podľa registra, keď ho e-mail neuvádza: predĺženie či skrátenie („výluka … sa
+    predĺži do 29.11.2026“, „skončí už 25.11.“ – pravidlá: začiatok ostáva podľa registra) s úsekom a koncom, ktoré sa
+    jednoznačne priradí k výluke v registri (číslo a úsek, alebo úsek). Bez začiatku by bola zmena blokovaná („chýba
+    začiatok“), nezapísala by sa ani po potvrdení a dni predĺženia by v registri chýbali.
+
+    * Začiatok je začiatok výluky; predĺženie času jedného dňa vnútri výluky („dňa 25.11. sa predlžuje do 16:00“) začína
+      oknom výluky v ten deň.
+    * Denná výluka (okno 08:00 – 14:00) a zmena bez denného okna: okno ostáva podľa výluky („v rovnakom čase“), ak koniec
+      je len dátum (koniec dňa – výluka končí koncom okna, ktoré v posledný deň začína) alebo leží v okne – inak by sa
+      z dennej výluky stala súvislá výluka cez noci (všetky vlaky dni a noci stoja). Koniec mimo okna („predĺži sa do
+      29.11. 18:00“) okno neprevezme: predĺženie potom začína koncom výluky (súvislý čas len od konca výluky – prísnejší
+      prípad, nič sa nestratí).
+
+    Úsek z registra sa nedopĺňa nikdy (udalosť bez úseku ostáva bez miesta – úsek vyberie dispečer vo fronte, potom sa
+    začiatok doplní pri potvrdení; ``ev_id`` – udalosť, ktorej záznamy sa nehľadajú)."""
+    if kind != "vyluka_zmena" or not isinstance(d, dict) or d.get("start") or not d.get("from_station"):
+        return d
+    zamer = _intent(d)
+    end = parse_utc(d.get("end"))
+    if zamer not in _START_FROM_REGISTER or end is None:
+        return d
+    try:
+        target, how = _find_closure(session, ev_id, kind, d, None, loose=True, skip_own=ev_id is not None,
+                                    issuer=mail_issuer(email))
+    except ApplyError:
+        return d
+    if target is None or target.start_utc is None or target.end_utc is None:
+        return d
+    cs, ce = _utc(target.start_utc), _utc(target.end_utc)
+    out = dict(d)
+    start = cs
+    window = ""
+    if zamer == "predlzenie" and end <= ce:
+        day = local(end - timedelta(microseconds=1)).date()
+        wins = [w for w in _windows(cs, ce, target.daily_from, target.daily_to) or []
+                if w[0] < end and local(w[0]).date() == day]
+        if wins:
+            start = wins[-1][0]
+    elif target.daily_from and target.daily_to and not (d.get("daily_from") or d.get("daily_to")):
+        # denná výluka, zmena bez denného okna
+        wins = [w for w in _windows(cs, end + timedelta(days=1), target.daily_from, target.daily_to) or []
+                if w[0] < end]
+        last = wins[-1] if wins else None
+        if last is not None and (_local_midnight(end) or last[0] <= end <= last[1]):
+            out["daily_from"], out["daily_to"] = target.daily_from, target.daily_to
+            if _local_midnight(end) and last[1] != end:
+                out["end"] = last[1].isoformat()
+                end = last[1]
+            window = f", denne {target.daily_from} – {target.daily_to} ako výluka, koniec {fmt(end)}"
+        elif zamer == "predlzenie":
+            start = ce
+    if start >= end:
+        return d
+    out["start"] = start.isoformat()
+    notes.append(f"Začiatok zmeny e-mail neuvádza – podľa výluky #{target.id} {target.from_station} – "
+                 f"{target.to_station} v registri ({how}): {fmt(start)}{window}. Overte termín.")
+    return out
+
+
 def _extension_plan(c: Closure, fields: dict, why: str) -> _Plan:
     """Predĺženie výluky ``c`` (koniec sa len posúva, začiatok a dni výluky ostávajú): „predlzit“ – koniec výluky sa
     posunie na koniec nového termínu (pri zmene do odvolania aj príznak); keď nový termín výluka ani po posune
@@ -2197,7 +2453,10 @@ def _extension_plan(c: Closure, fields: dict, why: str) -> _Plan:
         if _contains(c, fields):
             return _Plan("bez_zmeny", f"{why}: výluka {sec} ({whole}) už obsahuje nový termín {new} – register sa "
                                       "nezmení (predĺženie výluku neskracuje).")
-        return _Plan("pridat", _additive_text(c, fields, f"{why} – nový termín výluku nepredlžuje"))
+        inside = cs - MATCH_TOLERANCE <= ns and ne <= ce + MATCH_TOLERANCE
+        return _Plan("pridat", _additive_text(c, fields, f"{why} – " + (
+            "predĺženie času v rámci obdobia výluky (napr. jedného dňa)" if inside else
+            "nový termín výluku nepredlžuje")))
     trial = Closure(kind=c.kind, track=c.track, electric_only=c.electric_only, speed_kmh=c.speed_kmh,
                     line_ref=c.line_ref, external_ref=c.external_ref, start_utc=cs, end_utc=end,
                     daily_from=c.daily_from, daily_to=c.daily_to)
@@ -2272,6 +2531,10 @@ def _change_plan(session: Session, c: Closure, fields: dict, ev_id: Optional[int
     if zamer == "predlzenie" or (zamer not in _REPLACING_INTENTS and _continuation(c, fields)):
         return _extension_plan(c, fields, "Predĺženie výluky" if zamer == "predlzenie" else
                                "Zmena do odvolania začína koncom výluky (pokračovanie, nie presun)")
+    if zamer is None and _says_extension(email) and fields["end_utc"] > _utc(c.end_utc) + MATCH_TOLERANCE:
+        # udalosť bez zámeru, e-mail výluku predlžuje („sa predĺži do 29.11.“) a nový termín končí po výluke: koniec sa
+        # len posunie – nahradenie termínu by stratilo dni medzi koncom výluky a novým termínom (vlak by dostal ZELENÚ)
+        return _extension_plan(c, fields, "E-mail výluku predlžuje (predĺženie, nie presun)")
     if zamer is not None and zamer not in _KNOWN_INTENTS:
         return _Plan("pridat", _additive_text(c, fields, f"Zámer zmeny „{label}“ nie je známy – overte ho podľa "
                                                          "e-mailu"))
@@ -2443,12 +2706,19 @@ def _cancel_plan(session: Session, c: Closure, d: dict, ev_id: Optional[int]) ->
     parts = _compact(wins, rests)
     if not parts:
         return None
-    why = _unsafe_split(session, c, ev_id)
+    # výluka do odvolania sa zrušením od času T bez konca ukončí (ostane časť pred T s pevným koncom) – to nie je
+    # rozdelenie s technickým koncom; zrušenie jej vnútornej časti ostáva odmietnuté
+    ending = bool(c.until_revoked) and start is not None and open_end and all(e <= ps + SPLIT_TOLERANCE
+                                                                             for _s, e, _k in parts)
+    why = _unsafe_split(session, c, ev_id, ending=ending)
     if why:
         what = ("Najprv vybavte čakajúcu udalosť, potom potvrďte toto zrušenie znova." if "čaká" in why else
                 "Upravte termín výluky v registri výluk a túto udalosť potom zamietnite.")
         return _Plan("odmietnut", f"Zrušenie sa týka len časti výluky {sec} ({term}), výluka platí {whole} – celá "
                                   f"výluka sa nezruší a automaticky ju nemožno rozdeliť, lebo {why}. {what}")
+    if ending:
+        return _Plan("rozdelit", f"Ukončí výluku {sec} vyhlásenú do odvolania (platí od {fmt(cs)}): e-mail ju ruší "
+                                 f"{term}. Po potvrdení ostane {_parts_text(c, parts)} – už nie do odvolania.", parts)
     nights = ""
     if gone:
         nights = (" – ruší sa " + ("noc " if len(gone) == 1 else "noci ") +
@@ -2564,6 +2834,12 @@ def _extend_closure(session: Session, ev: ExtractedEvent, c: Closure, plan: _Pla
 _EXTEND_WORD = re.compile(r"\bpredlz\w*")
 
 
+def _says_extension(email: Optional[Email]) -> bool:
+    """Vlastný text e-mailu (bez citácie) alebo predmet hovorí o predĺžení výluky („predlžuje“, „predĺži“, „predĺženie“)."""
+    return email is not None and bool(_EXTEND_WORD.search(
+        fold(str(email.subject or "") + "\n" + _unquoted(email.body_text or ""))))
+
+
 def _pending_extension(fields: dict, c: Closure, d: dict, email: Optional[Email] = None) -> None:
     """Dočasný záznam čakajúceho predĺženia výluky ``c`` pokryje aj čas medzi koncom výluky a novým termínom
     („predlžuje sa do 29.11.“ prečítané len ako 29.11. – 28.11. by do potvrdenia ostal voľný): zámer predĺženie, zmena
@@ -2575,8 +2851,7 @@ def _pending_extension(fields: dict, c: Closure, d: dict, email: Optional[Email]
     zamer = _intent(d)
     if zamer in _REPLACING_INTENTS or zamer == "doplnenie":
         return
-    said = zamer is None and email is not None and bool(_EXTEND_WORD.search(
-        fold(str(email.subject or "") + "\n" + _unquoted(email.body_text or ""))))
+    said = zamer is None and _says_extension(email)
     if not (zamer == "predlzenie" or _continuation(c, fields) or said):
         return
     ce = _utc(c.end_utc)
@@ -3017,9 +3292,55 @@ _DAY_WINDOW_RE = re.compile(r"(?<![\d.:])([01]?\d|2[0-4])[:.]([0-5]\d)(?![.\d])\
 _NIGHT_TO_RE = re.compile(r"\bnoc\w*\s+na\s+(?:[a-z]+\s+)?(\d{1,2})\.\s?(\d{1,2})\.(?:\s?(\d{4}))?")
 
 
+_WEEKDAY_STEMS = ("pondel", "utor", "stred", "stvrt", "piat", "sobot", "nedel")
+_station_day_names: Optional[re.Pattern] = None
+
+
+def _station_day_names_re() -> Optional[re.Pattern]:
+    """Názvy dopravní s menom dňa v týždni („Rimavská Sobota“, „Poprad-Spišská Sobota“, „Horná Streda“, „Plavecký
+    Štvrtok“) aj v skloňovanom tvare („z Rimavskej Soboty“) – nie sú dňom v týždni."""
+    global _station_day_names
+    if _station_day_names is None:
+        pats: set = set()
+        try:
+            net = stations().net
+            names = [s.name for s in net.stations] if net is not None else []
+        except Exception:  # noqa: BLE001 – bez siete bez masky
+            names = []
+        for name in names:
+            toks = re.split(r"[\s\-]+", fold(str(name or "")).strip())
+            for i in range(1, len(toks)):
+                day = next((d for d in _WEEKDAY_STEMS if toks[i].startswith(d)), None)
+                if day and _WEEKDAY_RE.fullmatch(toks[i]) and len(toks[i - 1]) >= 4:
+                    stem = toks[i - 1][:max(4, len(toks[i - 1]) - 2)]
+                    pats.add(rf"\b{re.escape(stem)}\w*[\s\-]+{day}\w*")
+        _station_day_names = re.compile("|".join(sorted(pats))) if pats else re.compile(r"(?!x)x")
+    return _station_day_names
+
+
+# „dohody z utorka“, „e-mailu zo stredy“, „porady z piatka“ (dohoda, oznámenie z toho dňa) nie je obmedzením na deň;
+# „výluka z pondelka sa ruší“ (výluka toho dňa) ním je – preto len po podstatnom mene dohody či správy, a nie
+# „z piatka na sobotu“, „zo stredy do štvrtka“ (noc či obdobie)
+_FROM_DAY = re.compile(r"\b(?:dohod|rokovan|porad|stretnut|oznamen|sprav|mail|list|telefon|zapisnic|zasadnut|vyzv|"
+                       r"ziadost|poziadav|rozhodnut|pokyn|dopis|komunikac)\w*\s+(?:\w+\s+){0,2}?zo?\s+(?:" +
+                       "|".join(_WEEKDAY_FORMS) + r")\b(?!\s+(?:na|do)\s+(?:" + "|".join(_WEEKDAY_FORMS) + r"))")
+
+
+def _mask_non_days(folded: str) -> str:
+    """Text s vymazanými (medzerami) menami dní, ktoré nie sú dňom výluky: názov dopravne a „dohody z utorka“."""
+    def blank(m: re.Match) -> str:
+        return " " * len(m.group(0))
+
+    pat = _station_day_names_re()
+    out = pat.sub(blank, folded) if pat is not None else folded
+    return _FROM_DAY.sub(blank, out)
+
+
 def _weekdays_in(folded: str) -> tuple[set, bool]:
     """Dni v týždni v časti textu (0 = pondelok): mená dní aj rozsahy („od pondelka do piatku“), víkend, pracovné dni;
-    (dni, sviatky – dni pracovného pokoja sa určiť nedajú)."""
+    (dni, sviatky – dni pracovného pokoja sa určiť nedajú). Názov dopravne s menom dňa („Rimavská Sobota“) a „z utorka“
+    (dohoda z utorka) dňom výluky nie sú (:func:`_mask_non_days`)."""
+    folded = _mask_non_days(folded)
     out: set = set()
     found = [(m.start(), m.end(), next(int(k[1:]) for k, v in m.groupdict().items() if v))
              for m in _WEEKDAY_RE.finditer(folded)]
@@ -3117,13 +3438,28 @@ def _cancel_restriction(email: Optional[Email], c: Closure, d: dict, whole: bool
 
 
 _UNTIL_REVOKED = re.compile(r"\bdo\s+odvolania\b")
+_CLOSURE_DOC = re.compile(r"\b(?:s?rov|tlg|telegram\w*|potr|rozkaz\w*)\b")
+_REPLACEMENT_TRAFFIC = re.compile(r"\bnahradn\w*\s+(?:\w+\s+){0,2}?doprav\w*|\bautobus\w*")
 
 
-def _says_until_revoked(email: Optional[Email]) -> bool:
-    """Vlastný text e-mailu (bez citácie) alebo predmet hovorí „do odvolania“."""
+def _says_until_revoked(email: Optional[Email], d: Optional[dict] = None) -> bool:
+    """Vlastný text e-mailu (bez citácie) alebo predmet hovorí o výluke „do odvolania“: veta s „do odvolania“, ktorá
+    hovorí o výluke či uzavretí trate (slovník výluk, číslo dokumentu ŽSR – ROV, telegram, POTR – alebo dopravňa úseku
+    udalosti ``d``). Veta o inom – „náhradná autobusová doprava na trati platí do odvolania“ – sa nepočíta: zrušenie
+    jedného dňa výluky by sa inak čítalo ako výluka do odvolania (vlaky v úseku by mesiac nedostali ZELENÚ) a skutočné
+    zrušenie výluky s pevným koncom by sa odmietlo."""
     if email is None:
         return False
-    return bool(_UNTIL_REVOKED.search(fold(str(email.subject or "") + "\n" + _unquoted(email.body_text or ""))))
+    names = [n[:6] for n in (fold(str(x)) for x in ((d or {}).get("from_station"), (d or {}).get("to_station")) if x)
+             if len(n) >= 5]
+    for text in (str(email.subject or ""), _unquoted(email.body_text or "")):
+        for _o, f in _sentences(text):
+            if not _UNTIL_REVOKED.search(f):
+                continue
+            closure = bool(_CLOSURE_VOCAB.search(f) or _CLOSURE_DOC.search(f))
+            if closure or (not _REPLACEMENT_TRAFFIC.search(f) and any(n in f for n in names)):
+                return True
+    return False
 
 
 def _until_revoked_cancel(email: Optional[Email], c: Closure) -> str:
@@ -3131,7 +3467,7 @@ def _until_revoked_cancel(email: Optional[Email], c: Closure) -> str:
     „do odvolania výluka 1. a 2. TK, predpokladané ukončenie …“ prečítané ako zrušenie): také oznámenie býva výlukou do
     odvolania (pokračovaním), nie zrušením – výluka sa nezruší automaticky ani po potvrdení bez opravy termínu. Výluka
     do odvolania sa takto rušiť smie („výluka vyhlásená do odvolania sa ruší“). „“ = nie."""
-    if c.until_revoked or not _says_until_revoked(email):
+    if c.until_revoked or not _says_until_revoked(email, {"from_station": c.from_station, "to_station": c.to_station}):
         return ""
     return (f"E-mail hovorí „do odvolania“, ale výluka #{c.id} {c.from_station} – {c.to_station} má v registri pevný "
             f"koniec ({fmt(c.end_utc)}) – „do odvolania“ býva oznámením výluky do odvolania (pokračovania), nie jej "
@@ -3327,7 +3663,7 @@ def _write_orphan_pending(session: Session, ev: ExtractedEvent) -> Optional[Clos
         return None
     # bez konca, alebo e-mail hovorí „do odvolania“ („bude do odvolania výluka …“ prečítané ako zrušenie jedného dňa) –
     # do odvolania, technický koniec sa posúva (prísnejší prípad)
-    open_end = end is None or end <= start or _says_until_revoked(email)
+    open_end = end is None or end <= start or _says_until_revoked(email, d)
     if open_end:
         end = max(start, now_utc()) + timedelta(days=OPEN_END_DAYS)
     fields = {"kind": "pomala_jazda" if d.get("kind") == "pomala_jazda" else "uplna",
@@ -3797,6 +4133,24 @@ def confirm_event(session: Session, event_id: int, actor: str, edits: Optional[d
         if data.get(k) != v:
             changes[k] = {"pred": data.get(k), "po": v}
             data[k] = v
+    if ev.kind == "vyluka_zmena" and not data.get("start"):
+        # predĺženie či skrátenie bez začiatku, ktorému úsek doplnil dispečer (napr. výberom výluky z registra podľa
+        # čísla): začiatok podľa výluky, ktorej sa zmena týka – inak by zápis zlyhal („chýba začiatok“)
+        extra: list = []
+        data = _register_start(session, ev.kind, data, session.get(Email, ev.email_id) if ev.email_id else None,
+                               extra, ev_id=ev.id)
+        known = list(val.get("notes") or [])
+        val["notes"] = known + [n for n in extra if n not in known]
+    if "event_kind" in changes and changes["event_kind"]["pred"] == "vyluka_zrusenie" and \
+            isinstance(val.get(_ORPHAN_KEY), dict) and ev.kind in ("vyluka_nova", "vyluka_zmena") and \
+            not data.get("end") and not data.get("until_revoked"):
+        own, _temp = _event_closures(session, ev.id)
+        if own is not None and own.source == ORPHAN_SOURCE and own.until_revoked:
+            # poistka zrušenia bez konca (do odvolania) zmenená na výluku: výluka platí do odvolania, kým dispečer
+            # nezadá koniec – inak by sa nezapísala („chýba koniec“) a ostala by len poistka
+            data["until_revoked"] = True
+            val.setdefault("notes", []).append("Zrušenie bez cieľa a bez konca zmenené na výluku – platí do odvolania "
+                                               "(technický koniec sa posúva), kým ŽSR neoznámi koniec.")
     new_edits = []
     if reg_changes:
         new_edits.append({"by": actor, "at": now_utc().isoformat(), "zdroj": "register výluk",

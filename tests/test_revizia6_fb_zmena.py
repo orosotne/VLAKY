@@ -247,7 +247,10 @@ def test_uprava_agenta_v_docasnom_zazname_nie_je_upravou_dispecera(env, session)
     if not ev.data.get("start"):
         pytest.skip("pravidlá termín predĺženia neprečítali")
     (temp,) = [c for c in session.scalars(select(Closure)) if c.proposed_change_of is not None]
-    assert as_utc(temp.start_utc) == loc(2026, 11, 27, 14)
+    # dočasný záznam pokrýva medzidni: začína najneskôr koncom výluky (pravidlá bez začiatku predĺženia – začiatok podľa
+    # registra, teda začiatkom výluky; s novým termínom len 29.11. – posunutý na koniec výluky)
+    assert as_utc(temp.start_utc) <= loc(2026, 11, 27, 14) and as_utc(temp.end_utc) >= loc(2026, 11, 29, 14), \
+        (temp.start_utc, temp.end_utc)
     assert register_edits(session, ev) == {}
     temp.to_station = "Liptovský Hrádok"
     session.flush()

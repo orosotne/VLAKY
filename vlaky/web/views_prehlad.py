@@ -257,6 +257,15 @@ def parse_event_edits(form, data: dict, event_kind: str = "") -> tuple:
                 new = code if code is not None or old is not None else None
         if new != old:
             edits[key] = new
+    d = data or {}
+    if "track" in d and ("kind" in edits or "track" in edits) and "kind" not in errors:
+        # výluka koľaje bez koľaje (FE1): druh zmenený na „výluka koľaje“ či vymazaná koľaj – bez koľaje nie je známe, či
+        # ostáva zjazdná iná koľaj (plánovač by mohol pustiť vlak cez úplne uzavretý úsek); dispečer koľaj doplní
+        kind_now = edits.get("kind", d.get("kind"))
+        track_now = edits.get("track", d.get("track"))
+        if kind_now == "kolaj" and not str(track_now or "").strip():
+            errors["track"] = ("Koľaj: pri výluke koľaje uveďte koľaj (napr. 1 alebo 2) – bez nej nie je známe, či "
+                               "ostáva zjazdná iná koľaj.")
     return edits, errors
 
 
