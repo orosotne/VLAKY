@@ -233,26 +233,49 @@ def test_novsie_zrusenie_ma_prednost_pred_starsim_rovnakym_oznamenim(env, sessio
 
 
 # ====================================================================== zrušenie a staršia čakajúca zmena
-@pytest.mark.parametrize("body,when", [
-    (EXTEND_24, (2026, 11, 24, 10)),
-    (_body(f"{SEC} sa predlžuje do 24.11.2026 06:00 hod."), (2026, 11, 24, 3)),
-    (_body(f"{SEC} sa dopĺňa o ďalší termín od 23.11.2026 20:00 do 24.11.2026 12:00 hod."), (2026, 11, 24, 10)),
-], ids=["predlzenie", "predlzenie_noc", "doplnenie_dva_dni"])
-def test_zrusenie_dna_nezahodi_zvysok_starsej_zmeny(env, session, body, when):
-    """ROV 23.11. 08 – 14; čaká zmena, ktorej termín siaha do 24.11.; novšie zrušenie 23.11. sa potvrdí. Zvyšok zmeny
-    (24.11.) ostáva pre plánovač a po potvrdení zmeny sa zapíše – zrušený 23.11. sa neobnoví."""
+def test_zrusenie_dna_nezahodi_zvysok_starsej_zmeny(env, session):
+    """ROV 23.11. 08 – 14; čaká predĺženie do 24.11. 14:00 (súvislý termín dlhší ako noc); novšie zrušenie 23.11. sa
+    potvrdí. Zvyšok predĺženia (24.11.) ostáva pre plánovač a po potvrdení zmeny sa zapíše – zrušený 23.11. sa
+    neobnoví."""
     _one(env, session, SUBJ, ROV1)
-    change = _one(env, session, ZSUBJ, body)
+    change = _one(env, session, ZSUBJ, EXTEND_24)
     assert _waiting(change)
     assert _confirm(session, _one(env, session, CSUBJ, CANCEL_23)).get("action") == "zrusene"
     session.refresh(change)
     assert (change.validation or {}).get("pending_closure", {}).get("id")
     assert any("pokrýva len časť" in w for w in (change.validation or {}).get("warnings") or [])
-    assert _closed(session, *when)
+    assert _closed(session, 2026, 11, 24, 10)
     res = _confirm(session, change)
     assert res.get("action") == "vytvorene", res
-    assert _closed(session, *when)
+    assert _closed(session, 2026, 11, 24, 10)
     assert not _closed(session, 2026, 11, 23, 10)
+
+
+@pytest.mark.parametrize("body,start_day,when,kept", [
+    (_body(f"{SEC} sa dopĺňa o ďalší termín v noci z 22.11. na 23.11.2026 od 22:00 do 04:00 hod."), 22,
+     (2026, 11, 23, 2), True),
+    (_body(f"{SEC} sa predlžuje do 24.11.2026 06:00 hod."), 23, (2026, 11, 24, 3), False),
+    (_body(f"{SEC} sa dopĺňa o ďalší termín od 23.11.2026 20:00 do 24.11.2026 12:00 hod."), 23,
+     (2026, 11, 24, 10), False),
+], ids=["noc_zacina_pred_dnom", "predlzenie_cez_noc", "doplnenie_cez_noc"])
+def test_zrusenie_dna_a_noc_zmeny_patri_dnu_ktorym_zacina(env, session, body, start_day, when, kept):
+    """Noc (okno cez polnoc najviac 24 h) patrí dňu, ktorým začína – rovnako ako pri zrušení dňa výluky v registri:
+    zrušenie 23.11. nezruší noc, ktorá začala 22.11. (ostáva celá, nie orezaná o polnoci), a zruší celú noc, ktorá
+    začína 23.11. (aj jej časť po polnoci). Výsledok je rovnaký, či sa zmena potvrdí pred zrušením alebo po ňom."""
+    _one(env, session, SUBJ, ROV1)
+    change = _one(env, session, ZSUBJ, body)
+    assert _waiting(change)
+    assert _confirm(session, _one(env, session, CSUBJ, CANCEL_23)).get("action") == "zrusene"
+    session.refresh(change)
+    info = (change.validation or {}).get("pending_closure") or {}
+    assert bool(info.get("id")) is kept, info
+    res = _confirm(session, change)
+    assert res.get("action") == ("vytvorene" if kept else "nahradene"), res
+    assert _closed(session, *when) is kept
+    if kept:
+        (row,) = [c for c in _live(session) if c.source_event_id == change.id]
+        assert loc(2026, 11, start_day, 22).replace(tzinfo=None) == row.start_utc.replace(tzinfo=None)
+        assert loc(2026, 11, 23, 4).replace(tzinfo=None) == row.end_utc.replace(tzinfo=None)
 
 
 def test_zrusenie_dna_odstrani_zmenu_toho_isteho_dna(env, session):
@@ -310,16 +333,17 @@ def test_potvrdenie_neodoberie_cas_pridany_inou_udalostou_bez_upozornenia(env, s
     assert res.get("action") == "aktualizovane", res
 
 
-def test_skratenie_po_presune_neodoberie_novy_termin_bez_upozornenia(env, session):
+def test_skratenie_po_presune_neodoberie_novy_termin(env, session):
     """ROV 23.11.; čaká presun na 25.11. a skrátenie „dňa 23.11. bude 08 – 10“. Po potvrdení presunu sa skrátenie
-    výluky na 25.11. netýka – bez nového upozornenia ju nevráti na 23.11."""
+    výluky na 25.11. netýka (skrátiť sa dá len termín, ktorý výluka má) – výluku nevráti na 23.11., jeho termín je
+    ďalšia výluka (prísnejší prípad, s vysvetlením vo výsledku)."""
     _one(env, session, SUBJ, ROV1)
     move = _one(env, session, ZSUBJ, MOVE_23_25)
     short = _one(env, session, ZSUBJ, SHORT_23)
     _confirm(session, move)
     res = _confirm(session, short)
-    assert res.get("ok") is False, res
-    assert _closed(session, 2026, 11, 25, 10)
+    assert res.get("action") == "vytvorene" and "netýka" in str(res.get("note")), res
+    assert _closed(session, 2026, 11, 25, 10) and _closed(session, 2026, 11, 23, 9)
 
 
 def test_dva_presuny_za_sebou_sa_zapisu_bez_noveho_potvrdenia(env, session):
