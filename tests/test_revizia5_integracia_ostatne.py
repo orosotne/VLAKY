@@ -1,11 +1,10 @@
 """5. revízia – integrácia požiadaviek medzi oblasťami (strana registra, webu a príkazového riadku).
 
-- (1) zmena, zrušenie či nový termín, ktorý uvádza len číslo ROV (bez úseku): úsek sa doplní z registra výluk, ak sú
-  výluky s týmto číslom (od tej istej OR) na jednom úseku – čakajúca udalosť potom obmedzí len vlaky v tomto úseku (nie
-  celý vozový park) a upozornenie uvedie úsek; termín sa z registra nedopĺňa (pôvodný termín nie je nový termín);
-  výluky s číslom na viacerých úsekoch ostanú na výber dispečerovi (poznámka ich vymenuje), výluka inej OR sa nepoužije;
-- (2) hlavičky distribučného zoznamu (Precedence: bulk/list, List-Unsubscribe) sú slabým signálom: newsletter
-  (predmet aj adresa newslettera) s číslom ROV nie je prevádzkové oznámenie, prevádzková správa OR cez zoznam áno;
+- (1) zmena, zrušenie či nový termín, ktorý uvádza len číslo ROV (bez úseku): od 6. revízie sa úsek z registra výluk
+  automaticky nedopĺňa – udalosť ostáva bez miesta (poistka pre celý vozový park, upozornenie DÔLEŽITÉ) a fronta ponúkne
+  výluky s týmto číslom ako návrh (úsek, termín, OR, druh dokumentu); dispečer jednu vyberie alebo úsek opraví;
+- (2) hlavičky distribučného zoznamu (Precedence: bulk/list, List-Unsubscribe) sú slabým signálom: e-mail s výlukou,
+  číslom dokumentu ŽSR a termínom či úsekom sa nikdy nepotlačí (6. revízia), newsletter bez čísla dokumentu je „iné“;
 - (6) zastaraný formulár dočasného záznamu zmeny výluky, ktorý potvrdenie či zamietnutie zmeny odstránilo: nie 404 a
   strata zadania – formulár výluky, do ktorej sa zmena zapísala, s neuloženým zadaním a vysvetlením;
 - (7) test-notify --kanal sms|teams v tieňovej prevádzke vysvetlí, že SMS a Teams sú vypnuté (kód 1 ostáva).
@@ -74,13 +73,19 @@ def _green(r) -> bool:
     return r.color == "ZELENÁ"
 
 
-# ====================================================================== (1) úsek podľa čísla ROV z registra
-def test_odklad_len_podla_cisla_rov_dostane_usek_z_registra(env, session):
-    """B04b: „Výluka podľa ROV 5310/2026 sa odkladá o týždeň, na noc 14./15.12.2026, v rovnakom čase.“ – e-mail neuvádza
-    úsek ani čitateľný termín. ROV 5310/2026 (OR Košice) je v registri raz (Kysak – Prešov): zmena dostane úsek
-    z registra, termín nie (pôvodný termín nie je odložený termín). Čakajúca zmena obmedzí vlaky v úseku Kysak – Prešov
-    (nie ZELENÁ – nový termín plánovač nepozná), vlak Senec → Galanta už nie (žiadna poistka pre celý vozový park);
-    upozornenie DÔLEŽITÉ uvedie úsek. Zmena sa nezapíše bez dispečera."""
+# ====================================================================== (1) číslo ROV bez úseku – návrh z registra
+def _candidates(session, ev) -> list:
+    from vlaky.posta.spracovanie import register_candidates
+
+    return register_candidates(session, ev)
+
+
+def test_odklad_len_podla_cisla_rov_ostava_bez_miesta_s_navrhom(env, session):
+    """B04b (6. revízia – úsek z registra sa nedopĺňa): „Výluka podľa ROV 5310/2026 sa odkladá o týždeň, na noc
+    14./15.12.2026, v rovnakom čase.“ – e-mail neuvádza úsek ani čitateľný termín. ROV 5310/2026 (OR Košice) je v registri
+    raz (Kysak – Prešov): udalosť úsek nedostane (ostáva udalosťou bez miesta), fronta výluku ponúkne ako návrh. Poistka
+    pre celý vozový park – vlak Senec → Galanta ani Kysak → Prešov nie je ZELENÝ; upozornenie DÔLEŽITÉ. Zmena sa nezapíše
+    bez dispečera."""
     _register(env, session, "rov5310.eml", "ROV c. 5310/2026 Kysak - Presov",
               "Dobrý deň,\n\nnočná výluka v úseku Kysak – Prešov v noci 07./08.12.2026 od 22:00 do 04:00 hod. "
               "(ROV 5310/2026).\n\nOR Košice\n", ROV_KE, "Fri, 20 Nov 2026 09:00:00 +0100", utc(2026, 11, 20, 8, 2))
@@ -88,24 +93,20 @@ def test_odklad_len_podla_cisla_rov_dostane_usek_z_registra(env, session):
                         "Výluka podľa ROV 5310/2026 sa odkladá o týždeň, na noc 14./15.12.2026, v rovnakom čase.\n\n"
                         "OR Košice\n", ROV_KE, "Thu, 26 Nov 2026 09:40:00 +0100", utc(2026, 11, 26, 8, 42))
     assert ev.kind == "vyluka_zmena" and ev.status == "navrh" and ev.needs_confirmation
-    assert (ev.data.get("from_station"), ev.data.get("to_station")) == ("Kysak", "Prešov"), ev.data
-    assert not ev.data.get("start") and not ev.data.get("end"), ev.data      # termín sa z registra nedopĺňa
-    assert "doplnený z registra" in _texts(ev), _texts(ev)
-    alerts = _alerts(session)
-    assert alerts and all("Kysak – Prešov" in a and "miesto sa nepodarilo prečítať" not in a for a in alerts), alerts
+    assert not ev.data.get("from_station") and not ev.data.get("to_station"), ev.data
     [c] = _active(session)
+    assert [x["id"] for x in _candidates(session, ev)] == [c.id]
+    assert _alerts(session), "udalosť bez miesta musí dostať upozornenie DÔLEŽITÉ"
     assert (c.from_station, c.to_station, as_utc(c.start_utc)) == ("Kysak", "Prešov", utc(2026, 12, 7, 21))
     other = _decide(session, "70101", "Senec", "Galanta", utc(2026, 12, 14, 22), utc(2026, 12, 14, 19))
-    assert _green(other), (other.color, other.reasons)
+    assert not _green(other), other.summary
     on = _decide(session, "70102", "Kysak", "Prešov", utc(2026, 12, 14, 22), utc(2026, 12, 14, 19))
     assert not _green(on), on.summary
-    assert any(f"#{ev.id}" in r and "Kysak – Prešov" in r for r in on.reasons), on.reasons
 
 
-def test_zmena_len_podla_cisla_s_terminom_ma_zaznam_pre_planovac(env, session):
-    """B07b: „Zmena ROV 6100/2026: výluka dňa 02.12.2026 sa posúva na 04.12.2026 (8:00 – 14:00)“ – úsek z registra
-    (Hronská Dúbrava – Žiar nad Hronom), nový termín z e-mailu: dočasný záznam zmeny „navrh“ (plánovač počíta s oboma
-    termínmi). Vlak v úseku 04.12. o 10:00 nedostane VYPRAVIŤ ZELENÁ, vlak Senec → Galanta je ZELENÝ. Potvrdenie zmenu
+def test_zmena_len_podla_cisla_s_terminom_po_vybere_useku(env, session):
+    """B07b: „Zmena ROV 6100/2026: výluka dňa 02.12.2026 sa posúva na 04.12.2026 (8:00 – 14:00)“ – úsek sa z registra
+    nedoplní (vlaky kdekoľvek nie sú ZELENÉ, kým ju dispečer nevybaví); po potvrdení s úsekom výluky z návrhu sa zmena
     zapíše do výluky v registri."""
     _register(env, session, "rov6100.eml", "ROV 6100/2026 Hronska Dubrava - Ziar nad Hronom",
               "Dobrý deň,\n\núplná výluka v úseku Hronská Dúbrava – Žiar nad Hronom dňa 02.12.2026 od 08:00 do 14:00 "
@@ -114,25 +115,23 @@ def test_zmena_len_podla_cisla_s_terminom_ma_zaznam_pre_planovac(env, session):
                         "Zmena ROV 6100/2026: výluka dňa 02.12.2026 sa posúva na 04.12.2026 (8:00 – 14:00), ostatné "
                         "termíny bez zmeny.\n", ROV_ZV, "Thu, 26 Nov 2026 09:40:00 +0100", utc(2026, 11, 26, 8, 42))
     assert ev.kind == "vyluka_zmena" and ev.needs_confirmation
-    assert (ev.data.get("from_station"), ev.data.get("to_station")) == ("Hronská Dúbrava", "Žiar nad Hronom")
-    temp = session.scalar(select(Closure).where(Closure.source_event_id == ev.id))
-    assert temp is not None and temp.proposed_change_of is not None and temp.status == "navrh"
-    assert (as_utc(temp.start_utc), as_utc(temp.end_utc)) == (utc(2026, 12, 4, 7), utc(2026, 12, 4, 13))
+    assert not ev.data.get("from_station"), ev.data
+    [cand] = _candidates(session, ev)
     on = _decide(session, "70201", "Hronská Dúbrava", "Žiar nad Hronom", utc(2026, 12, 4, 9), utc(2026, 12, 4, 6))
-    assert not (on.decision == "VYPRAVIŤ" and _green(on)), on.summary
+    assert not _green(on), on.summary
     other = _decide(session, "70202", "Senec", "Galanta", utc(2026, 12, 4, 9), utc(2026, 12, 4, 6))
-    assert _green(other), (other.color, other.reasons)
-    ev = _confirm(session, ev.id)
+    assert not _green(other), other.summary
+    ev = _confirm(session, ev.id, from_station=cand["from_station"], to_station=cand["to_station"])
     assert ev.validation["apply_result"]["ok"] is True, ev.validation["apply_result"]
     [c] = _active(session)
     assert (c.from_station, as_utc(c.start_utc), as_utc(c.end_utc)) == ("Hronská Dúbrava", utc(2026, 12, 4, 7),
                                                                          utc(2026, 12, 4, 13))
 
 
-def test_novy_termin_len_podla_cisla_dostane_usek(env, session):
+def test_novy_termin_len_podla_cisla_ostava_bez_miesta(env, session):
     """C08b: „Termín 15.12.2026 sa ruší. Výluka sa doplňuje o termín 17.12.2026 od 8:00 do 14:00 hod.“ – nový termín
-    dostane úsek ROV 5340/2026 z registra (Prešov – Lipany) a záznam „navrh“ pre plánovač; vlak Prešov → Lipany 17.12.
-    o 10:00 nie je ZELENÝ, vlak Senec → Galanta áno. Zrušenie 15.12. ostáva zrušením tej istej výluky."""
+    úsek z registra nedostane (poistka pre celý vozový park: vlak Prešov → Lipany aj Senec → Galanta 17.12. o 10:00 nie je
+    ZELENÝ), fronta ponúkne výluku ROV 5340/2026; zrušenie 15.12. ostáva zrušením tej istej výluky (podľa čísla)."""
     _register(env, session, "rov5340.eml", "ROV 5340/2026 Presov - Lipany",
               "Dobrý deň,\n\núplná výluka v úseku Prešov – Lipany dňa 15.12.2026 od 08:00 do 14:00 hod. "
               "(ROV 5340/2026).\n", ROV_KE, "Fri, 20 Nov 2026 09:00:00 +0100", utc(2026, 11, 20, 8, 2))
@@ -141,21 +140,19 @@ def test_novy_termin_len_podla_cisla_dostane_usek(env, session):
                       "Ostatné termíny platia bez zmeny.\n", ROV_KE, "Mon, 07 Dec 2026 09:10:00 +0100",
                       utc(2026, 12, 7, 8, 12))
     nova = next(e for e in new if e.kind == "vyluka_nova")
-    assert (nova.data.get("from_station"), nova.data.get("to_station")) == ("Prešov", "Lipany"), nova.data
-    assert nova.needs_confirmation and "doplnený z registra" in _texts(nova)
-    row = session.scalar(select(Closure).where(Closure.source_event_id == nova.id))
-    assert row is not None and row.status == "navrh" and as_utc(row.start_utc) == utc(2026, 12, 17, 7)
+    assert not nova.data.get("from_station") and nova.needs_confirmation, nova.data
+    assert [x["from_station"] for x in _candidates(session, nova)] == ["Prešov"]
     on = _decide(session, "70301", "Prešov", "Lipany", utc(2026, 12, 17, 9), utc(2026, 12, 17, 6))
-    assert not (on.decision == "VYPRAVIŤ" and _green(on)), on.summary
+    assert not _green(on), on.summary
     other = _decide(session, "70302", "Senec", "Galanta", utc(2026, 12, 17, 9), utc(2026, 12, 17, 6))
-    assert _green(other), (other.color, other.reasons)
+    assert not _green(other), other.summary
     cancel = next(e for e in new if e.kind == "vyluka_zrusenie")
     assert any("Zruší výluku #1" in w for w in cancel.validation["warnings"]), cancel.validation["warnings"]
 
 
-def test_storno_len_podla_cisla_dostane_usek_a_zrusi_celu_vyluku(env, session):
-    """„STORNO – ROV 5330/2026“ bez úseku: zrušenie dostane úsek z registra (Košice – Čaňa), termín nie (zrušenie bez
-    termínu ruší celú výluku); automaticky sa nezapíše, po potvrdení je výluka zrušená."""
+def test_storno_len_podla_cisla_zrusi_celu_vyluku_po_potvrdeni(env, session):
+    """„STORNO – ROV 5330/2026“ bez úseku: zrušenie úsek nedostane, k výluke ho priradí číslo (fronta to povie –
+    „Zruší výluku #1 …“); automaticky sa nezapíše, po potvrdení je výluka zrušená."""
     _register(env, session, "rov5330.eml", "ROV 5330/2026 Kosice - Cana",
               "Dobrý deň,\n\núplná výluka v úseku Košice – Čaňa dňa 10.12.2026 od 07:00 do 12:00 hod. "
               "(ROV 5330/2026).\n", ROV_KE, "Fri, 20 Nov 2026 09:00:00 +0100", utc(2026, 11, 20, 8, 2))
@@ -163,8 +160,8 @@ def test_storno_len_podla_cisla_dostane_usek_a_zrusi_celu_vyluku(env, session):
                         "Dobrý deň,\n\nvýluku v predmete stornujeme.\n\nOR Košice\n", ROV_KE,
                         "Thu, 26 Nov 2026 09:40:00 +0100", utc(2026, 11, 26, 8, 42))
     assert ev.kind == "vyluka_zrusenie" and ev.status == "navrh"
-    assert (ev.data.get("from_station"), ev.data.get("to_station")) == ("Košice", "Čaňa"), ev.data
-    assert not ev.data.get("start")
+    assert not ev.data.get("from_station") and not ev.data.get("start"), ev.data
+    assert any("Zruší výluku #1 Košice – Čaňa" in w for w in ev.validation["warnings"]), ev.validation["warnings"]
     assert _active(session), "zrušenie sa bez dispečera nezapíše"
     ev = _confirm(session, ev.id)
     assert ev.validation["apply_result"]["ok"] is True and not _active(session)
@@ -172,8 +169,7 @@ def test_storno_len_podla_cisla_dostane_usek_a_zrusi_celu_vyluku(env, session):
 
 def test_cislo_rov_na_viacerych_usekoch_ostava_na_vyber_dispecerovi(env, session):
     """ROV 3360/2026 je v registri na dvoch úsekoch (Trnava – Senica, Senica – Kúty): zmena len podľa čísla úsek
-    nedostane (nejednoznačné), poznámka vymenuje obe výluky; poistka pre celý vozový park ostáva (vlak Senec → Galanta
-    nie je ZELENÝ)."""
+    nedostane, fronta ponúkne obe výluky; poistka pre celý vozový park ostáva (vlak Senec → Galanta nie je ZELENÝ)."""
     _register(env, session, "rov3360.eml", "ROV 3360/2026 - vyluky na trati 116",
               "Dňa 09.12.2026 od 7:00 do 13:00 hod. budú úplné výluky v úsekoch Trnava – Senica a Senica – Kúty "
               "(ROV 3360/2026).\n", ROV_TT, "Fri, 27 Nov 2026 09:00:00 +0100", utc(2026, 11, 27, 8, 2))
@@ -183,15 +179,15 @@ def test_cislo_rov_na_viacerych_usekoch_ostava_na_vyber_dispecerovi(env, session
                         "Thu, 03 Dec 2026 09:00:00 +0100", utc(2026, 12, 3, 8, 2))
     assert ev.kind == "vyluka_zmena"
     assert not ev.data.get("from_station") and not ev.data.get("to_station"), ev.data
-    text = _texts(ev)
-    assert "Trnava – Senica" in text and "Senica – Kúty" in text and "3360/2026" in text, text
+    text = " | ".join(x["text"] for x in _candidates(session, ev))
+    assert "Trnava – Senica" in text and "Senica – Kúty" in text, text
     other = _decide(session, "70401", "Senec", "Galanta", utc(2026, 12, 9, 9), utc(2026, 12, 9, 6))
     assert not _green(other), other.summary
 
 
-def test_cislo_rov_inej_or_usek_nedoplni(env, session):
-    """ROV 15/2026 v registri je od OR Žilina (Žilina – Púchov); odklad „ROV 15/2026“ od OR Košice úsek nedostane (číslo
-    ROV má každá OR vlastné) – poznámka to vysvetlí, poistka pre celý vozový park ostáva."""
+def test_cislo_rov_inej_or_navrh_s_upozornenim(env, session):
+    """ROV 15/2026 v registri je od OR Žilina (Žilina – Púchov); odklad „ROV 15/2026“ od OR Košice úsek nedostane, návrh
+    vo fronte upozorní, že výluka je od inej OR (číslo ROV má každá OR vlastné); poistka pre celý vozový park ostáva."""
     _register(env, session, "rov15.eml", "ROV c. 15/2026 Zilina - Puchov",
               "Dobrý deň,\n\núplná výluka v úseku Žilina – Púchov dňa 10.12.2026 od 08:00 do 14:00 hod. "
               "(ROV č. 15/2026).\n", ROV_ZA, "Fri, 20 Nov 2026 09:00:00 +0100", utc(2026, 11, 20, 8, 2))
@@ -200,44 +196,32 @@ def test_cislo_rov_inej_or_usek_nedoplni(env, session):
                         "Thu, 26 Nov 2026 09:40:00 +0100", utc(2026, 11, 26, 8, 42))
     assert ev.kind == "vyluka_zmena"
     assert not ev.data.get("from_station"), ev.data
-    text = _texts(ev)
-    assert "OR Žilina" in text and "Žilina – Púchov" in text, text
+    [cand] = _candidates(session, ev)
+    assert cand["from_station"] == "Žilina" and any("OR Žilina" in f and "OR Košice" in f for f in cand["flags"]), cand
 
 
-@pytest.mark.parametrize("body,filled", [
-    ("Výluka podľa ROV 4120/2026 sa rozširuje aj na úsek N. Zámky – Šurany dňa 11.12.2026.", False),
-    ("ROV 4120/2026: výluka aj N. Zámky – Šurany dňa 11.12.2026 od 08:00 do 12:00 hod.", False),
-    ("Výluka podľa ROV 4120/2026 bude dňa 11.12.2026 aj v žst. Šurany.", False),
-    ("Výluka podľa ROV 4120/2026 sa týka dňa 11.12.2026 aj Šurian.", False),
-    ("Výluka podľa ROV 4120/2026 sa odkladá o týždeň, v Senci v rovnakom čase.", True),
-    ("Dobrý deň,\n\nvýluka podľa ROV 4120/2026 sa odkladá o týždeň.\n\nS pozdravom\nIng. Ján Novák\nOR Bratislava\n",
-     True),
-    ("Zasielame zmenu ROV 4120/2026, podrobnosti sú v prílohe.", False),
-], ids=["usek", "dvojica", "zst", "dopravna_vo_vete", "ta_ista_dopravna", "podpis", "priloha"])
-def test_usek_z_registra_sa_nedoplni_ked_email_uvadza_ine_miesto(env, session, body, filled):
-    """E-mail s číslom ROV, ktorý uvádza miesto, čo pravidlá neprečítali („N. Zámky – Šurany“, „žst. Šurany“, „Šurian“):
-    úsek z registra (ROV 4120/2026 Senec – Galanta) sa nedoplní – môže ísť o iný úsek toho istého ROV a vlaky
-    v skutočnom úseku by dostali ZELENÚ; upozornenie to vysvetlí – aj keď je úsek len v prílohe. Zmienka o dopravni
-    úseku z registra či podpis („Ing. Ján Novák“, „OR Bratislava“) doplnenie nebránia."""
-    from types import SimpleNamespace
-
-    from vlaky.posta.spracovanie import _register_place
-
-    # druh dokumentu výluky (ROV) musí byť známy – výluka len s číslom úsek nedá (pozri test_revizia5_integracia_ostatne2)
+@pytest.mark.parametrize("body", [
+    "Výluka podľa ROV 4120/2026 sa rozširuje aj na úsek N. Zámky – Šurany dňa 11.12.2026.",
+    "Výluka podľa ROV 4120/2026 bude dňa 11.12.2026 aj v žst. Šurany.",
+    "Výluka podľa ROV 4120/2026 sa odkladá o týždeň, v Senci v rovnakom čase.",
+    "Dobrý deň,\n\nvýluka podľa ROV 4120/2026 sa odkladá o týždeň.\n\nS pozdravom\nIng. Ján Novák\nOR Bratislava\n",
+], ids=["usek", "zst", "ta_ista_dopravna", "podpis"])
+def test_usek_z_registra_sa_nikdy_nedoplni(env, session, body):
+    """E-mail len s číslom ROV (aj keď uvádza dopravňu úseku z registra či len podpis): úsek sa z registra nedoplní –
+    udalosť ostáva bez miesta, výluka ROV 4120/2026 (Senec – Galanta) je len návrh vo fronte."""
     session.add(Closure(kind="uplna", from_station="Senec", to_station="Galanta", start_utc=utc(2026, 12, 4, 7),
                         end_utc=utc(2026, 12, 4, 13), status="overene", source="email", external_ref="ROV 4120/2026"))
     session.commit()
-    attached = [SimpleNamespace(filename="ROV_4120_zmena.pdf",
-                                text="Úsek: N. Zámky – Šurany, 11.12.2026 08:00 – 12:00")]
-    mail = SimpleNamespace(sender="vyluky.orba@zsr.example", subject="ROV 4120/2026", body_text=body,
-                           attachments=attached if "prílohe" in body else [])
-    data, reasons, warnings = _register_place(session, "vyluka_zmena", {"external_ref": "4120/2026", "kind": "uplna"},
-                                              mail)
-    if filled:
-        assert (data.get("from_station"), data.get("to_station")) == ("Senec", "Galanta") and reasons, warnings
-    else:
-        assert not data.get("from_station") and not reasons, data
-        assert warnings and "nepodarilo prečítať" in warnings[0] and "Senec – Galanta" in warnings[0], warnings
+    new = _new_events(env, session, "z.eml", "ROV 4120/2026", body, "ZSR OR Bratislava <vyluky.orba@zsr.example>",
+                      "Thu, 26 Nov 2026 09:40:00 +0100", utc(2026, 11, 26, 8, 42))
+    assert new
+    for ev in new:
+        assert (ev.validation or {}).get("field_source", {}).get("from_station") != "register", ev.validation
+    for ev in new:
+        if ev.data.get("from_station"):                # miesto prečítali pravidlá – nie z registra
+            assert {ev.data.get("from_station"), ev.data.get("to_station")} != {"Senec", "Galanta"}, ev.data
+        elif ev.kind in ("vyluka_nova", "vyluka_zmena", "vyluka_zrusenie"):
+            assert [x["from_station"] for x in _candidates(session, ev)] == ["Senec"], ev.data
 
 
 # ====================================================================== (2) hromadná pošta (zoznam)
@@ -249,20 +233,20 @@ _LIST = {"List-Unsubscribe": "<mailto:newsletter-off@zsr.example>"}
 _NEWS_FROM = "ŽSR Spravodaj <newsletter@zsr.example>"
 
 
-def test_newsletter_s_hlavickami_zoznamu_nie_je_prevadzkove_oznamenie(env, session):
-    """r5k_I04: ŽSR Spravodaj (Precedence: bulk, List-Unsubscribe, newsletter@) s číslom ROV nie je prevádzkové
-    oznámenie – žiadna výluka „navrh“, vlak Kysak → Prešov 08.12. o 10:00 nie je odstavený. Prevádzková správa OR
-    (vyluky.orke@) cez distribučný zoznam (aj s predmetom bulletinu) a správa bez hlavičiek zoznamu sa spracujú."""
+def test_newsletter_s_vylukou_cislom_rov_a_terminom_sa_nepotlaci(env, session):
+    """r5k_I04 (6. revízia – FR3): ŽSR Spravodaj (Precedence: bulk, List-Unsubscribe, newsletter@) s výlukou, číslom ROV
+    a termínom sa nikdy nepotlačí ako hromadný e-mail – výluka čaká na dispečera s poznámkou „overte“ a vlak Kysak →
+    Prešov 08.12. o 10:00 nie je ZELENÝ. Prevádzková správa OR (vyluky.orke@) cez distribučný zoznam (aj s predmetom
+    bulletinu) a správa bez hlavičiek zoznamu sa spracujú; spravodaj bez čísla dokumentu je „iné“."""
     _drop_at(env, "news.eml", _mail("ŽSR Spravodaj 11/2026", _NEWS_BODY, "news1", _NEWS_FROM,
                                     "Thu, 19 Nov 2026 07:00:00 +0100", headers={"Precedence": "bulk", **_LIST}),
              utc(2026, 11, 19, 6))
     _process(session, utc(2026, 11, 19, 6, 2))
     evs = events(session)
-    assert [e.kind for e in evs] == ["ine"], [(e.kind, e.data) for e in evs]
-    assert any("Precedence: bulk" in n for n in evs[0].validation["notes"]), evs[0].validation["notes"]
-    assert not list(session.scalars(select(Closure)))
+    assert evs and all(e.kind == "vyluka_nova" and e.needs_confirmation for e in evs), [(e.kind, e.data) for e in evs]
+    assert any("overte" in n for n in evs[0].validation["notes"]), evs[0].validation["notes"]
     r = _decide(session, "70501", "Kysak", "Prešov", utc(2026, 12, 8, 9), utc(2026, 12, 8, 6))
-    assert r.decision == "VYPRAVIŤ" and _green(r), r.summary
+    assert not _green(r), r.summary
     # prevádzková správa OR cez distribučný zoznam – aj s predmetom bulletinu – sa spracuje
     for i, subject in enumerate(("ROV c. 5212/2026 Kysak - Presov", "Bulletin vyluk OR Kosice - 50. tyzden")):
         _drop_at(env, f"list{i}.eml", _mail(subject, "Dobrý deň,\n\núplná výluka v úseku Kysak – Prešov dňa 10.12.2026 "
@@ -272,15 +256,12 @@ def test_newsletter_s_hlavickami_zoznamu_nie_je_prevadzkove_oznamenie(env, sessi
         _process(session, utc(2026, 11, 20, 6, 2 + i))
         last = events(session)[-1]
         assert last.kind == "vyluka_nova", (subject, last.kind, last.data)
-    # predmet newslettera bez hlavičiek zoznamu (slabý signál) s číslom ROV – spracuje sa ako doteraz; s hlavičkami
-    # zoznamu, ale z adresy, ktorá nie je adresou newslettera, tiež (len dva slabé signály – prísnejší prípad)
-    for i, (sender, headers) in enumerate(((_NEWS_FROM, {}),
-                                           ("ŽSR – oznamy <oznamy@zsr.example>", {"Precedence": "list", **_LIST}))):
-        _drop_at(env, f"news2{i}.eml", _mail("ŽSR Spravodaj 12/2026", _NEWS_BODY.replace("5211", f"521{3 + i}"),
-                                            f"news2{i}", sender, "Sat, 21 Nov 2026 07:00:00 +0100", headers=headers),
-                 utc(2026, 11, 21, 6))
-        _process(session, utc(2026, 11, 21, 6, 2 + i))
-        assert events(session)[-1].kind == "vyluka_nova", (sender, events(session)[-1].kind)
+    # spravodaj bez čísla dokumentu s hlavičkami zoznamu – hromadný e-mail („iné“)
+    _drop_at(env, "news3.eml", _mail("ŽSR Spravodaj 12/2026", "ŽSR Spravodaj 12/2026\n\nModernizácia pokračuje, "
+                                     "podrobnosti zverejníme.\n", "news3", _NEWS_FROM, "Sat, 21 Nov 2026 07:00:00 +0100",
+                                     headers={"Precedence": "bulk", **_LIST}), utc(2026, 11, 21, 6))
+    _process(session, utc(2026, 11, 21, 6, 2))
+    assert events(session)[-1].kind == "ine", events(session)[-1].data
 
 
 # ====================================================================== (6) zastaraný formulár dočasného záznamu zmeny

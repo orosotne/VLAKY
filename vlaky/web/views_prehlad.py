@@ -63,7 +63,7 @@ FIELD_LABELS = {
     "delay_min": "Meškanie [min]", "path_id": "Trasa", "partner": "Partner", "direction": "Smer",
     "eta": "Predpokladaný príchod (avízo)", "earliest_departure": "Najskorší odchod", "deadline": "Termín doručenia",
     "accept_by": "Akceptovať do", "date": "Dátum", "offer": "Ponuka trasy (treba akceptovať)",
-    "until_revoked": "Do odvolania", "via": "Cez", "border_code": "Kód priechodu",
+    "until_revoked": "Do odvolania", "via": "Cez", "border_code": "Kód priechodu", "zamer": "Zámer zmeny",
 }
 _ISO_DT = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -128,7 +128,7 @@ def _display(key: str, value: Any, kind: str) -> str:
     if kind == "number":
         return f"{value:g}".replace(".", ",") if isinstance(value, float) else str(value)
     if key == "kind":
-        return CLOSURE_KIND.get(str(value)) or PATH_KIND.get(str(value)) or str(value)
+        return CLOSURE_KIND.get(str(value)) or PATH_KIND.get(str(value)) or f"{value} (neznámy druh – overte)"
     if key == "points" and isinstance(value, list):
         return "; ".join(_point_text(p) for p in value)
     if kind == "json":
@@ -136,7 +136,25 @@ def _display(key: str, value: Any, kind: str) -> str:
     return str(value)
 
 
-def event_fields(data: dict) -> list:
+_PATH_EVENTS = ("trasa_pridelena", "trasa_zmena")
+
+
+def _kind_options(event_kind: str, value: Any) -> list:
+    """Voľby poľa „Druh“ formulára fronty (kód, slovenský názov): druh obmedzenia výluky alebo druh trasy – nie voľný
+    text (zapísaný neznámy druh by plánovač nepoznal). Neznáma hodnota z e-mailu je prvá voľba s upozornením."""
+    from .common import CLOSURE_KIND, PATH_KIND
+
+    known = PATH_KIND if event_kind in _PATH_EVENTS else CLOSURE_KIND
+    out = [(k, v) for k, v in known.items()]
+    cur = "" if value is None else str(value)
+    if event_kind == "vyluka_zrusenie" or cur == "":
+        out.insert(0, ("", "— neuvedený —"))
+    if cur and cur not in known:
+        out.insert(0, (cur, f"{cur} – neznámy druh, vyberte zo zoznamu"))
+    return out
+
+
+def event_fields(data: dict, event_kind: str = "") -> list:
     out = []
     for key, value in (data or {}).items():
         if str(key).startswith("_"):
@@ -152,9 +170,32 @@ def event_fields(data: dict) -> list:
             shown = ""
         else:
             shown = value
-        out.append({"key": str(key), "label": FIELD_LABELS.get(str(key), str(key)), "kind": kind, "value": shown,
-                    "original": value, "display": _display(str(key), value, kind)})
+        item = {"key": str(key), "label": FIELD_LABELS.get(str(key), str(key)), "kind": kind, "value": shown,
+                "original": value, "display": _display(str(key), value, kind)}
+        if str(key) == "kind" and kind in ("text", "textarea") or (str(key) == "kind" and value is None):
+            item["kind"] = "choice"
+            item["value"] = "" if value is None else str(value)
+            item["options"] = _kind_options(event_kind, value)
+        out.append(item)
     return out
+
+
+def _kind_edit(raw: str, event_kind: str) -> tuple:
+    """Druh z formulára fronty → (kód, chyba): slovenský názov či variant („úplná výluka“, „Uplna“) sa prevedie na
+    kód, neznámy druh sa odmietne (FE0 – zapísaný by ho plánovač nepoznal)."""
+    from .common import CLOSURE_KIND, PATH_KIND
+
+    if raw == "":
+        return None, ""
+    if event_kind in _PATH_EVENTS:
+        return (raw, "") if raw in PATH_KIND else (None, f"Druh: neznámy druh trasy „{raw[:40]}“ – vyberte zo zoznamu.")
+    try:
+        code = _posta().restriction_code(raw)
+    except (ImportError, AttributeError):
+        code = raw if raw in CLOSURE_KIND else None
+    if code is None:
+        return None, f"Druh: neznámy druh obmedzenia „{raw[:40]}“ – vyberte zo zoznamu (úplná výluka, výluka koľaje, …)."
+    return code, ""
 
 
 _ISO_DAY = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b(?![T:\d])")
@@ -170,8 +211,9 @@ EVENT_STATE = {"aplikovane": "zapísaná do registra", "zamietnute": "zamietnut�
                "navrh": "čaká na potvrdenie"}
 
 
-def parse_event_edits(form, data: dict) -> tuple:
-    """Zmenené polia z formulára (len tie, ktoré sa líšia od extrakcie) + chyby."""
+def parse_event_edits(form, data: dict, event_kind: str = "") -> tuple:
+    """Zmenené polia z formulára (len tie, ktoré sa líšia od extrakcie) + chyby. Druh (``kind``) len známy kód – aj
+    zo slovenského názvu (:func:`_kind_edit`)."""
     edits: dict = {}
     errors: dict = {}
     for key, old in (data or {}).items():
@@ -207,8 +249,23 @@ def parse_event_edits(form, data: dict) -> tuple:
             except (ValueError, json.JSONDecodeError):
                 errors[key] = f"{FIELD_LABELS.get(key, key)}: neplatná hodnota."
                 continue
+            if key == "kind" and isinstance(new, str) and new != (old or ""):
+                code, error = _kind_edit(new, event_kind)
+                if error:
+                    errors[key] = error
+                    continue
+                new = code if code is not None or old is not None else None
         if new != old:
             edits[key] = new
+    d = data or {}
+    if "track" in d and ("kind" in edits or "track" in edits) and "kind" not in errors:
+        # výluka koľaje bez koľaje (FE1): druh zmenený na „výluka koľaje“ či vymazaná koľaj – bez koľaje nie je známe, či
+        # ostáva zjazdná iná koľaj (plánovač by mohol pustiť vlak cez úplne uzavretý úsek); dispečer koľaj doplní
+        kind_now = edits.get("kind", d.get("kind"))
+        track_now = edits.get("track", d.get("track"))
+        if kind_now == "kolaj" and not str(track_now or "").strip():
+            errors["track"] = ("Koľaj: pri výluke koľaje uveďte koľaj (napr. 1 alebo 2) – bez nej nie je známe, či "
+                               "ostáva zjazdná iná koľaj.")
     return edits, errors
 
 
@@ -271,15 +328,28 @@ def _full_items(s, ids: list) -> list:
     email_ids = {e.email_id for e in events if e.email_id}
     emails = {m.id: m for m in s.scalars(select(Email).options(selectinload(Email.attachments))
                                          .where(Email.id.in_(email_ids)))} if email_ids else {}
-    return [{"event": e, "email": emails.get(e.email_id), "fields": event_fields(e.data or {}),
+    return [{"event": e, "email": emails.get(e.email_id), "fields": event_fields(e.data or {}, e.kind),
              "failed": _apply_failed(e), "register": _register_notes(s, e), "issues": _issues(e),
-             "failure": _failure(e)} for e in events]
+             "failure": _failure(e), "candidates": _candidates(s, e)} for e in events]
+
+
+def _candidates(s, ev: ExtractedEvent) -> list:
+    """Výluky v registri s číslom udalosti bez úseku – návrh pre dispečera (úsek sa z registra nedopĺňa automaticky)."""
+    try:
+        return _posta().register_candidates(s, ev)
+    except Exception:  # noqa: BLE001 – len návrh, fronta sa zobrazí aj bez neho
+        log.exception("Návrhy výluk z registra pre udalosť %s sa nepodarilo zistiť", ev.id)
+        return []
+
+
+_CONFIDENCE = re.compile(r"\b(istota|prahom|prah)\s+(\d+)\.(\d+)\b")
 
 
 def _issues(ev: ExtractedEvent) -> dict:
-    """Chyby a upozornenia udalosti na zobrazenie – dátumy v slovenskom zápise (aj v starších uložených textoch)."""
+    """Chyby a upozornenia udalosti na zobrazenie – dátumy v slovenskom zápise a istota s desatinnou čiarkou („istota
+    0,50 je pod prahom 0,80“), aj v starších uložených textoch."""
     val = ev.validation if isinstance(ev.validation, dict) else {}
-    return {key: [local_dates(x) for x in val.get(key) or []]
+    return {key: [_CONFIDENCE.sub(r"\1 \2,\3", local_dates(x)) for x in val.get(key) or []]
             for key in ("errors", "chyby", "blocking", "warnings", "varovania", "issues", "confirmation_reasons")}
 
 
@@ -316,7 +386,8 @@ def _compact_items(s, ids: list) -> list:
         val = e.validation if isinstance(e.validation, dict) else {}
         out.append({"event": e, "email": emails.get(e.email_id), "failed": _apply_failed(e),
                     "summary": describe(e) if describe else f"{EVENT_KIND.get(e.kind, e.kind)} (#{e.id})",
-                    "reasons": [local_dates(x) for x in list(val.get("confirmation_reasons") or [])[:3]]})
+                    "reasons": [_CONFIDENCE.sub(r"\1 \2,\3", local_dates(x))
+                                for x in list(val.get("confirmation_reasons") or [])[:3]]})
     return out
 
 
@@ -425,8 +496,9 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
         data = dict(ev.data or {})
         kind = ev.kind
     with_edits = str(form.get("akcia") or "") == "upravit"
-    edits, errors = parse_event_edits(form, data) if with_edits else ({}, {})
     new_kind = str(form.get("event_kind") or "")
+    edits, errors = parse_event_edits(form, data, new_kind if with_edits and new_kind in EVENT_KIND else kind) \
+        if with_edits else ({}, {})
     if with_edits and new_kind and new_kind != kind:
         if new_kind not in EVENT_KIND:
             errors["event_kind"] = "Neznámy druh udalosti."
@@ -434,6 +506,22 @@ def queue_confirm(event_id: int, request: Request, background: BackgroundTasks, 
             edits["event_kind"] = new_kind
     if errors:
         return redirect(_event_url(event_id), "Opravte polia: " + "; ".join(errors.values()), "chyba")
+    pick = str(form.get("kandidat") or "").strip()
+    if pick:
+        # dispečer vybral výluku z registra s číslom udalosti (návrh fronty) – úsek a trať podľa nej, ak ich sám
+        # neopravil; termín nie (register má pôvodný termín, nie termín zmeny)
+        try:
+            with session_scope() as s:
+                ev = s.get(ExtractedEvent, event_id)
+                chosen = _posta().candidate_edits(s, ev, pick) if ev is not None else {}
+        except (ImportError, AttributeError):
+            chosen = {}
+        if not chosen:
+            return redirect(_event_url(event_id), "Vybraná výluka z registra už nie je medzi návrhmi (medzitým sa "
+                                                  "zmenila alebo zrušila) – vyberte ju znova alebo doplňte úsek.",
+                            "chyba")
+        for k, v in chosen.items():
+            edits.setdefault(k, v)
     try:
         posta = _posta()
         with session_scope() as s:

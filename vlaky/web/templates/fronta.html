@@ -86,6 +86,15 @@
         {% endif %}
         {% if val %}<details class="small"><summary>Výsledok kontrol (JSON)</summary><pre class="mono">{{ val|jsonpretty }}</pre></details>{% endif %}
       {% endif %}
+      {% if item.candidates %}
+      <div class="flash flash-varovanie" id="kandidati-{{ ev.id }}">
+        <p>E-mail uvádza len číslo {{ (ev.data or {}).get("external_ref") }} bez úseku – úsek sa z registra nedopĺňa automaticky (e-mail môže uvádzať iné miesto a číslo ROV má každá OR vlastné). Výluky v registri s týmto číslom (návrh):</p>
+        <ul class="small">
+          {% for c in item.candidates %}<li><strong>{{ c.text }}</strong>{% for f in c.flags %}<br><span class="muted">– {{ f }}</span>{% endfor %}</li>{% endfor %}
+        </ul>
+        <p class="small muted">Ak sa e-mail týka niektorej z nich, vyberte ju vo formulári („Výluka z registra“ – úsek sa doplní z nej, termín nie), alebo úsek a termín opravte podľa e-mailu. Dovtedy udalosť obmedzuje celý vozový park.</p>
+      </div>
+      {% endif %}
       {% if user.can("operate") %}
       <form method="post" action="/fronta/{{ ev.id }}/potvrdit" class="event-form">
         {{ m.csrf() }}
@@ -95,6 +104,15 @@
             {% for k, v in EVENT_KIND.items() %}<option value="{{ k }}"{% if k == ev.kind %} selected{% endif %}>{{ v }}</option>{% endfor %}
           </select>
         </div>
+        {% if item.candidates %}
+        <div class="field field-wide">
+          <label for="kandidat-{{ ev.id }}">Výluka z registra (podľa čísla)</label>
+          <select id="kandidat-{{ ev.id }}" name="kandidat">
+            <option value="">— nevybrať (úsek doplním sám) —</option>
+            {% for c in item.candidates %}<option value="{{ c.id }}">{{ c.text }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
         <div class="grid-2">
         {% for f in item.fields %}
           {% set fid = "e" ~ ev.id ~ "-" ~ f.key %}
@@ -110,6 +128,7 @@
               {% elif f.kind == "time" %}<input id="{{ fid }}" type="time" name="f__{{ f.key }}" value="{{ f.value }}">
               {% elif f.kind == "json" %}<textarea id="{{ fid }}" class="mono" rows="4" name="f__{{ f.key }}">{{ f.value }}</textarea>
               {% elif f.kind == "textarea" %}<textarea id="{{ fid }}" rows="3" name="f__{{ f.key }}">{{ f.value }}</textarea>
+              {% elif f.kind == "choice" %}<select id="{{ fid }}" name="f__{{ f.key }}">{% for k, v in f.options %}<option value="{{ k }}"{% if k == f.value %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
               {% else %}<input id="{{ fid }}" type="text" name="f__{{ f.key }}" value="{{ f.value }}"{% if f.key in ("from_station", "to_station", "station", "origin", "destination") %} data-autocomplete="stanice" autocomplete="off"{% endif %}>
               {% endif %}
             {% endif %}
@@ -188,7 +207,7 @@
       <span class="badge badge-warn">nepotvrdená</span>
       <span class="badge">istota {{ ev.confidence|pct }}</span>
     </div>
-    <p><strong>{{ c.from_station }} – {{ c.to_station }}</strong> · {{ CLOSURE_KIND.get(c.kind, c.kind) }} · {{ c.start_utc|t }} – {{ c.end_utc|t }}{% if c.daily_from %} (denne {{ c.daily_from }}–{{ c.daily_to }}){% endif %}</p>
+    <p><strong>{{ c.from_station }} – {{ c.to_station }}</strong> · {{ kind_text(c.kind) }} · {{ c.start_utc|t }} – {{ c.end_utc|t }}{% if c.daily_from %} (denne {{ c.daily_from }}–{{ c.daily_to }}){% endif %}</p>
     {% if item.register %}
     <p class="small">Upravené v registri výluk – potvrdenie úpravy ponechá: {% for r in item.register %}{{ r.label }} {{ r.mail }} → <strong>{{ r.register }}</strong>{% if not loop.last %}; {% endif %}{% endfor %}</p>
     {% endif %}

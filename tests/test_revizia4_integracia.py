@@ -101,7 +101,7 @@ def test_upozornenie_na_dve_cakajuce_udalosti_ma_spravny_tvar(cfg, session, monk
     _process(session, now)
     assert len([e for e in events(session) if e.kind == "mimoriadnost"]) == 2
     subjects = [n.subject for n in session.scalars(select(Notification).where(Notification.kind == "upozornenie"))]
-    multi = [x for x in subjects if "Na potvrdenie čaká 2 " in x]
+    multi = [x for x in subjects if "Na potvrdenie čakajú 2 " in x]       # FE2: sloveso v množnom čísle
     assert multi and all("2 udalosti z e-mailov" in x for x in multi), subjects
     assert not any("udalostí" in x for x in multi), subjects
 
