@@ -75,6 +75,12 @@ CLOSURE_KIND = {
     "pomala_jazda": "pomalá jazda", "obmedzenie": "obmedzenie (dĺžka, hmotnosť)", "mimoriadnost": "mimoriadnosť",
 }
 CLOSURE_STATUS = {"navrh": "návrh", "overene": "overené", "zrusene": "zrušené"}
+
+
+def closure_kind_text(kind: Any) -> str:
+    """Slovenský názov druhu výluky; neznámy druh (napr. zo staršieho voľného textu) s upozornením – plánovač ho počíta
+    ako úplnú výluku."""
+    return CLOSURE_KIND.get(str(kind or "")) or f"{kind} – neznámy druh, počíta sa ako úplná výluka (overte)"
 EVENT_KIND = {
     "vyluka_nova": "nová výluka", "vyluka_zmena": "zmena výluky", "vyluka_zrusenie": "zrušenie výluky",
     "pomala_jazda": "pomalá jazda", "trasa_pridelena": "pridelenie trasy", "trasa_zmena": "zmena trasy",
@@ -137,6 +143,7 @@ AUDIT_ACTION = {
     "udalost_aplikovana": "udalosť z e-mailu zapísaná",
     "vyluka_navrh_na_potvrdenie": "výluka z e-mailu čaká na potvrdenie",
     "vyluka_navrh_zlyhal": "zápis výluky z e-mailu zlyhal", "vyluka_do_odvolania_predlzena": "výluka do odvolania predĺžená",
+    "vyluka_poistka_zrusenia": "poistka: zrušenie z e-mailu bez výluky v registri (môže ísť o novú výluku)",
     "email_prijaty": "e-mail prijatý", "email_extrakcia": "udalosti z e-mailu", "email_neulozeny": "e-mail neuložený",
     "email_nahradeny_overenou_kopiou": "e-mail nahradený overenou kópiou",
     "email_message_id_kolizia": "iný e-mail s rovnakým Message-ID", "posta_cyklus": "spracovanie schránky",
@@ -429,6 +436,7 @@ def build_templates() -> Jinja2Templates:
     })
     env.globals.update({
         "TRAIN_STATUS": TRAIN_STATUS, "CLOSURE_KIND": CLOSURE_KIND, "CLOSURE_STATUS": CLOSURE_STATUS,
+        "kind_text": closure_kind_text,
         "EVENT_KIND": EVENT_KIND, "REC_STATE": REC_STATE, "SHIFT_STATUS": SHIFT_STATUS,
         "HANDOVER_STATUS": HANDOVER_STATUS, "HANDOVER_DIRECTION": HANDOVER_DIRECTION, "EVENT_STATUS": EVENT_STATUS,
         "POSITION_SOURCE": POSITION_SOURCE, "ROLE_LABEL": ROLE_LABEL,

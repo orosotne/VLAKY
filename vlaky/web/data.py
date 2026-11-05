@@ -14,8 +14,8 @@ from ..cas import ensure_utc, fmt, local, now_utc, tz
 from ..config import settings
 from ..models import (AgentHealth, BorderCrossing, Closure, DriverShift, ExtractedEvent, Handover, LocationInfo,
                       Notification, PositionReport, Recommendation, Train)
-from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, POSITION_SOURCE, TRAIN_STATUS, crew_color,
-                     current_params, iso, log, parse_iso)
+from .common import (CLOSURE_STATUS, DONE_TRAIN_STATES, POSITION_SOURCE, TRAIN_STATUS, closure_kind_text,
+                     crew_color, current_params, iso, log, parse_iso)
 from .trasy import RouteInfo, build_route_info, detour_info, estimate_position, hours_window, locate, trail_feature
 
 URGENCY = {"ČERVENÁ": 0, "ORANŽOVÁ": 1, None: 2, "ZELENÁ": 3}
@@ -211,7 +211,7 @@ def closure_feature(c: Closure, spans: list, now: datetime) -> dict:
         "type": "Feature", "id": c.id,
         "geometry": closure_geometry(c),
         "properties": {
-            "id": c.id, "druh": c.kind, "druh_text": CLOSURE_KIND.get(c.kind, c.kind),
+            "id": c.id, "druh": c.kind, "druh_text": closure_kind_text(c.kind),
             "od_stanice": c.from_station, "do_stanice": c.to_station, "trat": c.line_ref, "kolaj": c.track,
             "zaciatok": iso(c.start_utc), "koniec": iso(c.end_utc), "denne_od": c.daily_from,
             "denne_do": c.daily_to, "stav": c.status, "stav_text": CLOSURE_STATUS.get(c.status, c.status),
@@ -664,7 +664,7 @@ def train_rows(s: Session, now: Optional[datetime] = None, include_done: bool = 
                     if nxt is None:
                         continue
                     route_closures.append({
-                        "id": c.id, "druh": c.kind, "druh_text": CLOSURE_KIND.get(c.kind, c.kind),
+                        "id": c.id, "druh": c.kind, "druh_text": closure_kind_text(c.kind),
                         "od_stanice": c.from_station, "do_stanice": c.to_station, "od": iso(nxt[0]),
                         "do": iso(nxt[1]), "aktivna": nxt[0] <= now <= nxt[1], "stav": c.status,
                         "intervaly": [[iso(a), iso(b)] for a, b in spans if b >= now][:10]})
@@ -767,7 +767,8 @@ def alerts(s: Session, now: Optional[datetime] = None, limit: int = 30) -> list:
 
     queue = pending_queue_count(s)
     if queue:
-        out.append({"priority": "DÔLEŽITÉ", "ts": iso(now), "text": f"Na potvrdenie čaká {queue} "
+        out.append({"priority": "DÔLEŽITÉ", "ts": iso(now), "text": f"Na potvrdenie "
+                    f"{'čakajú' if 2 <= queue <= 4 else 'čaká'} {queue} "
                     f"{'udalosť' if queue == 1 else 'udalosti' if queue < 5 else 'udalostí'} z e-mailov.",
                     "href": "/fronta", "kind": "fronta"})
 

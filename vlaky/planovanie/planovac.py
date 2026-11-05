@@ -47,6 +47,7 @@ RUN_MARGIN = 0.04            # prirážka k vypočítanej jazdnej dobe (UIC 451-
 NO_DEADLINE_MIN = 7 * 24 * 60
 NO_PATH_SENTINEL = -10 ** 9  # „žiadna pridelená trasa“ → každý odchod vyžaduje novú trasu
 BLOCKING = {"uplna", "mimoriadnost", "trakcne_vedenie"}
+KNOWN_KINDS = BLOCKING | {"kolaj", "pomala_jazda", "obmedzenie"}   # druhy výluk, ktoré plánovač pozná
 AVIZO_GRACE_MIN = 30.0       # avízo uplynulo dlhšie, príchod nie je zaznamenaný → vlak mešká, pripravenosť nie je istá
 
 
@@ -101,6 +102,9 @@ class Window:
     note: str = ""
     source_event_id: Optional[int] = None  # výluka z e-mailu (udalosť, ktorá záznam zapísala); ručná výluka None
     track: str = ""                        # koľaj výluky koľaje („1“, „2“, „obe“; prázdne = neuvedená)
+    # hrany siete, na ktoré sa okno obmedzuje (úplná výluka z výluk oboch koľají na spoločnej časti úsekov –
+    # _both_tracks_windows); None = úsek from_station – to_station (closure_edges)
+    edges: Optional[frozenset] = None
 
 
 def _parse_hhmm(text: str) -> Optional[tuple]:
@@ -123,6 +127,11 @@ def _local_at(day, hm: tuple) -> datetime:
     return datetime(d.year, d.month, d.day, h, mi, tzinfo=tz())
 
 
+ORPHAN_SOURCE = "email_poistka"     # Closure.source záznamu poistky zrušenia bez cieľa (posta.spracovanie)
+ORPHAN_NOTE = ("zrušenie z e-mailu nemá v registri čo zrušiť – môže ísť o novú výluku, overte vo fronte; kým ho "
+               "dispečer nevybaví, počíta sa s výlukou v úseku a čase zrušenia")
+
+
 def closure_windows(session: Session, start: datetime, end: datetime) -> list:
     """Konkrétne časové okná výluk v intervale (rozbalí denné opakovanie v miestnom čase).
 
@@ -135,11 +144,21 @@ def closure_windows(session: Session, start: datetime, end: datetime) -> list:
     for c in rows:
         cs, ce = ensure_utc(c.start_utc), ensure_utc(c.end_utc)
         electric = c.electric_only or c.kind == "trakcne_vedenie"
+        # neznámy druh (napr. voľný text zo staršieho formulára) – úplná výluka, inak by ju plánovač vynechal (FE0)
+        kind = c.kind if c.kind in KNOWN_KINDS else "uplna"
+        odd = "" if kind == c.kind else (f"neznámy druh obmedzenia „{c.kind}“ – počíta sa ako úplná výluka (overte "
+                                         "druh v registri výluk)")
 
         def whole(note: str = "") -> Window:
-            return Window(c.id, c.kind, cs, ce, electric, c.speed_kmh, c.from_station, c.to_station,
-                          c.status, note, source_event_id=c.source_event_id, track=c.track or "")
+            return Window(c.id, kind, cs, ce, electric, c.speed_kmh, c.from_station, c.to_station,
+                          c.status, "; ".join(filter(None, [odd, note])), source_event_id=c.source_event_id,
+                          track=c.track or "")
 
+        if c.source == ORPHAN_SOURCE:
+            # poistka zrušenia bez cieľa (posta.spracovanie): zrušenie z e-mailu nemalo v registri čo zrušiť – môže ísť
+            # o novú výluku, kým ju dispečer nevybaví, počíta sa s výlukou v úseku a čase zrušenia
+            out.append(whole(ORPHAN_NOTE))
+            continue
         if not (c.daily_from or c.daily_to):
             out.append(whole())
             continue
@@ -157,13 +176,13 @@ def closure_windows(session: Session, start: datetime, end: datetime) -> list:
                 ws, we = ensure_utc(ws), ensure_utc(we)
                 ws, we = max(ws, cs), min(we, ce)
                 if we > ws and we >= start and ws <= end:
-                    out.append(Window(c.id, c.kind, ws, we, electric, c.speed_kmh, c.from_station,
-                                      c.to_station, c.status, source_event_id=c.source_event_id,
+                    out.append(Window(c.id, kind, ws, we, electric, c.speed_kmh, c.from_station,
+                                      c.to_station, c.status, odd, source_event_id=c.source_event_id,
                                       track=c.track or ""))
                 day += timedelta(days=1)
         except (ValueError, OverflowError) as exc:  # pragma: no cover - posledná poistka
             out.append(whole(f"denné okno sa nedalo rozbaliť ({exc}) – počíta sa celé obdobie"))
-    return out + _both_tracks_windows(out)
+    return out + _both_tracks_windows(out, _closure_line_refs(session, [w for w in out if w.kind == "kolaj"]))
 
 
 ALL_TRACKS = "*"            # výluka koľaje „obe“, „všetky“ – všetky traťové koľaje úseku
@@ -183,6 +202,13 @@ def _track_numbers(track: str) -> set:
     nums = set(re.findall(r"\d+", t))
     if nums:
         return nums
+    # slovom či rímskou číslicou („prvá“, „druhej TK“, „II. TK“, „I. a II.“) – inak by sa výluka nekombinovala (FE1)
+    words = {str(n) for w, n in (("prv", 1), ("druh", 2), ("tret", 3), ("stvrt", 4))
+             if re.search(rf"\b{w}\w*", t)}
+    roman = {"i": "1", "ii": "2", "iii": "3", "iv": "4"}
+    words |= {roman[m] for m in re.findall(r"\b(iv|i{1,3})\b(?=\s*(?:\.|tk\b|kol|a\b|,|$))", t)}
+    if words:
+        return words
     return ({"L"} if re.search(r"\b(?:lav\w*|l)\b", t) else set()) | \
         ({"P"} if re.search(r"\b(?:prav\w*|p)\b", t) else set())
 
@@ -193,45 +219,85 @@ def _all_tracks_closed(tracks: set) -> bool:
     return ALL_TRACKS in tracks or len(tracks) >= 2
 
 
-def _both_tracks_windows(windows: list) -> list:
-    """Výluky koľají, ktoré v rovnakom čase vylučujú 1. aj 2. traťovú koľaj toho istého úseku (dve výluky koľaje
+def _both_tracks_windows(windows: list, line_refs: Optional[dict] = None) -> list:
+    """Výluky koľají, ktoré v rovnakom čase vylučujú 1. aj 2. traťovú koľaj tej istej časti trate (dve výluky koľaje
     s rôznymi neprázdnymi koľajami – napr. dva rozkazy, aj s rôznym číslom ROV či trate, alebo dva riadky súborného
-    rozkazu –, alebo jedna výluka koľaje s oboma či všetkými koľajami): úsek vtedy nie je zjazdný. Výluka koľaje je pre
-    simuláciu len zdržanie, preto pre čas prekrytia pribudne okno úplnej výluky (s poznámkou pre dispečera) – inak by
-    vlak dostal ZELENÚ cez úplne zatvorený úsek. Len medzi dvoma dopravňami (v stanici je koľají viac); nepotvrdená
-    ktorákoľvek z výluk = nepotvrdené okno (počíta sa s ním). Číslo trate sa neporovnáva: úsek môže patriť viacerým
-    tratiam (Kysak – Košice je na trati 180 aj 188) – 1. TK podľa jednej a 2. TK podľa druhej sú tie isté koľaje."""
-    from ..siet.graf import norm
+    rozkazu –, alebo jedna výluka koľaje s oboma či všetkými koľajami): trať tam vtedy nie je zjazdná. Výluka koľaje je
+    pre simuláciu len zdržanie, preto pre čas prekrytia pribudne okno úplnej výluky (s poznámkou pre dispečera) – inak
+    by vlak dostal ZELENÚ cez úplne zatvorený úsek. Nepotvrdená ktorákoľvek z výluk = nepotvrdené okno (počíta sa
+    s ním). Číslo trate sa neporovnáva: úsek môže patriť viacerým tratiam (Kysak – Košice je na trati 180 aj 188) –
+    1. TK podľa jednej a 2. TK podľa druhej sú tie isté koľaje.
 
-    groups: dict = {}
+    Porovnáva sa na úrovni hrán siete, nie len rovnaký úsek: výluky s rôznymi úsekmi (2. TK len na časti úseku 1. TK,
+    2. TK po medzistaničných úsekoch) sa prekrývajú na spoločných hranách (closure_edges oboch úsekov) – tie sú v čase
+    prekrytia úplnou výlukou (okno s ``edges``). Len medzi dvoma dopravňami: koľaje v obvode koncových dopravní úseky
+    nezahŕňajú (v stanici je koľají viac) a výluka v jednej dopravni sa nekombinuje."""
+    from ..siet.graf import norm, norm_line_ref
+
+    tracked: list = []
     for w in windows:
         if w.kind != "kolaj" or not _track_numbers(w.track):
             continue
         a, b = norm(w.from_station or ""), norm(w.to_station or "")
         if not a or not b or a == b:
             continue
-        groups.setdefault(frozenset((a, b)), []).append(w)
+        tracked.append((w, frozenset((a, b))))
+    refs = line_refs or {}
+    cache: dict = {}
+    holder: dict = {}
+
+    def edges(w: Window) -> frozenset:
+        """Koľaje úseku výluky medzi dvoma dopravňami (prázdne – v obvode dopravne alebo mimo siete)."""
+        ref = norm_line_ref(refs.get(w.closure_id, "") or "")
+        key = (w.from_station, w.to_station, ref)
+        if key not in cache:
+            if "net" not in holder:
+                try:
+                    holder["net"] = network()
+                except Exception:  # noqa: BLE001 – bez siete len rovnaký úsek (ako doteraz)
+                    holder["net"] = None
+            net = holder["net"]
+            if net is None or net.closure_area_stations(w.from_station, w.to_station) is not None:
+                cache[key] = frozenset()
+            else:
+                cache[key] = frozenset(net.closure_edges(w.from_station, w.to_station, ref))
+        return cache[key]
+
     out: list = []
     seen: set = set()
-    for items in groups.values():
-        for i, x in enumerate(items):
-            for y in items[i:]:
-                tracks = _track_numbers(x.track) | _track_numbers(y.track)
-                if not _all_tracks_closed(tracks):
-                    continue
-                s, e = max(x.start, y.start), min(x.end, y.end)
+    for i, (x, px) in enumerate(tracked):
+        for y, py in tracked[i:]:
+            tracks = _track_numbers(x.track) | _track_numbers(y.track)
+            if not _all_tracks_closed(tracks):
+                continue
+            s, e = max(x.start, y.start), min(x.end, y.end)
+            if e <= s:
+                continue
+            ids = sorted({x.closure_id, y.closure_id})
+            which = f"výluka #{ids[0]}" if len(ids) == 1 else f"výluky #{ids[0]} a #{ids[1]}"
+            both = len(tracks - {ALL_TRACKS}) == 2 or any(norm(w.track or "").startswith("ob") for w in (x, y))
+            what = "obe traťové koľaje" if both else "všetky traťové koľaje"
+            status = "overene" if x.status == y.status == "overene" else "navrh"
+            if px == py:
                 key = (min(x.closure_id, y.closure_id), s, e)
-                if e <= s or key in seen:
+                if key in seen:
                     continue
                 seen.add(key)
-                ids = sorted({x.closure_id, y.closure_id})
-                which = f"výluka #{ids[0]}" if len(ids) == 1 else f"výluky #{ids[0]} a #{ids[1]}"
-                both = len(tracks - {ALL_TRACKS}) == 2 or any(norm(w.track or "").startswith("ob") for w in (x, y))
-                what = "obe traťové koľaje" if both else "všetky traťové koľaje"
-                out.append(Window(ids[0], "uplna", s, e, False, None, x.from_station, x.to_station,
-                                  "overene" if x.status == y.status == "overene" else "navrh",
+                out.append(Window(ids[0], "uplna", s, e, False, None, x.from_station, x.to_station, status,
                                   f"v čase {fmt(s)} – {fmt(e)} sú vylúčené {what} ({which}) – úsek nie je zjazdný, "
                                   f"počíta sa ako úplná výluka"))
+                continue
+            ex, ey = edges(x), edges(y)
+            common = ex & ey
+            key = ("hrany", tuple(ids), s, e)
+            if not common or key in seen:
+                continue
+            seen.add(key)
+            inner = y if (ey <= ex or (not ex <= ey and len(ey) <= len(ex))) else x
+            out.append(Window(ids[0], "uplna", s, e, False, None, inner.from_station, inner.to_station, status,
+                              f"v čase {fmt(s)} – {fmt(e)} sú v spoločnej časti úsekov {x.from_station} – "
+                              f"{x.to_station} a {y.from_station} – {y.to_station} vylúčené {what} ({which}) – trať "
+                              f"tam nie je zjazdná, počíta sa ako úplná výluka", edges=common))
     return out
 
 
@@ -448,10 +514,11 @@ def build_segments(net: Network, groute: GRoute, windows: list, t0: datetime, sp
     by_closure: dict = {}  # okná tej istej výluky (denné opakovanie) majú rovnaké úseky
     for w in windows:
         ref = norm_line_ref(line_refs.get(w.closure_id, ""))
-        ck = (w.from_station, w.to_station, ref)
+        ck = (w.from_station, w.to_station, ref, w.edges)
         if ck not in by_closure:
-            sec = net.closure_edges(w.from_station, w.to_station, ref)
-            in_station = net.closure_area_stations(w.from_station, w.to_station) is not None
+            # okno obmedzené na hrany (úplná výluka zo spoločnej časti výluk oboch koľají) – len tieto hrany
+            sec = set(w.edges) if w.edges is not None else net.closure_edges(w.from_station, w.to_station, ref)
+            in_station = w.edges is None and net.closure_area_stations(w.from_station, w.to_station) is not None
             if in_station:
                 spans = net.closure_route_spans(groute, w.from_station, w.to_station, ref)
                 spans += _station_waypoint_spans(net, wp_keys, stations, keys(w.from_station) | keys(w.to_station),
@@ -693,7 +760,7 @@ def _unmapped_windows(net: Network, windows: list, groute: GRoute, ready: dateti
     for w in windows:
         if w.closure_id in seen or w.end < t_from or w.start > t_to:
             continue
-        if net.closure_edges(w.from_station, w.to_station):
+        if w.edges or net.closure_edges(w.from_station, w.to_station):
             continue
         seen.add(w.closure_id)
         near: Optional[bool] = None
@@ -1072,7 +1139,8 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
     line_refs = _closure_line_refs(session, [w for w, _a, _b in affecting])
     for w, a_name, b_name in affecting:
         if w.kind in BLOCKING and not (w.electric_only and spec.traction != "E"):
-            sec = net.closure_edges(w.from_station, w.to_station, norm_line_ref(line_refs.get(w.closure_id, "")))
+            sec = set(w.edges) if w.edges is not None else \
+                net.closure_edges(w.from_station, w.to_station, norm_line_ref(line_refs.get(w.closure_id, "")))
             blocked |= sec
             if not (sec & route_set):
                 blocked |= affected_route_edges(net, primary, wps, a_name, b_name)
