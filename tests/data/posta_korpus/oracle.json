@@ -17441,6 +17441,3382 @@
      "zamer": "predlzenie"
     }
    ]
+  },
+  {
+   "id": "r6o_w02",
+   "origin": "r6-pravidla: dátumy oprava W02 dve obdobia, každé s vlastným denným oknom",
+   "subject": "ROV č. 2702/2026 – úplná výluka Ružomberok – Liptovský Mikuláš",
+   "body": "Dobrý deň,\n\núplná výluka v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 27.11.2026 denne 10:00 – 12:00 a 30.11. – 04.12.2026 denne 08:00 – 14:00.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 10:00",
+       "2026-11-27 12:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2702/2026",
+     "daily": [
+      "10:00",
+      "12:00"
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-30 08:00",
+       "2026-12-04 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2702/2026",
+     "daily": [
+      "08:00",
+      "14:00"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_w10",
+   "origin": "r6-pravidla: dátumy oprava W10 'od … do … denne v čase …, od … do … denne v čase …'",
+   "subject": "ROV č. 2710/2026 – úplná výluka Ružomberok – Liptovský Mikuláš",
+   "body": "Dobrý deň,\n\núplná výluka v úseku Ružomberok – Liptovský Mikuláš od 23.11.2026 do 27.11.2026 denne v čase 10:00 – 12:00 hod., od 30.11.2026 do 04.12.2026 denne v čase 08:00 – 14:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 10:00",
+       "2026-11-27 12:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2710/2026",
+     "daily": [
+      "10:00",
+      "12:00"
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-30 08:00",
+       "2026-12-04 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2710/2026",
+     "daily": [
+      "08:00",
+      "14:00"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_w03",
+   "origin": "r6-pravidla: dátumy oprava blízky variant tri obdobia s vlastnými oknami",
+   "subject": "ROV č. 2711/2026 – úplná výluka Ružomberok – Liptovský Mikuláš",
+   "body": "Dobrý deň,\n\núplná výluka v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 25.11.2026 denne 10:00 – 12:00, 26.11. – 27.11.2026 denne 08:00 – 14:00 a 30.11. – 04.12.2026 denne 06:00 – 10:00.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 10:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2711/2026",
+     "daily": [
+      "10:00",
+      "12:00"
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-27 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2711/2026",
+     "daily": [
+      "08:00",
+      "14:00"
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-30 06:00",
+       "2026-12-04 10:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2711/2026",
+     "daily": [
+      "06:00",
+      "10:00"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_w04",
+   "origin": "r6-pravidla: dátumy oprava blízky variant 'v dňoch …, vždy od … a v dňoch …, vždy od …'",
+   "subject": "ROV č. 2712/2026",
+   "body": "Dobrý deň,\n\núplná výluka v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 27.11.2026, vždy od 10:00 do 12:00 hod. a v dňoch 30.11. – 04.12.2026, vždy od 08:00 do 14:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 10:00",
+       "2026-11-27 12:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2712/2026",
+     "daily": [
+      "10:00",
+      "12:00"
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-30 08:00",
+       "2026-12-04 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2712/2026",
+     "daily": [
+      "08:00",
+      "14:00"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_b02",
+   "origin": "r6-pravidla: FC1 oprava B02 '… sa ruší a presúva sa na 28.11. v rovnakom čase'",
+   "subject": "Zrušenie výluky – ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš dňa 24.11.2026 sa ruší a presúva sa na 28.11.2026 v rovnakom čase.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2331/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-28 00:00",
+       "2026-11-29 00:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_b06",
+   "origin": "r6-pravidla: FC1 oprava B06 predmet 'Zrušenie výluky dňa 10.12.' + 'presúva sa na 17.12.'",
+   "subject": "Zrušenie výluky dňa 10.12.2026 – ROV č. 3122/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov sa presúva na 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3122/2026",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 00:00",
+       "2026-12-11 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3122/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_b11",
+   "origin": "r6-pravidla: FC1 oprava B11 náhradný termín len v predmete",
+   "subject": "Zrušenie ROV č. 3128/2026 – náhradný termín 15.12.2026 08:00 – 14:00",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov dňa 10.12.2026 sa ruší.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3128/2026",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 00:00",
+       "2026-12-11 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-15 08:00",
+       "2026-12-15 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3128/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_b18",
+   "origin": "r6-pravidla: FC1 oprava B18 'STORNO … (10.12. 08–14). Výluka sa uskutoční 10.12. od 10:00 do 14:00'",
+   "subject": "STORNO ROV č. 3129/2026",
+   "body": "Dobrý deň,\n\nSTORNO ROV č. 3129/2026 (Trnava – Leopoldov 10.12.2026 od 08:00 do 14:00). Výluka sa uskutoční 10.12.2026 od 10:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3129/2026",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 10:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3129/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_b20",
+   "origin": "r6-pravidla: FC1 oprava B20 'Ruší sa výluka …; namiesto nej bude výluka 17.12.'",
+   "subject": "Zrušenie ROV č. 3131/2026",
+   "body": "Dobrý deň,\n\nRuší sa výluka Trnava – Leopoldov 10.12.2026 (ROV č. 3131/2026); namiesto nej bude výluka 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3131/2026",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 00:00",
+       "2026-12-11 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3131/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_b21",
+   "origin": "r6-pravidla: FC1 oprava B21 'Zároveň oznamujeme výluku <iný úsek> dňa 11.12.'",
+   "subject": "Zrušenie ROV č. 3132/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov dňa 10.12.2026 sa ruší. Zároveň oznamujeme výluku Leopoldov – Piešťany dňa 11.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3132/2026",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 00:00",
+       "2026-12-11 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Leopoldov",
+     "to": "Piešťany",
+     "iv": [
+      [
+       "2026-12-11 08:00",
+       "2026-12-11 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3132/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_b23",
+   "origin": "r6-pravidla: FC1 oprava blízky variant dôvod '…, pretože práce boli vykonané už 05.12.' nie je rušeným termínom",
+   "subject": "Zrušenie ROV č. 3134/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov dňa 10.12.2026 sa ruší, pretože práce boli vykonané už 05.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3134/2026",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 00:00",
+       "2026-12-11 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_b25",
+   "origin": "r6-pravidla: FC1 oprava blízky variant 'Výluku je potrebné vykonať 17.12.' (sieť)",
+   "subject": "STORNO ROV č. 3135/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov dňa 10.12.2026 sa ruší. Výluku je potrebné vykonať 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3135/2026",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 00:00",
+       "2026-12-11 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3135/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_c11",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'sa vykoná ešte 17.12.2026 od 08:00 do 14:00 hod.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 sa vykoná ešte 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_c24",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'sa bude konať i dňa 17.12.2026 od 08:00 do 14:00 hod.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 sa bude konať i dňa 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_c09",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'sa zopakuje 17.12.2026 od 08:00 do 14:00 hod.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 sa zopakuje 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_c23",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'bude opätovne 17.12.2026 od 08:00 do 14:00 hod.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 bude opätovne 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_c22",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu ': k termínu 10.12.2026 sa pridáva termín 17.12.2026 od 08:00'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026: k termínu 10.12.2026 sa pridáva termín 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_c19",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'bude v ďalšom termíne 17.12.2026 od 08:00 do 14:00 hod.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 bude v ďalšom termíne 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_c25",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu '– druhý termín: 17.12.2026 od 08:00 do 14:00 hod.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 – druhý termín: 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_c21",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'sa uskutoční 17.12.2026 od 08:00 do 14:00 hod. Termín 10.12.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 sa uskutoční 17.12.2026 od 08:00 do 14:00 hod. Termín 10.12.2026 platí.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_j05",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'bude 17.12.2026 od 06:00 do 12:00 hod. Termín 10.12.2026 zos'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 bude 17.12.2026 od 06:00 do 12:00 hod. Termín 10.12.2026 zostáva bez zmeny.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 06:00",
+       "2026-12-17 12:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_i06",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'sa dopĺňa o deň 17.12.2026, kedy bude výluka len od 08:00 do'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 sa dopĺňa o deň 17.12.2026, kedy bude výluka len od 08:00 do 10:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 10:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_i01",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'bude aj dňa 17.12.2026, a to len od 08:00 do 12:00 hod.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 bude aj dňa 17.12.2026, a to len od 08:00 do 12:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 12:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_i05",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'bude aj dňa 17.12.2026 v skrátenom čase od 08:00 do 12:00 ho'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 bude aj dňa 17.12.2026 v skrátenom čase od 08:00 do 12:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 12:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_j01",
+   "origin": "r6-pravidla: FC2 oprava pridanie termínu 'sa zopakuje 17.12.2026 v novom čase od 06:00 do 12:00 hod.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 sa zopakuje 17.12.2026 v novom čase od 06:00 do 12:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 06:00",
+       "2026-12-17 12:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_c13",
+   "origin": "r6-pravidla: FC2 oprava C13 'budú aj v noci z 30.11. na 01.12.' – zápis noci nie je presun",
+   "subject": "Zmena ROV č. 4505/2026",
+   "body": "Dobrý deň,\n\nNočné výluky Kysak – Košice podľa ROV č. 4505/2026 budú aj v noci z 30.11. na 01.12.2026 od 22:00 do 04:00 hod.\n\nS pozdravom\nIng. Pavol Skúšobný\nOR Košice, odbor riadenia prevádzky",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orke@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-30 22:00",
+       "2026-12-01 04:00"
+      ]
+     ],
+     "ref": "4505/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_c18",
+   "origin": "r6-pravidla: FC2 oprava blízky variant 'sa nevykoná 10.12., ale až 17.12.' je presun s termínom",
+   "subject": "Zmena ROV č. 3145/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3145/2026 sa nevykoná 10.12., ale až 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3145/2026",
+     "zamer": "presun"
+    }
+   ],
+   "extra_ok": true
+  },
+  {
+   "id": "r6o_c17",
+   "origin": "r6-pravidla: FC2 oprava blízky variant (kontrola) 'sa namiesto 10.12. vykoná 17.12.' ostáva presunom",
+   "subject": "Zmena ROV č. 3144/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3144/2026 sa namiesto 10.12. vykoná 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3144/2026",
+     "zamer": "presun"
+    }
+   ]
+  },
+  {
+   "id": "r6o_x1",
+   "origin": "r6-pravidla: FC3 oprava X1 'v dňoch 23.11. – 29.11. sa ruší okrem soboty a nedele'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 29.11.2026 sa ruší okrem soboty a nedele.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-24 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 00:00",
+       "2026-11-27 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-27 00:00",
+       "2026-11-28 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_x2",
+   "origin": "r6-pravidla: FC3 oprava blízky variant 'okrem soboty'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 29.11.2026 sa ruší okrem soboty.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-24 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 00:00",
+       "2026-11-27 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-27 00:00",
+       "2026-11-28 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-29 00:00",
+       "2026-11-30 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_x3",
+   "origin": "r6-pravidla: FC3 oprava blízky variant 's výnimkou soboty a nedele'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 29.11.2026 sa nevykoná, s výnimkou soboty a nedele.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-24 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 00:00",
+       "2026-11-27 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-27 00:00",
+       "2026-11-28 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_x4",
+   "origin": "r6-pravidla: FC3 oprava blízky variant '…, výluka bude len v sobotu a v nedeľu'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 29.11.2026 sa ruší, výluka bude len v sobotu a v nedeľu.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-24 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 00:00",
+       "2026-11-27 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-27 00:00",
+       "2026-11-28 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_x6",
+   "origin": "r6-pravidla: FC3 oprava blízky variant 'okrem piatku a soboty'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 29.11.2026 sa ruší okrem piatku a soboty.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-24 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 00:00",
+       "2026-11-27 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-29 00:00",
+       "2026-11-30 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_x10",
+   "origin": "r6-pravidla: FC3 oprava blízky variant '…, ale v sobotu a v nedeľu ostáva'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 29.11.2026 sa ruší, ale v sobotu a v nedeľu ostáva.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-24 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 00:00",
+       "2026-11-27 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-27 00:00",
+       "2026-11-28 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_x11",
+   "origin": "r6-pravidla: FC3 oprava blízky variant 'mimo víkendu'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 29.11.2026 sa ruší mimo víkendu.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-24 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 00:00",
+       "2026-11-27 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-27 00:00",
+       "2026-11-28 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_x8",
+   "origin": "r6-pravidla: FC3 oprava blízky variant rozsah 'v dňoch pondelok až streda'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 29.11.2026 sa nevykoná v dňoch pondelok až streda.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-24 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_x7",
+   "origin": "r6-pravidla: FC3 oprava blízky variant (kontrola) 'v sobotu a v nedeľu, ani v piatok'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 29.11.2026 sa nevykoná v sobotu a v nedeľu, ani v piatok.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-27 00:00",
+       "2026-11-28 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-28 00:00",
+       "2026-11-29 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-29 00:00",
+       "2026-11-30 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_x20",
+   "origin": "r6-pravidla: FC3 oprava blízky variant vedľajšia veta 'ktorá platí od pondelka do piatku' výluku len opisuje",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš v dňoch 23.11. – 29.11.2026, ktorá platí od pondelka do piatku, sa v stredu ruší.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_d07",
+   "origin": "r6-pravidla: FC3 oprava sieť čiastočné zrušenie bez termínu 'sa nevykoná v dňoch pondelok až streda.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa nevykoná v dňoch pondelok až streda.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6o_d23",
+   "origin": "r6-pravidla: FC3 oprava sieť čiastočné zrušenie bez termínu 'sa nevykoná v dňoch utorok – štvrtok.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa nevykoná v dňoch utorok – štvrtok.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6o_d17",
+   "origin": "r6-pravidla: FC3 oprava sieť čiastočné zrušenie bez termínu 'sa ruší okrem soboty.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší okrem soboty.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6o_d18",
+   "origin": "r6-pravidla: FC3 oprava sieť čiastočné zrušenie bez termínu 'sa ruší s výnimkou nedele.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší s výnimkou nedele.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6o_d24",
+   "origin": "r6-pravidla: FC3 oprava sieť čiastočné zrušenie bez termínu 'sa ruší v prvý deň výluky.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší v prvý deň výluky.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6o_d25",
+   "origin": "r6-pravidla: FC3 oprava sieť čiastočné zrušenie bez termínu 'sa ruší v posledný deň.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší v posledný deň.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6o_d27",
+   "origin": "r6-pravidla: FC3 oprava sieť čiastočné zrušenie bez termínu 'sa ruší v dopoludňajších hodinách.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší v dopoludňajších hodinách.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6o_d12",
+   "origin": "r6-pravidla: FC3 oprava sieť čiastočné zrušenie bez termínu 'sa ruší v dňoch pracovného pokoja.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší v dňoch pracovného pokoja.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6o_d13",
+   "origin": "r6-pravidla: FC3 oprava sieť čiastočné zrušenie bez termínu 'sa ruší počas sviatkov.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší počas sviatkov.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6o_d29",
+   "origin": "r6-pravidla: FC3 oprava sieť čiastočné zrušenie bez termínu 'Zrušenie výluky v nedeľu – ROV č. 2501/2026'",
+   "subject": "Zrušenie výluky v nedeľu – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6o_d20",
+   "origin": "r6-pravidla: FC3 oprava blízky variant (kontrola) celé zrušenie 'š sa ruší. V sobotu a v nedeľu bude NAD.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší. V sobotu a v nedeľu bude NAD.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš"
+    }
+   ]
+  },
+  {
+   "id": "r6o_d31",
+   "origin": "r6-pravidla: FC3 oprava blízky variant (kontrola) celé zrušenie ' Ružomberok – Liptovský Mikuláš sa ruší.'",
+   "subject": "Zrušenie víkendovej výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka Ružomberok – Liptovský Mikuláš sa ruší.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš"
+    }
+   ]
+  },
+  {
+   "id": "r6o_e08",
+   "origin": "r6-pravidla: FC4 oprava E08 '… nekoná dopoludnia od 08:00 do 10:00, len popoludní od 10:00 do 14:00'",
+   "subject": "Zrušenie časti výluky – ROV č. 3206/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3206/2026 dňa 10.12.2026 sa nekoná dopoludnia od 08:00 do 10:00, len popoludní od 10:00 do 14:00.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3206/2026",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 10:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_e12",
+   "origin": "r6-pravidla: FC4 oprava E12 'okrem stredy 25.11.'",
+   "subject": "Zrušenie výluky – ROV č. 2601/2026",
+   "body": "Dobrý deň,\n\nVýluka Ružomberok – Liptovský Mikuláš podľa ROV č. 2601/2026 v dňoch 23.11. – 27.11.2026 sa ruší okrem stredy 25.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 00:00",
+       "2026-11-28 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_e17",
+   "origin": "r6-pravidla: FC4 oprava E17 '…, ponechané sú len dni 24. a 25.11.'",
+   "subject": "Zrušenie výluky – ROV č. 2601/2026",
+   "body": "Dobrý deň,\n\nVýluka Ružomberok – Liptovský Mikuláš podľa ROV č. 2601/2026 v dňoch 23.11. – 27.11.2026 sa ruší, ponechané sú len dni 24. a 25.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-24 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 00:00",
+       "2026-11-28 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_e23",
+   "origin": "r6-pravidla: FC4 oprava E23 denné okno v období '… sa ruší v čase od 12:00 do 14:00, od 08:00 do 12:00 ostáva'",
+   "subject": "Zrušenie výluky – ROV č. 2601/2026",
+   "body": "Dobrý deň,\n\nVýluka Ružomberok – Liptovský Mikuláš podľa ROV č. 2601/2026 v dňoch 23.11. – 27.11.2026 sa ruší v čase od 12:00 do 14:00 hod., od 08:00 do 12:00 hod. ostáva.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 12:00",
+       "2026-11-23 14:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 12:00",
+       "2026-11-24 14:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 12:00",
+       "2026-11-25 14:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 12:00",
+       "2026-11-26 14:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-27 12:00",
+       "2026-11-27 14:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_e25",
+   "origin": "r6-pravidla: FC4 oprava blízky variant denné okno bez vety o tom, čo ostáva",
+   "subject": "Zrušenie výluky – ROV č. 2601/2026",
+   "body": "Dobrý deň,\n\nVýluka Ružomberok – Liptovský Mikuláš podľa ROV č. 2601/2026 v dňoch 23.11. – 27.11.2026 sa ruší v čase od 12:00 do 14:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 12:00",
+       "2026-11-23 14:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 12:00",
+       "2026-11-24 14:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 12:00",
+       "2026-11-25 14:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 12:00",
+       "2026-11-26 14:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-27 12:00",
+       "2026-11-27 14:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_e26",
+   "origin": "r6-pravidla: FC4 oprava blízky variant (kontrola) celé obdobie s denným oknom 'plánovaná v dňoch … denne …, sa ruší'",
+   "subject": "Zrušenie výluky – ROV č. 2601/2026",
+   "body": "Dobrý deň,\n\nVýluka Ružomberok – Liptovský Mikuláš podľa ROV č. 2601/2026, plánovaná v dňoch 23.11. – 27.11.2026 denne 08:00 – 14:00, sa ruší.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 08:00",
+       "2026-11-27 14:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6o_f21",
+   "origin": "r6-pravidla: FC5 oprava F21 'v nociach na 26.11. a 27.11.2026 vždy od 22:00 do 04:00'",
+   "subject": "ROV č. 4610/2026",
+   "body": "Dobrý deň,\n\núplná výluka trate Kysak – Košice v nociach na 26.11. a 27.11.2026 vždy od 22:00 do 04:00 hod. (ROV č. 4610/2026).\n\nS pozdravom\nIng. Pavol Skúšobný\nOR Košice, odbor riadenia prevádzky",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orke@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 22:00",
+       "2026-11-26 04:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "4610/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-26 22:00",
+       "2026-11-27 04:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "4610/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_h18",
+   "origin": "r6-pravidla: FC7 oprava H18 'sa mení z 08:00 – 14:00 na 06:00 – 12:00 a 13:00 – 16:00' – obe okná, doplnenie",
+   "subject": "Zmena ROV č. 3807/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov dňa 10.12.2026 (ROV č. 3807/2026) sa mení z 08:00 – 14:00 hod. na 06:00 – 12:00 hod. a 13:00 – 16:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 06:00",
+       "2026-12-10 12:00"
+      ]
+     ],
+     "ref": "3807/2026",
+     "zamer": "doplnenie"
+    },
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 13:00",
+       "2026-12-10 16:00"
+      ]
+     ],
+     "ref": "3807/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6o_n21",
+   "origin": "r6-pravidla: sieť oprava N21 'dňa 10.12. od 08:00 do 10:00 hod., ďalej od 13:00 do 16:00 hod.'",
+   "subject": "ROV č. 3922/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka trate Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 10:00 hod., ďalej od 13:00 do 16:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 10:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3922/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 13:00",
+       "2026-12-10 16:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3922/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_n22",
+   "origin": "r6-pravidla: sieť oprava blízky variant samostatné okno 'a následne opäť od 13:00 do 16:00' (sieť)",
+   "subject": "ROV č. 3923/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka trate Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 10:00 hod. a následne opäť od 13:00 do 16:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 10:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3923/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 13:00",
+       "2026-12-10 16:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3923/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_h22",
+   "origin": "r6-pravidla: sieť oprava blízky variant deň výluky, ktorá sa mení, nie je novým termínom",
+   "subject": "Zmena ROV č. 3808/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov dňa 10.12.2026 (ROV č. 3808/2026) sa mení z 10.12.2026 08:00 – 14:00 na 11.12.2026 06:00 – 16:00.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-11 06:00",
+       "2026-12-11 16:00"
+      ]
+     ],
+     "ref": "3808/2026",
+     "zamer": "presun"
+    }
+   ]
+  },
+  {
+   "id": "r6o_k01",
+   "origin": "r6-pravidla: sieť oprava falošný poplach 'Odpoveď očakávame do 07.12.2026 12:00 hod.'",
+   "subject": "ROV č. 3990/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 14:00 hod. a výluka Leopoldov – Piešťany dňa 11.12.2026 od 08:00 do 14:00 hod. (ROV č. 3990/2026). Odpoveď očakávame do 07.12.2026 12:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Leopoldov",
+     "to": "Piešťany",
+     "iv": [
+      [
+       "2026-12-11 08:00",
+       "2026-12-11 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_k02",
+   "origin": "r6-pravidla: sieť oprava falošný poplach 'V sobotu 12.12. a v nedeľu 13.12.2026 sa nepracuje.'",
+   "subject": "ROV č. 3990/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 14:00 hod. a výluka Leopoldov – Piešťany dňa 11.12.2026 od 08:00 do 14:00 hod. (ROV č. 3990/2026). V sobotu 12.12. a v nedeľu 13.12.2026 sa nepracuje.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Leopoldov",
+     "to": "Piešťany",
+     "iv": [
+      [
+       "2026-12-11 08:00",
+       "2026-12-11 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_k03",
+   "origin": "r6-pravidla: sieť oprava falošný poplach 'Stanovisko dopravcov prosíme zaslať do 04.12.2026.'",
+   "subject": "ROV č. 3990/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 14:00 hod. a výluka Leopoldov – Piešťany dňa 11.12.2026 od 08:00 do 14:00 hod. (ROV č. 3990/2026). Stanovisko dopravcov prosíme zaslať do 04.12.2026.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Leopoldov",
+     "to": "Piešťany",
+     "iv": [
+      [
+       "2026-12-11 08:00",
+       "2026-12-11 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_k04",
+   "origin": "r6-pravidla: sieť oprava falošný poplach 'Súhlas s výlukou potvrďte najneskôr 03.12.2026.'",
+   "subject": "ROV č. 3990/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 14:00 hod. a výluka Leopoldov – Piešťany dňa 11.12.2026 od 08:00 do 14:00 hod. (ROV č. 3990/2026). Súhlas s výlukou potvrďte najneskôr 03.12.2026.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Leopoldov",
+     "to": "Piešťany",
+     "iv": [
+      [
+       "2026-12-11 08:00",
+       "2026-12-11 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_k06",
+   "origin": "r6-pravidla: sieť oprava falošný poplach 'Zmena platí od 01.12.2026.'",
+   "subject": "ROV č. 3990/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 14:00 hod. a výluka Leopoldov – Piešťany dňa 11.12.2026 od 08:00 do 14:00 hod. (ROV č. 3990/2026). Zmena platí od 01.12.2026.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Leopoldov",
+     "to": "Piešťany",
+     "iv": [
+      [
+       "2026-12-11 08:00",
+       "2026-12-11 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_k08",
+   "origin": "r6-pravidla: sieť oprava falošný poplach 'Prosíme o potvrdenie prijatia do 02.12.2026 10:00 hod.'",
+   "subject": "ROV č. 3990/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 14:00 hod. a výluka Leopoldov – Piešťany dňa 11.12.2026 od 08:00 do 14:00 hod. (ROV č. 3990/2026). Prosíme o potvrdenie prijatia do 02.12.2026 10:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Leopoldov",
+     "to": "Piešťany",
+     "iv": [
+      [
+       "2026-12-11 08:00",
+       "2026-12-11 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_k20",
+   "origin": "r6-pravidla: sieť oprava termín bez úseku pri dvoch úsekoch – udalosť na každom úseku",
+   "subject": "ROV č. 3990/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 14:00 hod. a výluka Leopoldov – Piešťany dňa 11.12.2026 od 08:00 do 14:00 hod. (ROV č. 3990/2026). Výluka bude aj 15.12.2026, čas upresníme.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Leopoldov",
+     "to": "Piešťany",
+     "iv": [
+      [
+       "2026-12-11 08:00",
+       "2026-12-11 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-15 00:00",
+       "2026-12-16 00:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Leopoldov",
+     "to": "Piešťany",
+     "iv": [
+      [
+       "2026-12-15 00:00",
+       "2026-12-16 00:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "3990/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6o_n26",
+   "origin": "r6-pravidla: sieť oprava 'iné' → úplná výluka 'Dňa 10.12.2026 od 08:00 do 14:00 hod. nebude úsek '",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nDňa 10.12.2026 od 08:00 do 14:00 hod. nebude úsek Trnava – Leopoldov prejazdný.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna"
+    }
+   ]
+  },
+  {
+   "id": "r6o_n27",
+   "origin": "r6-pravidla: sieť oprava 'iné' → úplná výluka 'Úsek Trnava – Leopoldov nebude dňa 10.12.2026 od 0'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nÚsek Trnava – Leopoldov nebude dňa 10.12.2026 od 08:00 do 14:00 hod. prejazdný.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna"
+    }
+   ]
+  },
+  {
+   "id": "r6o_n28",
+   "origin": "r6-pravidla: sieť oprava 'iné' → úplná výluka 'Trať v úseku Trnava – Leopoldov bude dňa 10.12.202'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nTrať v úseku Trnava – Leopoldov bude dňa 10.12.2026 od 08:00 do 14:00 hod. mimo prevádzky.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna"
+    }
+   ]
+  },
+  {
+   "id": "r6o_n29",
+   "origin": "r6-pravidla: sieť oprava blízky variant (kontrola) neprejazdné priecestie výlukou nie je",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nDňa 10.12.2026 od 08:00 do 14:00 hod. nebude priecestie v km 12,345 v obci Zavar prejazdné pre cestné vozidlá.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "none"
+    }
+   ]
+  },
+  {
+   "id": "r6o_a16",
+   "origin": "r6-pravidla: FC0 oprava A16 číslo novej výluky z vlastnej vety (predmet s dvomi číslami)",
+   "subject": "ROV č. 2816/2026 a ROV č. 2817/2026",
+   "body": "Dobrý deň,\n\nvýluka podľa ROV č. 2816/2026 v úseku Kraľovany – Ružomberok dňa 24.11.2026 sa odvoláva. Od 30.11.2026 08:00 hod. do odvolania platí úplná výluka podľa ROV č. 2817/2026 v úseku Kraľovany – Ružomberok.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kraľovany",
+     "to": "Ružomberok",
+     "iv": [
+      [
+       "2026-11-30 08:00",
+       null
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2817/2026",
+     "open": true
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2816/2026",
+     "frm": "Kraľovany",
+     "to": "Ružomberok",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6c_n01",
+   "origin": "r6-pravidla: FC5 pokračovanie 'v noci na 26.11. a na 27.11.' (zopakované „na“)",
+   "subject": "ROV č. 4610/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka trate Kysak – Košice v noci na 26.11. a na 27.11.2026 od 22:00 do 04:00 hod. (ROV č. 4610/2026).\n\nS pozdravom\nIng. Pavol Skúšobný\nOR Košice, odbor riadenia prevádzky",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orke@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 22:00",
+       "2026-11-26 04:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "4610/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-26 22:00",
+       "2026-11-27 04:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "4610/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6c_n02",
+   "origin": "r6-pravidla: FC5 pokračovanie zrušenie 'v noci na 26.11. a na 27.11. sa ruší'",
+   "subject": "Zrušenie ROV č. 4610/2026",
+   "body": "Dobrý deň,\n\nVýluka Kysak – Košice v noci na 26.11. a na 27.11.2026 sa ruší.\n\nS pozdravom\nIng. Pavol Skúšobný\nOR Košice, odbor riadenia prevádzky",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orke@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "4610/2026",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 22:00",
+       "2026-11-26 06:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "4610/2026",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-26 22:00",
+       "2026-11-27 06:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6c_n03",
+   "origin": "r6-pravidla: FC5 pokračovanie 'v noci na 26.11., na 27.11. a na 28.11.'",
+   "subject": "ROV č. 4611/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka trate Kysak – Košice v noci na 26.11., na 27.11. a na 28.11.2026 od 22:00 do 04:00 hod. (ROV č. 4611/2026).\n\nS pozdravom\nIng. Pavol Skúšobný\nOR Košice, odbor riadenia prevádzky",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orke@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-25 22:00",
+       "2026-11-26 04:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "4611/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-26 22:00",
+       "2026-11-27 04:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "4611/2026"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-11-27 22:00",
+       "2026-11-28 04:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "4611/2026"
+    }
+   ]
+  },
+  {
+   "id": "r6c_l01",
+   "origin": "r6-pravidla: osamelé okno vo vete bez dňa 'Druhá časť výluky bude od 13:00 do 16:00 hod.'",
+   "subject": "ROV č. 3922/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka trate Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 10:00 hod. Druhá časť výluky bude od 13:00 do 16:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 10:00"
+      ]
+     ],
+     "rk": "uplna"
+    },
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 13:00",
+       "2026-12-10 16:00"
+      ]
+     ],
+     "rk": "uplna"
+    }
+   ]
+  },
+  {
+   "id": "r6c_l02",
+   "origin": "r6-pravidla: osamelé okno blízky variant (kontrola) 'Kontakt: dispečer 7:00 – 15:30.'",
+   "subject": "ROV č. 3922/2026",
+   "body": "Dobrý deň,\n\nÚplná výluka trate Trnava – Leopoldov dňa 10.12.2026 od 08:00 do 14:00 hod. Kontakt: dispečer 7:00 – 15:30.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna"
+    }
+   ]
+  },
+  {
+   "id": "r6c_a01",
+   "origin": "r6-pravidla: FC2 pokračovanie pridanie termínu ' sa rozširuje aj na 17.12.2026 od 08:00 do 14:00 hod.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 sa rozširuje aj na 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6c_a02",
+   "origin": "r6-pravidla: FC2 pokračovanie pridanie termínu ' bude naviac aj 17.12.2026 od 08:00 do 14:00 hod.'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 bude naviac aj 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6c_a03",
+   "origin": "r6-pravidla: FC2 pokračovanie pridanie termínu ' sa uskutoční ešte raz, a to 17.12.2026 od 08:00 do 14:00 ho'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 sa uskutoční ešte raz, a to 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6c_a04",
+   "origin": "r6-pravidla: FC2 pokračovanie pridanie termínu ': k pôvodnému termínu sa pridáva ešte 17.12.2026 od 08:00 do'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026: k pôvodnému termínu sa pridáva ešte 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6c_a05",
+   "origin": "r6-pravidla: FC2 pokračovanie pridanie termínu 'ava – Leopoldov podľa ROV č. 3160/2026 uskutoční aj 17.12.20'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nOkrem pôvodného termínu 10.12.2026 sa výluka Trnava – Leopoldov podľa ROV č. 3160/2026 uskutoční aj 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6c_a06",
+   "origin": "r6-pravidla: FC2 pokračovanie pridanie termínu ' sa okrem 10.12.2026 vykoná taktiež 17.12.2026 od 08:00 do 1'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 sa okrem 10.12.2026 vykoná taktiež 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6c_a07",
+   "origin": "r6-pravidla: FC2 pokračovanie pridanie termínu ' dňa 10.12.2026 ostáva, nový termín 17.12.2026 od 08:00 do 1'",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 dňa 10.12.2026 ostáva, nový termín 17.12.2026 od 08:00 do 14:00 hod. sa pridáva.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6c_a08",
+   "origin": "r6-pravidla: FC2 pokračovanie 'v dvoch termínoch: 10.12. a 17.12.' bez zámeru – oba doplnením",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 bude vykonaná v dvoch termínoch: 10.12.2026 a 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    },
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r6c_a09",
+   "origin": "r6-pravidla: FC2 pokračovanie blízky variant (kontrola) 'sa presúva na 17.12.' ostáva presunom",
+   "subject": "Zmena ROV č. 3160/2026",
+   "body": "Dobrý deň,\n\nVýluka Trnava – Leopoldov podľa ROV č. 3160/2026 sa presúva na 17.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-17 08:00",
+       "2026-12-17 14:00"
+      ]
+     ],
+     "ref": "3160/2026",
+     "zamer": "presun"
+    }
+   ]
+  },
+  {
+   "id": "r6c_g01",
+   "origin": "r6-pravidla: FC6 pokračovanie 'bude trvať o dva dni dlhšie, do 29.11.'",
+   "subject": "Zmena ROV č. 2609/2026",
+   "body": "Dobrý deň,\n\nVýluka Ružomberok – Liptovský Mikuláš podľa ROV č. 2609/2026 bude trvať o dva dni dlhšie, do 29.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       null,
+       "2026-11-30 00:00"
+      ]
+     ],
+     "ref": "2609/2026",
+     "zamer": "predlzenie"
+    }
+   ]
+  },
+  {
+   "id": "r6c_f04",
+   "origin": "r6-pravidla: sieť pokračovanie presun 'z noci na 26.11. na noc na 03.12.' – pôvodná noc nie je termínom",
+   "subject": "Zmena ROV č. 4610/2026",
+   "body": "Dobrý deň,\n\nVýluka Kysak – Košice sa presúva z noci na 26.11. na noc na 03.12.2026, vždy od 22:00 do 04:00 hod.\n\nS pozdravom\nIng. Pavol Skúšobný\nOR Košice, odbor riadenia prevádzky",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orke@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Kysak",
+     "to": "Košice",
+     "iv": [
+      [
+       "2026-12-02 22:00",
+       "2026-12-03 04:00"
+      ]
+     ],
+     "ref": "4610/2026",
+     "zamer": "presun"
+    }
+   ]
+  },
+  {
+   "id": "r6c_d01",
+   "origin": "r6-pravidla: FC3 pokračovanie sieť zrušenie časti bez termínu 'sa ruší vo všetky dni okrem nedele.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší vo všetky dni okrem nedele.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6c_d02",
+   "origin": "r6-pravidla: FC3 pokračovanie sieť zrušenie časti bez termínu 'sa ruší čiastočne.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší čiastočne.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6c_d03",
+   "origin": "r6-pravidla: FC3 pokračovanie sieť zrušenie časti bez termínu 'sa ruší v dňoch, keď nie je pracovný deň.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší v dňoch, keď nie je pracovný deň.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6c_d04",
+   "origin": "r6-pravidla: FC3 pokračovanie sieť zrušenie časti bez termínu 'sa ruší v nočných hodinách.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší v nočných hodinách.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6c_d05",
+   "origin": "r6-pravidla: FC3 pokračovanie sieť zrušenie časti bez termínu 'sa ruší. Výluka v ostatných dňoch platí.'",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší. Výluka v ostatných dňoch platí.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6c_d06",
+   "origin": "r6-pravidla: FC3 pokračovanie blízky variant (kontrola) 'sa ruší vo všetky dni' ruší celú výluku",
+   "subject": "Zrušenie výluky – ROV č. 2501/2026",
+   "body": "Dobrý deň,\n\nVýluka podľa ROV č. 2501/2026 v úseku Ružomberok – Liptovský Mikuláš sa ruší vo všetky dni.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2501/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš"
+    }
+   ]
+  },
+  {
+   "id": "r6c_e01",
+   "origin": "r6-pravidla: FC4 pokračovanie výnimka so zoznamom dní v týždni 'okrem utorka 24.11. a štvrtka 26.11.'",
+   "subject": "Zrušenie výluky – ROV č. 2601/2026",
+   "body": "Dobrý deň,\n\nVýluka Ružomberok – Liptovský Mikuláš podľa ROV č. 2601/2026 v dňoch 23.11. – 27.11.2026 sa ruší okrem utorka 24.11. a štvrtka 26.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 00:00",
+       "2026-11-24 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2601/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-27 00:00",
+       "2026-11-28 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6c_g03",
+   "origin": "r6-pravidla: FC4 pokračovanie opis v zátvorke 'uvedený deň výluka odpadá, v ostatné dni sa vykoná' – deň z predmetu",
+   "subject": "STORNO výluky 25.11.2026 – ROV č. 2603/2026",
+   "body": "Dobrý deň,\n\npre výluku Ružomberok – Liptovský Mikuláš (23.11. – 27.11.2026, denne 08:00 – 14:00 hod.) platí: uvedený deň výluka odpadá, v ostatné dni sa vykoná.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2603/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 00:00",
+       "2026-11-26 00:00"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6c_g04",
+   "origin": "r6-pravidla: FC3 pokračovanie opis v zátvorke 'sa ruší, v ostatné dni sa vykoná' bez dňa – zrušenie bez termínu",
+   "subject": "Zrušenie výluky – ROV č. 2603/2026",
+   "body": "Dobrý deň,\n\nVýluka Ružomberok – Liptovský Mikuláš (23.11. – 27.11.2026, denne 08:00 – 14:00 hod.) sa ruší, v ostatné dni sa vykoná.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2603/2026",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "bez_terminu": true
+    }
+   ]
+  },
+  {
+   "id": "r6c_p01",
+   "origin": "r6-pravidla: FC3 pokračovanie blízky variant (kontrola) výber úseku nie je časťou termínu 'Zrušenie výluky sa týka iba úseku Senica – Kúty. Ú'",
+   "subject": "ROV 3360/2026 - zrusenie",
+   "body": "Dobrý deň,\n\nZrušenie výluky sa týka iba úseku Senica – Kúty. Úsek Trnava – Senica bude uzavretý podľa ROV.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-03 14:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3360/2026",
+     "frm": "Senica",
+     "to": "Kúty"
+    }
+   ]
+  },
+  {
+   "id": "r6c_p02",
+   "origin": "r6-pravidla: FC3 pokračovanie blízky variant (kontrola) výber úseku nie je časťou termínu 'Ruší sa len výluka v úseku Senica – Kúty.'",
+   "subject": "ROV 3360/2026 - zrusenie",
+   "body": "Dobrý deň,\n\nRuší sa len výluka v úseku Senica – Kúty.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-03 14:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3360/2026",
+     "frm": "Senica",
+     "to": "Kúty"
+    }
+   ]
+  },
+  {
+   "id": "r6c_p03",
+   "origin": "r6-pravidla: FC4 pokračovanie 'sa ruší len v stanici Senica' – nezruší úsek Senica – Kúty",
+   "subject": "ROV 3360/2026 - zrusenie",
+   "body": "Dobrý deň,\n\nVýluka v úseku Senica – Kúty sa ruší len v stanici Senica.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-03 14:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "3360/2026",
+     "frm": "Senica",
+     "to": "Senica"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i01",
+   "origin": "r6-pravidla: sieť pokračovanie 'iné' → čakajúca úplná výluka 'Dňa 10.12.2026 od 08:00 do 14:00 hod. bude trať Tr'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nDňa 10.12.2026 od 08:00 do 14:00 hod. bude trať Trnava – Leopoldov mimo prevádzky.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i02",
+   "origin": "r6-pravidla: sieť pokračovanie 'iné' → čakajúca úplná výluka 'Dňa 10.12.2026 od 08:00 do 14:00 hod. sa v úseku T'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nDňa 10.12.2026 od 08:00 do 14:00 hod. sa v úseku Trnava – Leopoldov nebude dať prejsť.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i03",
+   "origin": "r6-pravidla: sieť pokračovanie 'iné' → čakajúca úplná výluka 'V úseku Trnava – Leopoldov budú dňa 10.12.2026 od '",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nV úseku Trnava – Leopoldov budú dňa 10.12.2026 od 08:00 do 14:00 hod. prebiehať práce na koľaji.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "rk": "uplna"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i04",
+   "origin": "r6-pravidla: sieť pokračovanie 'nebude možný prejazd vlakov úsekom …' – blokujúca udalosť",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nDňa 10.12.2026 od 08:00 do 14:00 hod. nebude možný prejazd vlakov úsekom Trnava – Leopoldov.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "mimoriadnost",
+     "frm": "Trnava",
+     "to": "Leopoldov",
+     "iv": [
+      [
+       "2026-12-10 08:00",
+       "2026-12-10 14:00"
+      ]
+     ],
+     "kinds_ok": [
+      "vyluka_nova"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r6c_i05",
+   "origin": "r6-pravidla: sieť pokračovanie blízky variant (kontrola) nič neohlasuje 'Pokladňa v stanici Trnava bude dňa 10.12.2026 mimo'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nPokladňa v stanici Trnava bude dňa 10.12.2026 mimo prevádzky.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "none"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i06",
+   "origin": "r6-pravidla: sieť pokračovanie blízky variant (kontrola) nič neohlasuje 'Informačný systém stanice Trnava bude dňa 10.12.20'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nInformačný systém stanice Trnava bude dňa 10.12.2026 od 08:00 do 14:00 hod. mimo prevádzky.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "none"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i07",
+   "origin": "r6-pravidla: sieť pokračovanie blízky variant (kontrola) nič neohlasuje 'Priecestie v km 12,345 pri žst. Zavar nebude dňa 1'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nPriecestie v km 12,345 pri žst. Zavar nebude dňa 10.12.2026 prejazdné.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "none"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i08",
+   "origin": "r6-pravidla: sieť pokračovanie blízky variant (kontrola) nič neohlasuje 'Cestný most pri žst. Kraľovany nebude dňa 05.12.20'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nCestný most pri žst. Kraľovany nebude dňa 05.12.2026 prejazdný.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "none"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i09",
+   "origin": "r6-pravidla: sieť pokračovanie blízky variant (kontrola) nič neohlasuje 'Náhradná autobusová doprava v úseku Trnava – Leopo'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nNáhradná autobusová doprava v úseku Trnava – Leopoldov bude dňa 10.12.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "none"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i10",
+   "origin": "r6-pravidla: sieť pokračovanie blízky variant (kontrola) nič neohlasuje 'Porada k úseku Trnava – Leopoldov sa uskutoční 10.'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nPorada k úseku Trnava – Leopoldov sa uskutoční 10.12.2026 od 09:00 do 11:00 hod.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "none"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i11",
+   "origin": "r6-pravidla: sieť pokračovanie blízky variant (kontrola) nič neohlasuje 'Úsek Trnava – Leopoldov je dňa 10.12.2026 od 08:00'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nÚsek Trnava – Leopoldov je dňa 10.12.2026 od 08:00 do 14:00 hod. opäť prejazdný.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "none"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i12",
+   "origin": "r6-pravidla: sieť pokračovanie blízky variant (kontrola) nič neohlasuje 'V úseku Trnava – Leopoldov bude dňa 10.12.2026 od '",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nV úseku Trnava – Leopoldov bude dňa 10.12.2026 od 08:00 do 14:00 hod. zvýšený pohyb pracovníkov.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "none"
+    }
+   ]
+  },
+  {
+   "id": "r6c_i13",
+   "origin": "r6-pravidla: sieť pokračovanie blízky variant (kontrola) nič neohlasuje 'V úseku Trnava – Leopoldov dňa 01.11.2026 od 08:00'",
+   "subject": "Oznámenie",
+   "body": "Dobrý deň,\n\nV úseku Trnava – Leopoldov dňa 01.11.2026 od 08:00 do 14:00 hod. prebehla údržba.\n\nS pozdravom\nJozef Príkladný\nOR Trnava, pracovisko výluk",
+   "received": "2026-12-01 09:00",
+   "sender": "vyluky.ortt@zsr.example",
+   "expect": [
+    {
+     "kind": "none"
+    }
+   ]
+  },
+  {
+   "id": "r6c_r01",
+   "origin": "r6-pravidla: FC0 pokračovanie predmet so zoznamom čísel 'ROV č. 2816/2026 a 2817/2026'",
+   "subject": "ROV č. 2816/2026 a 2817/2026",
+   "body": "Dobrý deň,\n\nROV č. 2816/2026: výluka Kraľovany – Ružomberok dňa 24.11.2026 sa ruší. ROV č. 2817/2026: úplná výluka Kraľovany – Ružomberok dňa 30.11.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-18 10:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Kraľovany",
+     "to": "Ružomberok",
+     "iv": [
+      [
+       "2026-11-30 08:00",
+       "2026-11-30 14:00"
+      ]
+     ],
+     "rk": "uplna",
+     "ref": "2817/2026"
+    },
+    {
+     "kind": "vyluka_zrusenie",
+     "ref": "2816/2026",
+     "frm": "Kraľovany",
+     "to": "Ružomberok",
+     "iv": [
+      [
+       "2026-11-24 00:00",
+       "2026-11-25 00:00"
+      ]
+     ]
+    }
+   ]
   }
  ]
 }

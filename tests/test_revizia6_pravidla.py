@@ -458,13 +458,15 @@ def test_siet_termin_bez_udalosti_da_cakajucu_vyluku(cfg):
 
 
 def test_siet_bez_useku_je_poistka_pre_vozovy_park(cfg):
-    """[sieť] Termín bez úseku v e-maile s viacerými úsekmi – udalosť bez miesta (poistka pre celý vozový park)."""
+    """[sieť] Termín bez úseku v e-maile s viacerými úsekmi – udalosť na každom úseku e-mailu (nie poistka pre celý
+    vozový park, keď e-mail úseky uvádza – 6. revízia, oprava po kontrole)."""
     items = _x("ROV č. 2980/2026", "Úplná výluka v úseku Kysak – Košice dňa 01.12.2026 od 08:00 do 12:00 hod. Úplná "
                "výluka v úseku Galanta – Šaľa dňa 02.12.2026 od 08:00 do 12:00 hod. Výluka bude aj 08.12.2026, čas "
                "upresníme.", "2026-11-27 09:00", KE)
-    (net,) = _net(items)
-    assert _sec(net) == (None, None) and _term(net) == ("08.12. 00:00", "09.12. 00:00")
-    assert any("poistka pre celý vozový park" in n for n in net.notes), net.notes
+    nets = _net(items)
+    assert sorted(_sec(n) for n in nets) == [("Galanta", "Šaľa"), ("Kysak", "Košice")], _show(items)
+    assert all(_term(n) == ("08.12. 00:00", "09.12. 00:00") for n in nets)
+    assert not any("poistka pre celý vozový park" in x for n in nets for x in n.notes)
 
 
 def test_siet_noc_bez_casu_od_poludnia_do_poludnia(cfg):

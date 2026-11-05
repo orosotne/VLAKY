@@ -530,7 +530,8 @@ def confirmation_needed(kind: str, data: dict, confidence: float, verdict: str, 
     s = settings()
     reasons: list[str] = []
     if confidence < s.confirm_threshold:
-        reasons.append(f"istota {confidence:.2f} je pod prahom {s.confirm_threshold:.2f}")
+        # desatinná čiarka („istota 0,50 je pod prahom 0,80“) – text je vo fronte pre dispečera
+        reasons.append(f"istota {confidence:.2f} je pod prahom {s.confirm_threshold:.2f}".replace(".", ","))
     if res.errors:
         reasons.append("validácia našla chyby")
     if any("približne" in w for w in res.warnings):
