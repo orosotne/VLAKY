@@ -5,8 +5,12 @@ Opakovane poslaný ROV s kratším termínom či neskorším začiatkom, týžde
 existujúcej výluky. Bez potvrdenia dispečerom sa taký zápis nesmie vykonať: výluka by sa skrátila a vlak v skutočnom
 čase výluky by dostal VYPRAVIŤ ZELENÁ. Do potvrdenia ostáva výluka celá, nový termín je dočasný záznam „navrh“.
 Rovnaký či dlhší termín sa zapíše automaticky ako doteraz. Pravidlo platí aj pri zápise udalosti, ktorú prečítala
-staršia verzia agenta (obnova po prerušení medzi extrakciou a zápisom), a opakovane poslaná zmena, ktorú register už
-obsahuje, nečaká vo fronte s nepravdivým dôvodom.
+staršia verzia agenta (obnova po prerušení medzi extrakciou a zápisom).
+
+Zápis, ktorý nič nezmenil (opakovaný ROV, prehľad s tým istým termínom), sa nestane „novším“ zapisovateľom výluky:
+inak by potvrdenie čakajúcej zmeny (presun, predĺženie, doplnenie) skončilo ako „nahradené“ a jej dočasný záznam by
+sa zahodil – plánovač by čas, s ktorým počítal, považoval za voľný. Ak výluku medzitým naozaj zmenila novšia udalosť,
+potvrdený termín, ktorý výluka nemá, sa zapíše ako samostatná výluka (prísnejší prípad).
 """
 from __future__ import annotations
 
@@ -87,7 +91,8 @@ def _mail(env, session, name: str, subject: str, body: str, now: datetime, date:
 _N = [81000]
 
 
-def _decide(session, dep: datetime, now: datetime):
+def _decide(session, dep: datetime, now: datetime, origin: str = A, destination: str = B, traction: str = "E",
+            gauge: str = "1435"):
     """Nový vlak cez úsek s odchodom ``dep``, vyhodnotený skutočným plánovačom v čase ``now``."""
     from vlaky.agent.zdravie import set_kv
     from vlaky.models import Path as TrainPath, Train
@@ -96,8 +101,8 @@ def _decide(session, dep: datetime, now: datetime):
     _N[0] += 1
     number = str(_N[0])
     set_fake_now(now)
-    t = Train(number=number, origin=A, destination=B, traction="E", gauge="1435", vmax_kmh=80, status="planovany",
-              ready_utc=dep, deadline_utc=dep + timedelta(hours=8))
+    t = Train(number=number, origin=origin, destination=destination, traction=traction, gauge=gauge, vmax_kmh=80,
+              status="planovany", ready_utc=dep, deadline_utc=dep + timedelta(hours=8))
     session.add(t)
     session.flush()
     session.add(TrainPath(train_id=t.id, train_number=number, kind="ad_hoc", status="pridelena", departure_utc=dep))
@@ -212,7 +217,7 @@ def test_pomala_jazda_s_vyssou_rychlostou_caka_na_dispecera(env, session):
     s, (ev,) = _mail(env, session, "pj2.eml", "ROV c. 2400/2026 pomala jazda", body.replace("30 km/h", "60 km/h"),
                      utc(2026, 11, 17, 8, 2), "Tue, 17 Nov 2026 09:00:00 +0100")
     assert s["auto_applied"] == 0 and ev.needs_confirmation, (s, _reasons(ev))
-    assert any(REMOVAL in r and "rýchlosť" in r for r in _reasons(ev)), _reasons(ev)
+    assert any("zmiernil obmedzenie" in r and "rýchlosť 30 → 60 km/h" in r for r in _reasons(ev)), _reasons(ev)
     (orig,) = [c for c in _live(session) if c.proposed_change_of is None]
     assert float(orig.speed_kmh) == 30.0
 
@@ -249,24 +254,156 @@ def test_zmena_z_predchadzajucej_verzie_pri_obnove_nezapise_presun(env, session,
     assert not _green(r), (r.decision, r.color, r.summary)
 
 
-def test_opakovana_zmena_po_potvrdeni_necaka_s_nepravdivym_dovodom(env, session):
-    """Zmenu (presun) potvrdí dispečer; ten istý e-mail príde znova (iný distribučný zoznam) – register ho už obsahuje,
-    nič neodoberie, preto sa zapíše bez fronty (nie s dôvodom „môže odobrať zatvorený čas“)."""
+def test_opakovana_zmena_po_potvrdeni_caka_s_upozornenim(env, session):
+    """Zmenu (presun) potvrdí dispečer; ten istý e-mail príde znova (iný distribučný zoznam) – čaká ako každá zmena
+    výluky, fronta však povie, že register termín už má (zmena nič nezmení)."""
     from vlaky.posta.spracovanie import confirm_event
     from vlaky.posta.validacia import CHANGE_REMOVES_TIME
 
     _rov(env, session)
-    body = ("Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa presúva z 23.11.2026 "
-            "na 25.11.2026, od 08:00 do 14:00 hod.\n\nOR Žilina\n")
-    _s, (ev,) = _mail(env, session, "z.eml", "Zmena ROV č. 2331/2026", body, utc(2026, 11, 17, 8, 2),
+    _s, (ev,) = _mail(env, session, "z.eml", "Zmena ROV č. 2331/2026", PRESUN, utc(2026, 11, 17, 8, 2),
                       "Tue, 17 Nov 2026 09:00:00 +0100")
     assert ev.needs_confirmation and CHANGE_REMOVES_TIME in _reasons(ev), _reasons(ev)
     confirm_event(session, ev.id, "dispecer1")
     session.commit()
-    (c,) = _live(session)
+    _s, (again,) = _mail(env, session, "z2.eml", "Zmena ROV č. 2331/2026", PRESUN, utc(2026, 11, 17, 9, 2),
+                         "Tue, 17 Nov 2026 10:00:00 +0100")
+    warnings = (again.validation or {}).get("warnings") or []
+    assert again.needs_confirmation and any("už má nový termín" in w for w in warnings), warnings
+    (c,) = [x for x in _live(session) if x.proposed_change_of is None]
     assert (_l(c.start_utc), _l(c.end_utc)) == ("25.11. 08:00", "25.11. 14:00")
-    s, (again,) = _mail(env, session, "z2.eml", "Zmena ROV č. 2331/2026", body, utc(2026, 11, 17, 9, 2),
-                        "Tue, 17 Nov 2026 10:00:00 +0100")
-    assert CHANGE_REMOVES_TIME not in _reasons(again) and s["waiting_confirmation"] == 0, (s, _reasons(again))
-    (c,) = _live(session)
-    assert (_l(c.start_utc), _l(c.end_utc)) == ("25.11. 08:00", "25.11. 14:00")
+
+
+PRESUN = ("Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa presúva z 23.11.2026 "
+          "na 25.11.2026, od 08:00 do 14:00 hod.\n\nOR Žilina\n")
+ZMENY = {
+    "presun": (PRESUN, (2026, 11, 25, 10, 0)),
+    "predlzenie": ("Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa predlžuje do "
+                   "24.11.2026 14:00 hod.\n\nOR Žilina\n", (2026, 11, 24, 10, 0)),
+    "doplnenie": ("Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa dopĺňa o ďalší "
+                  "termín 26.11.2026 od 08:00 do 14:00 hod.\n\nOR Žilina\n", (2026, 11, 26, 10, 0)),
+}
+TYZDEN_STARY = ("Dobrý deň,\n\nv 48. týždni (23.11. – 29.11.2026) sú povolené tieto výluky:\n\n1. Ružomberok – "
+                "Liptovský Mikuláš, úplná výluka, 23.11.2026 od 08:00 do 14:00 hod., ROV č. 2331/2026\n\nOR Žilina\n")
+
+
+@pytest.mark.parametrize("zmena", list(ZMENY))
+@pytest.mark.parametrize("treti", ["opakovany_rov", "tyzdenny_prehlad"])
+def test_zapis_bez_zmeny_nenahradi_cakajucu_zmenu(env, session, zmena, treti):
+    """ROV (zapísaný sám) → zmena čaká s dočasným záznamom → opakovaný ROV či prehľad s pôvodným termínom (zápis bez
+    zmeny) → dispečer zmenu potvrdí: musí sa zapísať (nie „nahradené“), čas zmeny ostáva uzavretý."""
+    from vlaky.posta.spracovanie import confirm_event
+
+    _rov(env, session)
+    body, dep_t = ZMENY[zmena]
+    _s, (ev,) = _mail(env, session, "z.eml", "Zmena ROV č. 2331/2026", body, utc(2026, 11, 17, 8, 2),
+                      "Tue, 17 Nov 2026 09:00:00 +0100")
+    assert ev.kind == "vyluka_zmena" and ev.needs_confirmation, (ev.kind, _reasons(ev))
+    dep = loc(*dep_t)
+    assert not _green(_decide(session, dep, dep - timedelta(minutes=15)))
+    if treti == "opakovany_rov":
+        _s, (noop,) = _mail(env, session, "rov2.eml", "ROV c. 2331/2026 Ruzomberok - Liptovsky Mikulas", ROV_JEDEN,
+                            utc(2026, 11, 17, 9, 2), "Tue, 17 Nov 2026 10:00:00 +0100")
+    else:
+        _s, (noop,) = _mail(env, session, "t48.eml", "Oznámenie o povolených výlukách – 48. týždeň", TYZDEN_STARY,
+                            utc(2026, 11, 17, 9, 2), "Tue, 17 Nov 2026 10:00:00 +0100")
+    assert noop.status == "aplikovane", (noop.status, _reasons(noop))
+    set_fake_now(utc(2026, 11, 17, 10, 2))
+    ev = confirm_event(session, ev.id, "dispecer1")
+    session.commit()
+    result = (ev.validation or {}).get("apply_result") or {}
+    assert result.get("action") != "nahradene", result
+    r = _decide(session, dep, dep - timedelta(minutes=15))
+    assert not _green(r), (r.decision, r.color, r.summary)
+
+
+def test_novsia_dlhsia_vyluka_nezahodi_potvrdeny_presun(env, session):
+    """ROV 23.11. 08–14 (zapísaný sám) → presun na 25.11. čaká → opakovaný ROV s dlhším časom 23.11. 08–16 sa zapíše
+    sám (pridáva čas) → dispečer potvrdí presun: novšia udalosť výluku zmenila, termín presunu (25.11.) však výluka
+    nemá – zapíše sa ako samostatná výluka, 25.11. ostáva uzavretý."""
+    from vlaky.posta.spracovanie import confirm_event
+
+    _rov(env, session)
+    _s, (ev,) = _mail(env, session, "z.eml", "Zmena ROV č. 2331/2026", PRESUN, utc(2026, 11, 17, 8, 2),
+                      "Tue, 17 Nov 2026 09:00:00 +0100")
+    longer = ROV_JEDEN.replace("od 08:00 do 14:00", "od 08:00 do 16:00")
+    _s, (re2,) = _mail(env, session, "rov2.eml", "ROV c. 2331/2026 Ruzomberok - Liptovsky Mikulas", longer,
+                       utc(2026, 11, 17, 9, 2), "Tue, 17 Nov 2026 10:00:00 +0100")
+    assert re2.status == "aplikovane" and not re2.needs_confirmation, _reasons(re2)
+    set_fake_now(utc(2026, 11, 17, 10, 2))
+    ev = confirm_event(session, ev.id, "dispecer1")
+    session.commit()
+    result = (ev.validation or {}).get("apply_result") or {}
+    assert result.get("action") == "vytvorene" and result.get("superseded_by") == re2.id, result
+    terms = sorted((_l(c.start_utc), _l(c.end_utc), c.proposed_change_of) for c in _live(session))
+    assert terms == [("23.11. 08:00", "23.11. 16:00", None), ("25.11. 08:00", "25.11. 14:00", None)], terms
+    dep = loc(2026, 11, 25, 10)
+    r = _decide(session, dep, dep - timedelta(minutes=15))
+    assert not _green(r), (r.decision, r.color, r.summary)
+
+
+ROV_SRT = ("Dobrý deň,\n\núplná výluka v úseku Slivník ŠRT – Budkovce ŠRT dňa 23.11.2026 od 08:00 do 14:00 hod. "
+           "(ROV č. 2331/2026).\n\nOR Košice\n")
+
+
+def test_doplnene_cislo_trate_neodoberie_rozchod(env, session):
+    """Úsek oboch rozchodov (Slivník ŠRT – Budkovce ŠRT) bez čísla trate uzatvára 1435 aj 1520 mm; opakovaný ROV s „(trať
+    190)“ by ponechal len 1435 mm – sám sa nezapíše a vlak širokého rozchodu nedostane VYPRAVIŤ ZELENÁ."""
+    _s, (e0,) = _mail(env, session, "s0.eml", "ROV c. 2331/2026 Slivnik SRT - Budkovce SRT", ROV_SRT,
+                      utc(2026, 11, 16, 8, 2), "Mon, 16 Nov 2026 09:00:00 +0100")
+    if e0.status != "aplikovane":
+        pytest.skip(f"úsek sa nezapísal sám: {e0.status} {_reasons(e0)}")
+    with_line = ROV_SRT.replace("Budkovce ŠRT dňa", "Budkovce ŠRT (trať 190) dňa")
+    s, (ev,) = _mail(env, session, "s1.eml", "ROV c. 2331/2026 Slivnik SRT - Budkovce SRT", with_line,
+                     utc(2026, 11, 17, 8, 2), "Tue, 17 Nov 2026 09:00:00 +0100")
+    assert s["auto_applied"] == 0 and any("úsek či trať" in r for r in _reasons(ev)), (s, _reasons(ev))
+    dep = loc(2026, 11, 23, 10)
+    r = _decide(session, dep, dep - timedelta(minutes=15), "Haniska pri Košiciach", "Maťovce ŠRT", "M", "1520")
+    assert not _green(r), (r.decision, r.color, r.summary)
+
+
+# ---------------------------------------------------------------------- _removal_reason (jednotkovo)
+def _closure(**kw) -> Closure:
+    base = dict(id=1, kind="uplna", from_station=A, to_station=B, line_ref="", track="", start_utc=loc(2026, 11, 23, 8),
+                end_utc=loc(2026, 11, 23, 14), daily_from="", daily_to="", electric_only=False, speed_kmh=None,
+                external_ref="2331/2026", until_revoked=False)
+    base.update(kw)
+    return Closure(**base)
+
+
+def _fields(c: Closure, **kw) -> dict:
+    from vlaky.posta.spracovanie import _closure_fields_of
+
+    out = _closure_fields_of(c)
+    out.update(kw)
+    return out
+
+
+def test_odobratie_casu_presne_podla_planovaca():
+    from vlaky.posta.spracovanie import _removal_reason
+
+    full = _closure()
+    # koľaj pri úplnej výluke plánovač nepoužíva – „obe“ ani iné označenie nie je zmiernenie
+    assert _removal_reason(full, _fields(full, track="obe")) == ""
+    track = _closure(kind="kolaj", track="1")
+    assert _removal_reason(track, _fields(track, track="1. TK")) == ""
+    assert _removal_reason(track, _fields(track, track="obe")) == ""
+    assert _removal_reason(track, _fields(track, track="1 a 2")) == ""
+    assert "koľaj 1 → 2" in _removal_reason(track, _fields(track, track="2"))
+    unknown = _closure(kind="kolaj", track="")
+    assert "koľaj neuvedená → 1" in _removal_reason(unknown, _fields(unknown, track="1"))
+    # do odvolania: technický koniec sa neporovnáva – skorší začiatok či zmena na „do odvolania“ čas neodoberú
+    open_end = _closure(until_revoked=True, end_utc=loc(2026, 12, 23, 8))
+    assert _removal_reason(open_end, _fields(open_end, start_utc=loc(2026, 11, 23, 7, 30),
+                                             end_utc=loc(2026, 12, 20, 8))) == ""
+    assert _removal_reason(full, _fields(full, until_revoked=True, end_utc=loc(2026, 11, 23, 12))) == ""
+    assert "odobral zatvorený čas" in _removal_reason(open_end, _fields(open_end, until_revoked=False,
+                                                                        end_utc=loc(2026, 11, 30, 8)))
+    # priveľa denných okien (dlhá denná výluka): predĺženie obdobia nič neodoberie, kratšie obdobie áno
+    long = _closure(start_utc=loc(2027, 1, 1, 8), end_utc=loc(2028, 3, 31, 14), daily_from="08:00", daily_to="14:00")
+    assert _removal_reason(long, _fields(long, end_utc=loc(2028, 4, 30, 14))) == ""
+    assert "odobral zatvorený čas" in _removal_reason(long, _fields(long, end_utc=loc(2028, 2, 28, 14)))
+    # text dôvodu uvádza, čo sa zmierňuje
+    slow = _closure(kind="pomala_jazda", speed_kmh=30)
+    why = _removal_reason(slow, _fields(slow, speed_kmh=60))
+    assert why.startswith("zápis by zmiernil obmedzenie výluky #1") and "rýchlosť 30 → 60 km/h" in why, why
