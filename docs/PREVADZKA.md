@@ -250,7 +250,10 @@ a stav. Vypíše aj kanály bez príjemcov, kanál bez servera správ (`POZOR: �
 („VÝSLEDOK: OK“ – over, že správa naozaj prišla na každý kanál), 1 = chyba (stav `chyba` alebo `zablokovana`,
 prázdny interný zoznam, v ostrej prevádzke správa len v outboxe); dôvod je v riadku „VÝSLEDOK: CHYBA – …“.
 V tieňovej prevádzke ide správa **len** na `VLAKY_SHADOW_EMAILS` (SMS a Teams sú vypnuté); ostatní príjemcovia
-sa vôbec neskúšajú. Stav `outbox` (server správ nie je nastavený, správa je len v adresári outbox – zväzok
+sa vôbec neskúšajú a `test-notify --kanal sms` či `--kanal teams` nič nepošle – skončí kódom 1 s vysvetlením „SMS
+a Teams sú v tieňovej prevádzke vypnuté – skúša sa len e-mail na VLAKY_SHADOW_EMAILS (test-notify --kanal email) …“
+(pri prázdnom `VLAKY_SHADOW_EMAILS` vyzve nastaviť ho). SMS a Teams vyskúšaj po vypnutí tieňového režimu
+(`VLAKY_SHADOW_MODE=false`). Stav `outbox` (server správ nie je nastavený, správa je len v adresári outbox – zväzok
 `odoslane`) stačí len vo vývoji a v ukážke (`VLAKY_ENV` dev, test, demo); v ostrej prevádzke je to chyba
 doručenia (kapitola 6.5). Kópia každej správy je vo zväzku `odoslane` (audit). Ak správa nepríde: kapitola 6 a
 `docker compose logs --tail 100 agent`.
@@ -492,13 +495,19 @@ na poštovom serveri (PROMPT.md 2.2 – „SMTP relé odmietne iné adresy“):
   a odovzdávka služby – vždy tá istá správa, nie nová. Súhrn, denná správa a odovzdávka sú vybavené, až keď
   prišli každému dispečerovi zo zoznamu. Aktuálne odporúčanie sa skúša doručiť najviac 48 h (nie pre ukončený
   vlak); nahradené alebo rozhodnuté odporúčanie sa už neposiela. Upozornenia na rušňovodiča a státie vlaku sa
-  skúšajú v každom cykle, kým platia (pri výpadku najviac jeden pokus o spojenie na kanál za cyklus).
-- **Jednorazové upozornenia:** hlásenie rušňovodiča o probléme (z aplikácie pre rušňovodiča) a pripomienka výluky
-  do odvolania sa pri výpadku opakujú rovnako – tá istá správa, len tým, ktorým neprišla, najviac 48 h od prvého
-  pokusu; pripomienka len kým výluka stále platí do odvolania (zrušená, odvolaná alebo znova posunutá výluka sa
-  už nepripomína). Kým neprídu, zdravie ich počíta ako nedoručené – iná doručená správa ich nevybaví. Hlásenie
-  rušňovodiča uvádza čas nahlásenia („Nahlásené: …“) a aplikácia rušňovodičovi ukáže, že upozornenie sa zatiaľ
-  nepodarilo odoslať. Nedoručené odporúčanie sa sleduje podľa odporúčania a príjemcu: po obnovení servera ho vybaví
+  posielajú, kým trvá ich dôvod; zlyhaný pokus sa opakuje s rovnakým odstupom ako ostatné správy (KRITICKÉ pri
+  výpadku kanála v 5-min okne) – brána, ktorá SMS doručí, no odpovie chybou (5xx, časový limit), tak nepošle tú
+  istú SMS každú minútu.
+- **Prepočet z webu** (po úprave vlaku, výluky, potvrdení udalosti, tlačidlo „Prepočítať“) posiela upozornenia až
+  po uložení prepočtu, celá dávka s jedným pokusom o spojenie na kanál – nedostupný server správ prepočet nezdrží.
+  To isté odporúčanie z webu a z cyklu agenta dispečer nedostane dvakrát (zámok doručovania vlaku).
+- **Jednorazové upozornenia:** hlásenie rušňovodiča o probléme (z aplikácie pre rušňovodiča), pripomienka výluky
+  do odvolania a upozornenie „Na potvrdenie čaká …“ na udalosti z e-mailov sa pri výpadku opakujú rovnako – tá
+  istá správa, len tým, ktorým neprišla, najviac 48 h od prvého pokusu; pripomienka len kým výluka stále platí do
+  odvolania (zrušená, odvolaná alebo znova posunutá výluka sa už nepripomína), upozornenie na udalosti len kým
+  niektorá z nich čaká vo fronte a plánovač s ňou nevie počítať (po potvrdení alebo zamietnutí už nie). Kým
+  neprídu, zdravie ich počíta ako nedoručené – iná doručená správa ich nevybaví. Hlásenie rušňovodiča uvádza čas
+  nahlásenia („Nahlásené: …“) a aplikácia rušňovodičovi ukáže, že upozornenie sa zatiaľ nepodarilo odoslať. Nedoručené odporúčanie sa sleduje podľa odporúčania a príjemcu: po obnovení servera ho vybaví
   doručenie toho istého odporúčania, aj keď sa medzitým posunul odchod.
 - **Server správ nie je nastavený:** v ostrej prevádzke (`VLAKY_ENV` iné ako dev, test, demo) je kanál
   s príjemcami bez servera správ (chýba `VLAKY_SMTP_HOST`, pri `VLAKY_NOTIFY_TRANSPORT=graph` úplné nastavenie
@@ -522,6 +531,11 @@ ani zákazníkov; koncepty správ pre nich posiela dispečer sám.
 
 1. `VLAKY_SHADOW_MODE=true`, `VLAKY_SHADOW_EMAILS=veduci.dispecingu@dopravca.example` (prípadne testovací kanál).
    Agent beží naostro, ale odporúčania idú **len** na tieňové adresy; dispečeri pracujú ako doteraz.
+   Kontrola nastavení (zdravie `konfiguracia`, výpis pri štarte, každý cyklus agenta) posudzuje zoznam, ktorý naozaj
+   platí: prázdny alebo chybne pomenovaný `VLAKY_SHADOW_EMAILS` je mimo vývoja a ukážky chyba „tieňová prevádzka bez
+   tieňového zoznamu príjemcov (VLAKY_SHADOW_EMAILS) – agent neodošle nič“ (heartbeat `/fail`) a pre tento zoznam
+   musí byť nastavený server správ. `VLAKY_NOTIFY_*` sa počas pilotu nevyžadujú – zdravie len poznamená, že pre
+   prechod do ostrej prevádzky ešte nie je nastavený e-mail dispečerov (`VLAKY_NOTIFY_EMAILS`).
 2. Vedúci dispečingu porovnáva odporúčania s tým, čo urobil dispečer, a eviduje: nezachytené zmeny
    (cieľ 0), správnosť vytiahnutých údajov, zhodu odporúčaní, falošné poplachy.
 3. Prechod do ostrej prevádzky (rozhodnutie vedenia, zapísať do denníka):
@@ -665,7 +679,7 @@ Podrobný návod: [deploy/monitoring/README.md](../deploy/monitoring/README.md).
 | Záloha | `backup.sh` → `BACKUP_HEARTBEAT_URL` | `/fail` alebo chýba > 26 h |
 | Doručovanie upozornení | kým ostáva niečo nedoručené, agent v každom cykle hlási chybu „doručenie: N správ sa nepodarilo doručiť (kanály)“ (1 správu, 2 – 4 správy) (heartbeat `/fail`, bez adries príjemcov); `python -m vlaky health` vráti chybu (kontajner agenta je „unhealthy“, `update.sh` a `check.sh` to ohlásia) s detailom `dorucenie` – rovnako stránka `/zdravie` a denná správa (riadok „Doručovanie správ“). Nedoručené sa počítajú po správe a príjemcovi (odporúčanie podľa odporúčania – po obnovení servera zmiznú, hneď ako odporúčanie príde); denná správa uvádza „nedoručené správy: N (neúspešné pokusy o doručenie za 24 h: M)“ | `/fail` alebo kontajner agenta „unhealthy“ |
 | Schránka | `python -m vlaky health` (detail `schranka`) a `/zdravie`: čas poslednej úplnej kontroly („pred N min“). Nahromadená pošta sa dočítava po dávkach 50 e-mailov (ďalšia dávka o 5 s); „dočítava sa (…), posledná úplná kontrola pred N min“ je v poriadku, kým od poslednej úplnej kontroly neuplynulo 30 min, potom je to chyba zdravia aj cyklu „schránka: dočítava sa … (viac ako 30 min!)“ | `/fail` alebo kontajner agenta „unhealthy“ |
-| Nastavenie odosielania | detail `konfiguracia`: kanál s príjemcami bez servera správ (v ostrej prevádzke chyba zdravia aj cyklu „nastavenie odosielania: …“), neznáme premenné `VLAKY_*` (len upozornenie); agent ho vypíše aj pri štarte | `/fail` |
+| Nastavenie odosielania | detail `konfiguracia`: kanál s príjemcami bez servera správ, chýbajúci e-mail dispečerov `VLAKY_NOTIFY_EMAILS` (v tieňovej prevádzke prázdny `VLAKY_SHADOW_EMAILS`) – v ostrej prevádzke chyba zdravia aj cyklu „nastavenie odosielania: …“; neznáme premenné `VLAKY_*` a v tieňovej prevádzke chýbajúci `VLAKY_NOTIFY_EMAILS` sú len upozornenie; agent ho vypíše aj pri štarte | `/fail` |
 | Chybné odporúčanie | odporúčanie, ktorého správu sa nedá pripraviť (chyba programu alebo neočakávané údaje), hlási každý cyklus ako „odporúčanie #N: …“ (heartbeat `/fail`, detail so stopou v `/zdravie`, komponent „Plánovanie (prepočet vlakov)“); ostatné odporúčania sa doručujú normálne | `/fail` |
 
 Externý monitoring musí bežať **mimo tohto servera** a upozorňovať aspoň dvoch ľudí.
@@ -739,8 +753,8 @@ Postup:
 4. **Odmietnutý príjemca** (napr. 550 user unknown, SMS brána odmieta číslo): oprav adresu vo
    `VLAKY_NOTIFY_EMAILS` alebo číslo vo `VLAKY_NOTIFY_PHONES` a reštartuj agenta (`docker compose up -d`).
 5. Po oprave servera agent nedoručené správy pošle sám (KRITICKÉ do 5 min, ostatné najneskôr do 60 min, hneď
-   po prvej úspešnej správe tomu istému príjemcovi) – aj hlásenia rušňovodičov o probléme a pripomienky výluk do
-   odvolania (kapitola 6.5). Odosielanie over:
+   po prvej úspešnej správe tomu istému príjemcovi) – aj hlásenia rušňovodičov o probléme, pripomienky výluk do
+   odvolania a upozornenia na čakajúce udalosti z e-mailov (kapitola 6.5). Odosielanie over:
    `docker compose exec agent python -m vlaky test-notify` (kód 0 = odišlo; over, že správa prišla).
 
 ### Neobvyklé záznamy auditu pošty
@@ -753,10 +767,13 @@ Postup:
   (`overenie: karantena`) znamená možný podvrh s adresou agenta.
 - `vyluka_navrh_zlyhal` – záznam „navrh“ pre plánovač sa nepodarilo zapísať (napr. chyba databázy); udalosť
   ostáva vo fronte s upozornením a plánovač s ňou do potvrdenia nepočíta – vlaky, ktorých sa môže týkať, preto
-  nedostanú ZELENÚ.
+  nedostanú ZELENÚ. Rovnaký záznam (s dôvodom) má aj odmietnutý zápis potvrdenej výluky, napr. zrušenie časti
+  výluky do odvolania – udalosť ostáva vo fronte so štítkom „potvrdené – zápis zlyhal“.
 - `zmeny_zrusenej_vyluky_odstranene` – potvrdené zrušenie výluky odstránilo dočasné záznamy starších čakajúcich
   zmien tej istej výluky; ich potvrdenie už nič nezapíše.
-- `closure_update_conflict` – dispečer ukladal zastaraný formulár výluky (uloženie odmietnuté, výluka sa nezmenila).
+- `closure_update_conflict` – dispečer ukladal zastaraný formulár výluky (uloženie odmietnuté, výluka sa nezmenila);
+  s `nahradeny_zaznam` šlo o dočasný záznam zmeny, ktorý medzitým odstránilo potvrdenie či zamietnutie zmeny
+  (`udalost`) – formulár ukázal výluku, v ktorej údaje sú.
 - `reply_rejected` – odpoveď dispečera e-mailom (`PRIJAŤ` / `ZAMIETNUŤ`) sa nezapísala; dôvod je v zázname
   (dispečerovi, ktorý prešiel overením odosielateľa, agent krátko odpísal prečo).
 - `reply_automatic` – automatická odpoveď dispečera (neprítomnosť, potvrdenie o prečítaní) sa nespracovala a agent
@@ -988,7 +1005,7 @@ Súkromné kľúče nikdy neposielaj e-mailom; každý správca má vlastný kľ
 | Nový používateľ | `docker compose exec web python -m vlaky create-user MENO --role dispecer --password` (heslo sa vypýta; existujúci účet sa nezmení) |
 | Zmena účtu | `docker compose exec web python -m vlaky create-user MENO --update --password` (nové heslo), `--role …`, `--activate` (zmenia sa len zadané údaje) |
 | Jeden cyklus agenta (test) | len pri zastavenom agentovi: `docker compose stop agent`, potom `docker compose run --rm agent python -m vlaky agent --once` (kód 1 = chyba v cykle, napr. schránka sa nedá prečítať, alebo beží iná inštancia agenta), nakoniec `docker compose start agent` |
-| Skúšobná správa | `docker compose exec agent python -m vlaky test-notify` (všetky kanály; `--kanal email`, `--kanal teams` alebo `--kanal sms` len jeden), kód 0 = odišlo – over doručenie |
+| Skúšobná správa | `docker compose exec agent python -m vlaky test-notify` (všetky kanály; `--kanal email`, `--kanal teams` alebo `--kanal sms` len jeden; v tieňovej prevádzke len e-mail na `VLAKY_SHADOW_EMAILS` – `--kanal sms` či `teams` skončí kódom 1), kód 0 = odišlo – over doručenie |
 | Aktualizácia / návrat | `deploy/scripts/update.sh` / `deploy/scripts/update.sh --rollback` |
 | Záloha / zoznam / test obnovy | `deploy/backup/backup.sh` / `deploy/backup/restore.sh --list` / `--test` |
 | Kontrola servera | `deploy/monitoring/check.sh` |

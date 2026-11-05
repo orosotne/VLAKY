@@ -80,6 +80,8 @@ Rovnaké testy proti PostgreSQL (ako na serveri) – do prázdnej testovacej dat
 VLAKY_TEST_DATABASE_URL=postgresql+psycopg://postgres@127.0.0.1:5432/vlaky_test python -m pytest -q
 ```
 
+Formulácie e-mailov ŽSR overuje korpus `tests/data/posta_korpus` (test `tests/test_revizia5_korpus.py`) – každú novú skutočnú formuláciu z prevádzky doplň doň (postup v [`docs/ARCHITEKTURA.md`](docs/ARCHITEKTURA.md), bod 4 – „Korpus formulácií e-mailov ŽSR“).
+
 Testy v skutočnom prehliadači (Playwright + Chromium cez Node.js) sa preskočia, ak `node` s balíkom `playwright` chýba (alebo pri `VLAKY_SKIP_BROWSER=1`). Nesťahujú dlaždice podkladovej mapy a všetky požiadavky mimo lokálneho servera blokujú – výnimkou je knižnica MapLibre z unpkg.com (raz za beh testu); bez prístupu k nej sa testy mapy preskočia.
 
 ## Spustenie referenčnej implementácie
