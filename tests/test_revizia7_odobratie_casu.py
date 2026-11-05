@@ -407,3 +407,160 @@ def test_odobratie_casu_presne_podla_planovaca():
     slow = _closure(kind="pomala_jazda", speed_kmh=30)
     why = _removal_reason(slow, _fields(slow, speed_kmh=60))
     assert why.startswith("zápis by zmiernil obmedzenie výluky #1") and "rýchlosť 30 km/h → 60 km/h" in why, why
+    track_both = _closure(kind="kolaj", track="obe")
+    assert "koľaj obe → neuvedená" in _removal_reason(track_both, _fields(track_both, track=""))
+
+
+# ---------------------------------------------------------------------- druhé kolo kontroly
+ZRUSENIE_DNA = ("Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 dňa 23.11.2026 sa "
+                "ruší.\n\nOR Žilina\n")
+DOPLNENIE = ZMENY["doplnenie"][0]
+
+
+def test_novsi_opakovany_rov_chrani_vyluku_pred_starsim_zrusenim(env, session):
+    """ROV (sám) → zrušenie čaká → ten istý ROV znova (zápis bez zmeny) → dispečer potvrdí staršie zrušenie: novšia
+    správa výluku znova ohlásila – zrušenie sa nezapíše (nahradené), výluka ostáva, vlak 23.11. nie je ZELENÝ."""
+    from vlaky.posta.spracovanie import confirm_event
+
+    _rov(env, session)
+    _s, (cancel,) = _mail(env, session, "zr.eml", "Zrusenie ROV c. 2331/2026", ZRUSENIE_DNA, utc(2026, 11, 17, 8, 2),
+                          "Tue, 17 Nov 2026 09:00:00 +0100")
+    assert cancel.kind == "vyluka_zrusenie" and cancel.needs_confirmation
+    _s, (noop,) = _mail(env, session, "rov2.eml", "ROV c. 2331/2026 Ruzomberok - Liptovsky Mikulas", ROV_JEDEN,
+                        utc(2026, 11, 17, 9, 2), "Tue, 17 Nov 2026 10:00:00 +0100")
+    assert noop.status == "aplikovane"
+    set_fake_now(utc(2026, 11, 17, 10, 2))
+    cancel = confirm_event(session, cancel.id, "dispecer1")
+    session.commit()
+    assert (cancel.validation or {}).get("apply_result", {}).get("action") == "nahradene", cancel.validation
+    (c,) = _live(session)
+    assert (_l(c.start_utc), _l(c.end_utc)) == ("23.11. 08:00", "23.11. 14:00")
+    r = _decide(session, loc(2026, 11, 23, 10), loc(2026, 11, 23, 9, 45))
+    assert not _green(r), (r.decision, r.color, r.summary)
+
+
+def test_novsi_opakovany_rov_chrani_vyluku_pred_starsim_skratenim(env, session):
+    """Kratší opakovaný ROV (08–10) čaká → plný ROV znova → dispečer potvrdí kratší: nahradený, výluka 08–14 ostáva."""
+    from vlaky.posta.spracovanie import confirm_event
+
+    _rov(env, session)
+    short = ROV_JEDEN.replace("od 08:00 do 14:00", "od 08:00 do 10:00")
+    _s, (ev,) = _mail(env, session, "rov2.eml", "ROV c. 2331/2026 Ruzomberok - Liptovsky Mikulas", short,
+                      utc(2026, 11, 17, 8, 2), "Tue, 17 Nov 2026 09:00:00 +0100")
+    _mail(env, session, "rov3.eml", "ROV c. 2331/2026 Ruzomberok - Liptovsky Mikulas", ROV_JEDEN,
+          utc(2026, 11, 17, 9, 2), "Tue, 17 Nov 2026 10:00:00 +0100")
+    set_fake_now(utc(2026, 11, 17, 10, 2))
+    ev = confirm_event(session, ev.id, "dispecer1")
+    session.commit()
+    assert (ev.validation or {}).get("apply_result", {}).get("action") == "nahradene", ev.validation
+    (c,) = [x for x in _live(session) if x.proposed_change_of is None]
+    assert (_l(c.start_utc), _l(c.end_utc)) == ("23.11. 08:00", "23.11. 14:00")
+
+
+def test_samostatna_vyluka_z_potvrdenych_udajov_s_upravou_dispecera(env, session):
+    """Presun čaká → dlhší ROV (novšia udalosť) → dispečer zmenu opraví (koniec 16:00) a potvrdí: samostatná výluka má
+    opravený termín, nie údaje z e-mailu."""
+    from vlaky.posta.spracovanie import confirm_event
+
+    _rov(env, session)
+    _s, (ev,) = _mail(env, session, "z.eml", "Zmena ROV č. 2331/2026", PRESUN, utc(2026, 11, 17, 8, 2),
+                      "Tue, 17 Nov 2026 09:00:00 +0100")
+    longer = ROV_JEDEN.replace("od 08:00 do 14:00", "od 08:00 do 16:00")
+    _mail(env, session, "rov2.eml", "ROV c. 2331/2026 Ruzomberok - Liptovsky Mikulas", longer, utc(2026, 11, 17, 9, 2),
+          "Tue, 17 Nov 2026 10:00:00 +0100")
+    set_fake_now(utc(2026, 11, 17, 10, 2))
+    ev = confirm_event(session, ev.id, "dispecer1", edits={"end": loc(2026, 11, 25, 16).isoformat()})
+    session.commit()
+    result = (ev.validation or {}).get("apply_result") or {}
+    assert result.get("action") == "vytvorene", result
+    row = session.get(Closure, result["id"])
+    assert (_l(row.start_utc), _l(row.end_utc), row.status) == ("25.11. 08:00", "25.11. 16:00", "overene")
+    r = _decide(session, loc(2026, 11, 25, 15), loc(2026, 11, 25, 14, 45))
+    assert not _green(r), (r.decision, r.color, r.summary)
+
+
+def test_zrusenie_povodneho_dna_nezahodi_cakajuce_doplnenie(env, session):
+    """ROV 23.11. → doplnenie 26.11. čaká → zrušenie len 23.11. (potvrdené): termín doplnenia zrušenie nepokrýva – ostáva
+    pre plánovač, kým čaká, a po potvrdení sa zapíše ako samostatná výluka."""
+    from vlaky.posta.spracovanie import confirm_event
+
+    _rov(env, session)
+    _s, (dopl,) = _mail(env, session, "d.eml", "Zmena ROV č. 2331/2026", DOPLNENIE, utc(2026, 11, 17, 8, 2),
+                        "Tue, 17 Nov 2026 09:00:00 +0100")
+    _s, (cancel,) = _mail(env, session, "zr.eml", "Zrusenie ROV c. 2331/2026", ZRUSENIE_DNA, utc(2026, 11, 17, 9, 2),
+                          "Tue, 17 Nov 2026 10:00:00 +0100")
+    set_fake_now(utc(2026, 11, 17, 10, 2))
+    confirm_event(session, cancel.id, "dispecer1")
+    session.commit()
+    dep = loc(2026, 11, 26, 10)
+    r = _decide(session, dep, dep - timedelta(minutes=15))
+    assert not _green(r), (r.decision, r.color, r.summary)          # doplnenie ešte čaká
+    set_fake_now(utc(2026, 11, 17, 11, 2))
+    dopl = confirm_event(session, dopl.id, "dispecer1")
+    session.commit()
+    result = (dopl.validation or {}).get("apply_result") or {}
+    assert result.get("action") == "vytvorene", result
+    r = _decide(session, dep, dep - timedelta(minutes=15))
+    assert not _green(r), (r.decision, r.color, r.summary)
+
+
+def test_zmena_pred_rov_nezahodi_svoj_termin(env, session):
+    """Doplnenie (s číslom ROV) príde skôr ako ROV – čaká so svojím návrhom; ROV potom príde a zapíše sa sám; dispečer
+    potvrdí doplnenie: jeho termín (26.11.) sa nezahodí."""
+    from vlaky.posta.spracovanie import confirm_event
+
+    _s, (dopl,) = _mail(env, session, "d.eml", "Zmena ROV č. 2331/2026", DOPLNENIE, utc(2026, 11, 16, 7, 2),
+                        "Mon, 16 Nov 2026 08:00:00 +0100")
+    _mail(env, session, "rov.eml", "ROV c. 2331/2026 Ruzomberok - Liptovsky Mikulas", ROV_JEDEN, utc(2026, 11, 16, 8, 2),
+          "Mon, 16 Nov 2026 09:00:00 +0100")
+    set_fake_now(utc(2026, 11, 16, 9, 2))
+    confirm_event(session, dopl.id, "dispecer1")
+    session.commit()
+    dep = loc(2026, 11, 26, 10)
+    r = _decide(session, dep, dep - timedelta(minutes=15))
+    assert not _green(r), (r.decision, r.color, r.summary)
+
+
+def test_novsie_cakajuce_rovnake_oznamenie_neostane_neviditelne(env, session):
+    """ROV 23.11. (sám) → presun na 25.11. čaká → ten istý ROV znova do 72 h (čaká, výluka ho obsahuje – bez záznamu) →
+    dispečer potvrdí starší presun: novšie čakajúce oznámenie 23.11. dostane záznam, vlak 23.11. nie je ZELENÝ."""
+    from vlaky.posta.spracovanie import confirm_event
+
+    _rov(env, session)
+    _s, (move,) = _mail(env, session, "z.eml", "Zmena ROV č. 2331/2026", PRESUN, utc(2026, 11, 20, 8, 2),
+                        "Fri, 20 Nov 2026 09:00:00 +0100")
+    _s, (again,) = _mail(env, session, "rov2.eml", "ROV c. 2331/2026 Ruzomberok - Liptovsky Mikulas", ROV_JEDEN,
+                         utc(2026, 11, 21, 8, 2), "Sat, 21 Nov 2026 09:00:00 +0100")
+    assert again.needs_confirmation, _reasons(again)
+    set_fake_now(utc(2026, 11, 21, 9, 2))
+    confirm_event(session, move.id, "dispecer1")
+    session.commit()
+    r = _decide(session, loc(2026, 11, 23, 10), loc(2026, 11, 23, 9, 45))
+    assert not _green(r), (r.decision, r.color, r.summary)
+
+
+def test_vyluka_do_odvolania_je_otvorena_aj_po_technickom_konci(env, session):
+    """Overená výluka do odvolania: plánovač ju počíta aj pre vlak o 60 dní (technický koniec je o 30 dní); opakované
+    oznámenie „do odvolania“ neskráti dlhší pevný koniec výluky."""
+    from vlaky.planovanie.planovac import closure_windows
+
+    c = Closure(kind="uplna", from_station=A, to_station=B, line_ref="", track="", start_utc=loc(2026, 11, 23, 8),
+                end_utc=loc(2026, 12, 23, 8), daily_from="", daily_to="", electric_only=False, speed_kmh=None,
+                external_ref="2331/2026", until_revoked=True, status="overene", source="email")
+    session.add(c)
+    session.commit()
+    far = loc(2027, 1, 20, 10)
+    wins = closure_windows(session, far - timedelta(hours=2), far + timedelta(hours=6))
+    assert any(w.closure_id == c.id and w.start <= far <= w.end for w in wins), wins
+    r = _decide(session, far, loc(2026, 11, 21, 9))
+    assert not _green(r), (r.decision, r.color, r.summary)
+    # pevný dlhý koniec + opakované oznámenie „do odvolania“ – koniec sa neskráti na technický
+    long_rov = ROV_JEDEN.replace("dňa 23.11.2026 od 08:00 do 14:00 hod.", "od 23.11.2026 08:00 hod. do 31.03.2027 14:00 hod.")
+    _s, (e0,) = _mail(env, session, "r.eml", "ROV c. 2400/2026 Ruzomberok - Liptovsky Mikulas",
+                      long_rov.replace("2331/2026", "2400/2026"), utc(2026, 11, 16, 8, 2), "Mon, 16 Nov 2026 09:00:00 +0100")
+    assert e0.status == "aplikovane", (e0.status, _reasons(e0))
+    open_rov = ROV_JEDEN.replace("dňa 23.11.2026 od 08:00 do 14:00 hod.", "od 23.11.2026 08:00 hod. do odvolania")
+    _mail(env, session, "r2.eml", "ROV c. 2400/2026 Ruzomberok - Liptovsky Mikulas", open_rov.replace("2331/2026", "2400/2026"),
+          utc(2026, 11, 17, 8, 2), "Tue, 17 Nov 2026 09:00:00 +0100")
+    rows = [x for x in _live(session) if x.external_ref and "2400" in x.external_ref and x.proposed_change_of is None]
+    assert rows and all(_l(x.end_utc) == "31.03. 14:00" for x in rows), [(x.id, x.end_utc, x.until_revoked) for x in rows]
