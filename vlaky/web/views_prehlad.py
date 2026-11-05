@@ -160,6 +160,18 @@ def _kind_options(event_kind: str, value: Any) -> list:
     return out
 
 
+def _zamer_options(value: Any) -> list:
+    """Voľby poľa „Zámer zmeny“ (zmena výluky): kód zámeru → slovenský názov, prázdna voľba = zámer neurčený;
+    neznáma hodnota z e-mailu je prvá voľba s upozornením (ako pri druhu – :func:`_kind_options`)."""
+    from ..posta.validacia import change_intent
+
+    out = [("", "— neurčený —")] + list(ZAMER_LABELS.items())
+    cur = change_intent({"zamer": value})
+    if cur and cur not in ZAMER_LABELS:
+        out.insert(0, (str(value), f"{value} – neznámy zámer, vyberte zo zoznamu"))
+    return out
+
+
 def event_fields(data: dict, event_kind: str = "") -> list:
     out = []
     for key, value in (data or {}).items():
@@ -182,6 +194,14 @@ def event_fields(data: dict, event_kind: str = "") -> list:
             item["kind"] = "choice"
             item["value"] = "" if value is None else str(value)
             item["options"] = _kind_options(event_kind, value)
+        if str(key) == "zamer" and (kind in ("text", "textarea") or value is None):
+            # zámer zmeny výluky – výber s názvami po slovensky (voľný text by register nemusel rozpoznať)
+            from ..posta.validacia import change_intent
+
+            cur = change_intent({"zamer": value})
+            item["kind"] = "choice"
+            item["value"] = cur if cur in ZAMER_LABELS else ("" if value is None else str(value))
+            item["options"] = _zamer_options(value)
         out.append(item)
     return out
 
@@ -261,6 +281,16 @@ def parse_event_edits(form, data: dict, event_kind: str = "") -> tuple:
                     errors[key] = error
                     continue
                 new = code if code is not None or old is not None else None
+            if key == "zamer":
+                from ..posta.validacia import change_intent
+
+                code = change_intent({"zamer": new})
+                if code == change_intent({"zamer": old}):
+                    continue                     # ten istý zámer (aj zápis „zmena času“ ako „zmena_casu“)
+                if code and code not in ZAMER_LABELS:
+                    errors[key] = f"{FIELD_LABELS['zamer']}: neznámy zámer „{str(new)[:40]}“ – vyberte zo zoznamu."
+                    continue
+                new = code or None
         if new != old:
             edits[key] = new
     d = data or {}
