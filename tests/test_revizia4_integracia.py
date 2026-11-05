@@ -130,7 +130,8 @@ def test_zmena_odoberajuca_cas_vzdy_potvrdzuje_dispecer(cfg):
         need, reasons = confirmation_needed("vyluka_zmena", {"zamer": zamer, "start": later, "end": later}, 0.95,
                                             "ok", ValidationResult(data={}), now_utc())
         assert need and any("odobrať zatvorený čas" in r for r in reasons), (zamer, reasons)
-    # doplnenie a predĺženie čas výluky nikdy neodoberú – istá zmena ďaleko vopred sa zapíše automaticky
+    # doplnenie a predĺženie čas výluky nikdy neodoberú – validácia nepridá tento dôvod (na dispečera aj tak čakajú:
+    # register uvedie plán zápisu medzi dôvodmi potvrdenia – spracovanie._register_check)
     for zamer in ("doplnenie", "predlzenie", "predĺženie"):
         need, reasons = confirmation_needed("vyluka_zmena", {"zamer": zamer, "start": later, "end": later}, 0.95,
                                             "ok", ValidationResult(data={}), now_utc())

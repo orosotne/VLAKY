@@ -66,8 +66,8 @@ from .parser import parse_message
 from .stanice import stations
 from .text import clean_text, fold, header_text
 from .udalosti import KIND_LABELS, SCHEMAS, MailDocument
-from .validacia import (find_train, parse_number, parse_utc, resolve_border, train_digits, train_mismatch,
-                        validate_event)
+from .validacia import (CHANGE_REMOVES_TIME, find_train, parse_number, parse_utc, resolve_border, train_digits,
+                        train_mismatch, validate_event)
 from .zdroje import MailSourceError, RawMail, get_source, kv_get, kv_set
 
 OPEN_END_DAYS = 30            # výluka „do odvolania“ – technický koniec, kým ŽSR neoznámi skutočný (posúva sa)
@@ -565,7 +565,12 @@ def process_email(session: Session, email: Email, *, reprocess: bool = False) ->
             data_in = _register_start(session, it.kind, it.data, email, notes)
             vr = validate_event(session, it.kind, data_in, confidence=conf, verdict=email.verdict)
             extra = _source_reasons(email, it) + ([_BULK_REASON] if bulk else [])
-            target_reasons, target_warnings = _register_check(session, it.kind, vr.data, now, email=email)
+            target_reasons, target_warnings, unchanged = _register_check(session, it.kind, vr.data, now, email=email)
+            if unchanged:
+                # zmena, ktorú register už obsahuje (opakovane poslaná po potvrdení): nič neodoberie – zapíše sa bez
+                # dispečera ako doteraz (ostatné dôvody potvrdenia ostávajú)
+                vr.reasons = [r for r in vr.reasons if r != CHANGE_REMOVES_TIME]
+                vr.needs_confirmation = bool(vr.reasons)
             orphan = _orphan_cancel(session, it.kind, vr.data, email) if it.kind == "vyluka_zrusenie" else ""
             if orphan:
                 target_reasons.append(ORPHAN_CANCEL_REASON)
@@ -1065,10 +1070,12 @@ def _bulk_operational_note(email: Any) -> str:
 
 
 def _register_check(session: Session, kind: str, data: dict, now: datetime,
-                    email: Optional[Email] = None) -> tuple[list[str], list[str]]:
-    """Čo by udalosť zmenila v registri: dôvody na potvrdenie (M5, 72 h) a informácie pre dispečera."""
+                    email: Optional[Email] = None) -> tuple[list[str], list[str], bool]:
+    """Čo by udalosť zmenila v registri: dôvody na potvrdenie (M5, 72 h), informácie pre dispečera a príznak, že
+    zmena výluky nič nemení (register ju už obsahuje – napr. opakovane poslaná zmena po potvrdení)."""
     reasons: list[str] = []
     warnings: list[str] = []
+    unchanged = False
     issuer = mail_issuer(email) if email is not None else None
     try:
         if kind in CLOSURE_EVENT_KINDS:
@@ -1091,8 +1098,15 @@ def _register_check(session: Session, kind: str, data: dict, now: datetime,
                 warnings.append(f"{plan.text} (Priradená podľa: {how}.)")
             elif target is not None and _closure_changes(target, fields):
                 reasons += _closure_guard(session, target, now, None)
+                if kind != "vyluka_zmena":
+                    # opakovaný ROV, týždenný prehľad s časťou výluky … – zmenu výluky potvrdzuje dispečer vždy
+                    removal = _removal_reason(target, fields)
+                    if removal:
+                        reasons.append(removal)
                 warnings.append(f"Mení výluku #{target.id} {target.from_station} – {target.to_station} "
                                 f"{fmt(target.start_utc)} – {fmt(target.end_utc)} (priradená podľa: {how}).")
+            elif target is not None and kind == "vyluka_zmena":
+                unchanged = True       # nový termín už výluka v registri má – zmena nič nezmení
             if kind != "vyluka_zmena" and data.get("external_ref"):
                 for c in _active_closures(session):
                     if (target is not None and c.id == target.id) or not c.external_ref or \
@@ -1160,7 +1174,7 @@ def _register_check(session: Session, kind: str, data: dict, now: datetime,
                 reasons += _handover_guard(session, h, now, None)
     except ApplyError:
         pass
-    return reasons, warnings
+    return reasons, warnings, unchanged
 
 
 # ====================================================================== zápis do registrov
@@ -1808,6 +1822,49 @@ def _closure_changes(c: Closure, fields: dict) -> list[str]:
     return changed
 
 
+def _removal_reason(c: Closure, fields: dict) -> str:
+    """Prečo by zápis ``fields`` do výluky ``c`` výluke odobral zatvorený čas alebo zmiernil obmedzenie („“ – nič
+    neodoberie: nový termín obsahuje všetky okná výluky a obmedzenie je rovnaké či prísnejšie).
+
+    Taký zápis bez dispečera nesmie prebehnúť – napr. opakovane poslaný ROV s kratším termínom či neskorším začiatkom,
+    týždenný prehľad povolených výluk, ktorý uvádza len časť (týždeň) viacdennej výluky, alebo zle prečítaný termín:
+    plánovač by inak skutočný čas výluky považoval za voľný (falošná ZELENÁ). Do potvrdenia ostáva výluka celá
+    a nový termín je dočasný záznam „navrh“ – plánovač počíta s oboma."""
+    what = []
+    old = _windows(c.start_utc, c.end_utc, c.daily_from, c.daily_to)
+    new = _windows(fields.get("start_utc"), fields.get("end_utc"), fields.get("daily_from"), fields.get("daily_to"))
+    slack = timedelta(minutes=1)
+    if old is None or new is None:
+        same = (_utc(c.start_utc) == fields.get("start_utc") and _utc(c.end_utc) == fields.get("end_utc")
+                and str(c.daily_from or "") == str(fields.get("daily_from") or "")
+                and str(c.daily_to or "") == str(fields.get("daily_to") or ""))
+        if not same:
+            what.append("termín")
+    elif not all(any(n[0] <= w[0] + slack and w[1] <= n[1] + slack for n in new) for w in old):
+        what.append("termín")
+    if c.until_revoked and not fields.get("until_revoked") and "termín" not in what:
+        what.append("koniec namiesto do odvolania")
+    if str(fields.get("kind") or "uplna") != str(c.kind or "uplna"):
+        what.append("druh obmedzenia")
+    new_track, old_track = str(fields.get("track") or "").strip(), str(c.track or "").strip()
+    if new_track and new_track != old_track:
+        what.append("koľaj")
+    if fields.get("electric_only") and not c.electric_only:
+        what.append("len pre vlaky na elektrickú trakciu")
+    a, b = c.speed_kmh, fields.get("speed_kmh")
+    if a is not None and (b is None or float(b) > float(a)):
+        what.append("rýchlosť")
+    if not what:
+        return ""
+    old_desc = _term_desc(c.start_utc, c.end_utc, c.daily_from, c.daily_to) + \
+        ("" if not c.until_revoked else ", do odvolania")
+    new_desc = _term_desc(fields.get("start_utc"), fields.get("end_utc"), fields.get("daily_from"),
+                          fields.get("daily_to")) + ("" if not fields.get("until_revoked") else ", do odvolania")
+    return (f"zápis by výluke #{c.id} {c.from_station} – {c.to_station} odobral zatvorený čas či zmiernil obmedzenie "
+            f"({', '.join(what)}: {old_desc} → {new_desc}) – napr. opakovaný ROV či týždenný prehľad s časťou výluky; "
+            "kým to nepotvrdí dispečer, výluka ostáva celá")
+
+
 def _closure_guard(session: Session, c: Closure, now: datetime, ev_id: Optional[int]) -> list[str]:
     """Prečo sa výluka nesmie zmeniť automaticky (overená, platí alebo začne do 72 h, čaká na potvrdenie)."""
     h = settings().confirm_horizon_h
@@ -1997,6 +2054,11 @@ def _apply_closure(session: Session, ev: ExtractedEvent, confirmed: bool) -> dic
     first_write = promote or (target is own and not was_applied)    # návrh tejto udalosti sa stáva záznamom
     if not confirmed and target is not own and changes:
         reasons = _closure_guard(session, target, now, ev.id)
+        # automatický zápis nikdy neodoberie výluke zatvorený čas ani nezmierni obmedzenie (každý druh udalosti – aj
+        # zmena výluky prečítaná staršou verziou agenta bez nového pravidla potvrdzovania)
+        removal = _removal_reason(target, fields)
+        if removal:
+            reasons.append(removal)
         if reasons:
             raise NeedsConfirmation(reasons)
     before = None if first_write else _snapshot(target, _CLOSURE_FIELDS)

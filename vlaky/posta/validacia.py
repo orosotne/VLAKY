@@ -6,7 +6,9 @@ Kontroly: názvy dopravní proti registru siete (pôvodný text aj názov podľa
 
 Udalosť ide na potvrdenie, ak: istota < ``confirm_threshold`` ALEBO validácia našla chybu ALEBO e-mail je
 podozrivý ALEBO sa udalosť týka najbližších ``confirm_horizon_h`` hodín (alebo už začala) ALEBO ide o zrušenie
-výluky, zrušenie trasy či mimoriadnosť.
+výluky, zrušenie trasy či mimoriadnosť ALEBO o zmenu výluky, ktorá môže odobrať zatvorený čas (presun, skrátenie,
+zmena času, neznámy či chýbajúci zámer – :data:`CHANGE_REMOVES_TIME`). Register pridá ďalšie dôvody (plán zápisu zmeny,
+výluka overená dispečerom, zápis, ktorý by výluke odobral čas – :mod:`vlaky.posta.spracovanie`).
 """
 from __future__ import annotations
 
@@ -526,8 +528,11 @@ def validate_event(session: Session, kind: str, data: dict, *, confidence: float
 
 
 # zámer zmeny výluky, ktorá nikdy neodoberá zatvorený čas: register nový termín pridá ako ďalšiu výluku (doplnenie)
-# alebo len posunie koniec výluky (predĺženie) – posta.spracovanie._change_plan
+# alebo len posunie koniec výluky (predĺženie) – posta.spracovanie._change_plan. Aj tieto zmeny čakajú na dispečera:
+# register ich zámer (plán zápisu) vždy uvedie medzi dôvodmi potvrdenia (posta.spracovanie._register_check).
 ADDITIVE_INTENTS = ("doplnenie", "predlzenie")
+CHANGE_REMOVES_TIME = ("zmena výluky môže odobrať zatvorený čas (presun, skrátenie, zmena času alebo neurčený zámer) – "
+                       "vždy ju potvrdzuje dispečer")
 
 
 def change_intent(data: dict) -> str:
@@ -566,8 +571,7 @@ def confirmation_needed(kind: str, data: dict, confidence: float, verdict: str, 
         # ktorú register zapíše ako presun termínu. Pri zle prečítanom termíne by pôvodný – skutočný – čas výluky
         # ostal pre plánovač otvorený; agent ju preto nikdy nezapíše sám (ako zrušenie výluky). Do potvrdenia ostáva
         # pôvodná výluka v registri a nový termín má dočasný záznam „navrh“ – plánovač počíta s oboma.
-        reasons.append("zmena výluky môže odobrať zatvorený čas (presun, skrátenie, zmena času alebo neurčený zámer) "
-                       "– vždy ju potvrdzuje dispečer")
+        reasons.append(CHANGE_REMOVES_TIME)
     if kind == "ine":
         reasons.append("nerozpoznaný e-mail – skontrolujte originál")
     start = effective_start(kind, data)
