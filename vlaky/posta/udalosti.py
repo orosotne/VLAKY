@@ -28,13 +28,23 @@ KIND_LABELS = {
 
 _CLOSURE_KEYS = ["from_station", "to_station", "line_ref", "track", "start", "end", "daily_from", "daily_to",
                  "kind", "speed_kmh", "external_ref", "note", "via", "until_revoked"]
+# zámer zmeny výluky (``vyluka_zmena.zamer``), ako ho uvádza e-mail – podľa neho register zmenu zapíše:
+#   presun      – termín sa presúva (pôvodný termín zaniká, platí nový),
+#   doplnenie   – pribúda ďalší termín (pôvodný ostáva celý, „bude aj v dňoch …“),
+#   predlzenie  – výluka sa predlžuje (pôvodný začiatok ostáva, nový koniec; bez začiatku = začiatok z registra),
+#   skratenie   – výluka sa skracuje či končí skôr (nový koniec či začiatok vo vnútri pôvodného termínu),
+#   zmena_casu  – mení sa čas (okno) výluky v uvedené dni („z 08:00 – 14:00 na 06:00 – 16:00“),
+#   None        – zámer nie je známy (register postupuje konzervatívne)
+CHANGE_INTENTS = ("presun", "doplnenie", "predlzenie", "skratenie", "zmena_casu")
 SCHEMAS: dict[str, list[str]] = {
     "vyluka_nova": _CLOSURE_KEYS,
-    "vyluka_zmena": _CLOSURE_KEYS,
+    "vyluka_zmena": _CLOSURE_KEYS + ["zamer"],
     "pomala_jazda": _CLOSURE_KEYS,
     # start/end – rušený termín (zrušenie len časti viacdennej výluky celú výluku nezruší); kind = pomala_jazda –
-    # ruší sa pomalá jazda (POTR), nie výluka iného druhu s rovnakým číslom
-    "vyluka_zrusenie": ["external_ref", "from_station", "to_station", "start", "end", "kind"],
+    # ruší sa pomalá jazda (POTR), nie výluka iného druhu s rovnakým číslom; partial = True – e-mail ruší len časť
+    # výluky (dni v týždni, čas bez dňa, „s výnimkou …“), ale rušený termín sa nepodarilo určiť: zápis zrušenie
+    # nesmie vykonať ako zrušenie celej výluky
+    "vyluka_zrusenie": ["external_ref", "from_station", "to_station", "start", "end", "kind", "partial"],
     # offer/accept_by: ponuka trasy zo systému KIS (ešte nie je pridelená, treba ju akceptovať)
     "trasa_pridelena": ["train_number", "date", "kind", "points", "external_ref", "offer", "accept_by"],
     "trasa_zmena": ["train_number", "date", "kind", "points", "external_ref", "offer", "accept_by"],

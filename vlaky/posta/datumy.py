@@ -78,6 +78,13 @@ _HOUR_CTX_RE = re.compile(r"(?:\bo|\bod|\bdo|-|\baz|\bv|\bvo)\s*$")
 _AT_GAP = re.compile(r"^[\s,]*(?:(?:o|v|vo|od|o\s+case|v\s+case|case|cas|cca|asi|at|um|zaciatok|s\s+casom)\b[\s,:]*)*$")
 _TIME_DATE_GAP = re.compile(r"^[\s,]*(?:(?:hod\.?|h\.?|dna|dne|dnom|v\s+den|zo\s+dna|ze\s+dne)\b[\s,.:]*)*$")
 _TO_GAP = re.compile(r"^\s*(?:hod\.?\s*)?(?:-+|do|az|until|till|bis|>)\s*(?:dna\s*|dne\s*)?$")
+# zmena času z jedného okna na druhé („sa mení z 08:00 – 14:00 hod. na 06:00 – 16:00 hod.“, „posúva sa zo
+# 22:00 – 04:00 na 20:00 – 06:00“): medzera medzi oknami a predložka pred pôvodným oknom
+_WIN_SHIFT_GAP = re.compile(r"^\s*(?:hod\.?|h\.?)?\s*na\s*(?:cas\s+|case\s+)?$")
+# koniec vety medzi oknom a obdobím („… denne od 08:00 do 14:00 hod. Termín 23.11. – 27.11. platí.“) – bodka za slovom
+# a ďalšie slovo, ktoré vetu nepokračuje (nie „… hod. v dňoch …“, „… hod. dňa …“)
+_SENT_BREAK = re.compile(r"[a-z]\.\s+(?!(?:v|vo|od|do|dna|dne|denne|a|aj|vzdy|kazdy|v\s+dnoch|v\s+case|cez)\b)[a-z]")
+_WIN_SHIFT_BEFORE = re.compile(r"(?<![^\s(])(?:z|zo|ze)\s+(?:casu\s+|case\s+)?(?:od\s+)?$")
 _UNTIL_REVOKED = re.compile(r"^\s*(?:hod\.?\s*)?(?:do\s+(?:odvolania|odvolani|odvolani|odvolania)|az\s+do\s+odvolani\w*)")
 _DAILY_RE = re.compile(r"\b(?:denne|kazdy\s+den|kazdodenne|vzdy|v\s+jednotlivych\s+dnoch|v\s+dnoch|ve\s+dnech|v\s+case|dennne)\b")
 
@@ -427,7 +434,31 @@ def scan(folded: str, ref: date) -> list[Temporal]:
 
     toks.sort(key=lambda t: t.start)
     _fix_years(folded, toks, ref)
+    _night_ending(folded, toks)
     return _merge(folded, _night_pairs(folded, toks))
+
+
+# „v noci na 26.11.2026“, „v noci na piatok 27.11.“ (deň v týždni vymazaný), „v noci zo štvrtka na piatok 27.11.“ – noc,
+# ktorá v uvedený deň KONČÍ (25./26.11.), nie noc, ktorá v ňom začína
+_NIGHT_ENDING = re.compile(r"\bnoc(?:i|ou)?\s+(?:(?:z|zo|ze)\s+(?:pondelka|utorka|stredy|stvrtka|piatka|soboty|nedele"
+                           r"|pondeli|utery|stredy|ctvrtka|patku|soboty|nedele)\s+)?na\s+$")
+
+
+def _night_ending(folded: str, toks: list[Temporal]) -> None:
+    """Dátum za „v noci na“ je druhý deň noci: token sa zmení na noc (prvý deň = deň pred dátumom), rovnako ďalšie
+    dni zoznamu za ním („v noci na 26. a 27.11.“). Noc s dvoma dňami („z 25. na 26.11.“) sa nemení."""
+    prev: Optional[Temporal] = None
+    for t in toks:
+        if t.kind == "date" and not t.night and t.day is not None and (
+                (prev is not None and _LIST_GAP.match(folded[prev.end:t.start]))
+                or _NIGHT_ENDING.search(folded, max(0, t.start - 40), t.start)):
+            t.day = t.day - timedelta(days=1)
+            t.night = True
+            if t.month_day:
+                t.month_day = (t.day.day, t.day.month)
+            prev = t
+        else:
+            prev = None
 
 
 def _night_pairs(folded: str, toks: list[Temporal]) -> list[Temporal]:
@@ -549,6 +580,10 @@ def _list_item_after_window(folded: str, out: list[Temporal], toks: list[Tempora
     nxt = toks[i + 2] if i + 2 < len(toks) else None
     if prev is None or prev.kind not in ("time", "datetime") or not _TO_GAP.match(folded[prev.end:toks[i].start]):
         return False
+    # „… od 08:00 do 12:00 hod., 05.12.2026 celý deň“ – ďalší deň zoznamu s vlastným rozsahom (celý deň)
+    if re.match(r"\s*(?:hod\.?\s*)?(?:\(\s*)?(?:cely\s+den|celodenn\w*|nepretrzit\w*|non-?stop)",
+                folded[toks[i + 1].end:toks[i + 1].end + 30]):
+        return True
     if nxt is None or nxt.kind != "time":
         return False
     after = folded[toks[i + 1].end:nxt.start]
@@ -692,20 +727,51 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
             used.add(i)
         i += 1
 
+    # zmena času „(sa mení) z 08:00 – 14:00 na 06:00 – 16:00“ – prvé okno je pôvodný čas (obdobie nedostane), okno za
+    # „na“ je nový čas: platí pre dni, pri ktorých stojí pôvodné okno (vzdialenosť sa meria aj od neho)
+    old_windows: set[int] = set()
+    anchor: dict[int, int] = {}
+    for k in range(len(windows) - 1):
+        (wa, wb), (na, _nb) = windows[k], windows[k + 1]
+        if _WIN_SHIFT_GAP.match(folded[wb.end:na.start]) and \
+                _WIN_SHIFT_BEFORE.search(folded, max(0, wa.start - 14), wa.start):
+            old_windows.add(k)
+            anchor[k + 1] = wa.start
     # denné okná v rámci obdobia dátumov (v ľubovoľnom poradí, blízko seba)
-    used_windows: set[int] = set()
-    for a, b in date_ranges:
+    used_windows: set[int] = set(old_windows)
+    # obdobia dátumov v zozname („v dňoch 23.11. – 27.11. a 30.11. – 04.12. denne 08:00 – 14:00“) zdieľajú okno; okno
+    # patrí obdobiu (skupine), ktorému je najbližšie – „sa presúva z 23.11. – 27.11. na 30.11. – 04.12., denne 08:00 –
+    # 14:00“ dá okno novému termínu, nie pôvodnému
+    groups: list[list[tuple[Temporal, Temporal]]] = []
+    for r in date_ranges:
+        if groups and _LIST_GAP.match(folded[groups[-1][-1][1].end:r[0].start]):
+            groups[-1].append(r)
+        else:
+            groups.append([r])
+
+    def gdist(group: list, k: int) -> int:
+        wa, wb = windows[k]
+        best_d = 10 ** 9
+        for ra, rb in group:
+            before = abs(wa.start - rb.end) + (100 if _SENT_BREAK.search(folded, min(rb.end, wa.start),
+                                                                         max(rb.end, wa.start)) else 0)
+            after = abs(ra.start - wb.end) + (100 if _SENT_BREAK.search(folded, max(wb.start, min(wb.end, ra.start) - 6),
+                                                                        max(wb.end, ra.start)) else 0)
+            d = min(before, after)
+            if k in anchor:
+                d = min(d, abs(anchor[k] - rb.end))
+            best_d = min(best_d, d)
+        return best_d
+
+    for gi, group in enumerate(groups):
         best, best_dist = None, 10 ** 9
-        for k, (wa, wb) in enumerate(windows):
+        for k in range(len(windows)):
             if k in used_windows:
                 continue
-            dist = min(abs(wa.start - b.end), abs(a.start - wb.end))
-            if dist <= 160 and dist < best_dist:
+            dist = gdist(group, k)
+            if dist <= 160 and dist < best_dist and not any(gdist(g, k) < dist for g in groups[gi + 1:]):
                 best, best_dist = k, dist
-        # dni zoznamu pred obdobím („v dňoch 3., 4. a 10. – 12.11.2026 v čase 8:00 – 14:00“) majú to isté okno
-        idx = _listed_dates(folded, toks, next(n for n, t in enumerate(toks) if t is a), used, -1)
-        listed = [toks[j] for j in idx]
-        used.update(idx)
+        picked: list[int] = []
         if best is not None:
             picked = [best]
             # ďalšie denné okná hneď za ním („v čase 8:00 – 12:00 a 13:00 – 16:00“)
@@ -713,30 +779,38 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
                 if k in used_windows or not _AND_GAP.match(folded[windows[picked[-1]][1].end:windows[k][0].start]):
                     break
                 picked.append(k)
-            for k in picked:
-                wa, wb = windows[k]
-                used_windows.add(k)
-                # noci „od 12./13. do 14./15.11.“ s oknom po polnoci – okná sú v druhé dni nocí
-                start = datetime.combine(_night_day(a.day, a.night, wa), wa.tm)
-                end = datetime.combine(_night_day(b.day, b.night, wa), wb.tm)
-                flags = {"denne"}
-                if wb.tm <= wa.tm:
-                    end += timedelta(days=1)
-                    flags.add("cez_polnoc")
-                if a.unordered or b.unordered:
-                    flags.add("zle_poradie")
-                out.append(Period(start, end, min(a.start, wa.start), max(b.end, wb.end),
-                                  _hhmm(wa.tm), _hhmm(wb.tm), flags))
+            used_windows.update(picked)
+        for ri, (a, b) in enumerate(group):
+            # dni zoznamu pred obdobím („v dňoch 3., 4. a 10. – 12.11.2026 v čase 8:00 – 14:00“) majú to isté okno
+            idx = _listed_dates(folded, toks, next(n for n, t in enumerate(toks) if t is a), used, -1)
+            listed = [toks[j] for j in idx]
+            used.update(idx)
+            if picked:
+                for k in picked:
+                    wa, wb = windows[k]
+                    # noci „od 12./13. do 14./15.11.“ s oknom po polnoci – okná sú v druhé dni nocí
+                    start = datetime.combine(_night_day(a.day, a.night, wa), wa.tm)
+                    end = datetime.combine(_night_day(b.day, b.night, wa), wb.tm)
+                    flags = {"denne"}
+                    if wb.tm <= wa.tm:
+                        end += timedelta(days=1)
+                        flags.add("cez_polnoc")
+                    if a.unordered or b.unordered:
+                        flags.add("zle_poradie")
+                    # okno zdieľané so zoznamom ďalších období – obdobie siaha len po vlastný koniec
+                    shared = len(group) > 1 and ri + 1 < len(group) and wa.start > b.end
+                    out.append(Period(start, end, min(a.start, wa.start) if not shared else a.start,
+                                      max(b.end, wb.end) if not shared else b.end, _hhmm(wa.tm), _hhmm(wb.tm), flags))
+                    for e in listed:
+                        out.append(_token_period(e, wa, wb, e.start, e.end))
+            else:
+                # celé dni; posledná noc končí ráno nasledujúceho dňa
+                out.append(Period(datetime.combine(a.day, time(0, 0)),
+                                  datetime.combine(b.day, time(0, 0)) + timedelta(days=2 if b.night else 1),
+                                  a.start, b.end, flags={"cely_den"}))
                 for e in listed:
-                    out.append(_token_period(e, wa, wb, e.start, e.end))
-        else:
-            # celé dni; posledná noc končí ráno nasledujúceho dňa
-            out.append(Period(datetime.combine(a.day, time(0, 0)),
-                              datetime.combine(b.day, time(0, 0)) + timedelta(days=2 if b.night else 1),
-                              a.start, b.end, flags={"cely_den"}))
-            for e in listed:
-                out.append(Period(datetime.combine(e.day, time(0, 0)), datetime.combine(e.day, time(0, 0))
-                                  + timedelta(days=2 if e.night else 1), e.start, e.end, flags={"cely_den"}))
+                    out.append(Period(datetime.combine(e.day, time(0, 0)), datetime.combine(e.day, time(0, 0))
+                                      + timedelta(days=2 if e.night else 1), e.start, e.end, flags={"cely_den"}))
     # okno s jedným dátumom (napr. „12.11.2026, denne 08:00 – 14:00“ alebo dátum za oknom)
     for k, (wa, wb) in enumerate(windows):
         if k in used_windows:
@@ -751,14 +825,15 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
             chain[1] = wb.end
             continue
         ranged = [x for r in date_ranges for x in r]
+        ws = anchor.get(k, wa.start)       # nový čas zmeny „z … na …“ – deň pri pôvodnom okne
         near = [t for t in toks if t.kind == "date" and t not in ranged
-                and (0 <= wa.start - t.end <= 40 or 0 <= t.start - wb.end <= 40)]
+                and (0 <= wa.start - t.end <= 40 or 0 <= t.start - wb.end <= 40 or 0 <= ws - t.end <= 40)]
         if not near:
             continue
         # pôvodný deň presunu či dátum vydania („dňa 24.11.2026 (namiesto 23.11.2026) od 08:00 do 14:00“) okno
         # nedostane, ak je pri okne aj deň termínu
         near = [t for t in near if not not_term_date(folded, t)] or near
-        d = min(near, key=lambda t: min(abs(wa.start - t.end), abs(t.start - wb.end)))
+        d = min(near, key=lambda t: min(abs(wa.start - t.end), abs(t.start - wb.end), abs(ws - t.end)))
         out.append(_token_period(d, wa, wb, min(d.start, wa.start), max(d.end, wb.end)))
         # zoznam dní pri okne („8:00 – 14:00 v dňoch 12.11. a 13.11.2026“, „12.11., 13.11. v čase 8:00 – 14:00“)
         di = next(n for n, t in enumerate(toks) if t is d)
