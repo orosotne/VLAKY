@@ -289,7 +289,8 @@
       el('h3', null, [(p.druh_text || 'Výluka') + ' ', isTrue(p.nepotvrdena) ? el('span', { class: 'badge badge-warn' }, ['nepotvrdená']) : null]),
       el('p', null, [el('strong', null, [p.od_stanice + ' – ' + p.do_stanice])]),
       el('dl', null, [
-        el('dt', null, ['Platnosť']), el('dd', null, [fmt(p.zaciatok, true) + ' – ' + fmt(p.koniec, true)]),
+        // výluka do odvolania: koniec v registri je len technický (agent ho posúva) – nie koniec výluky
+        el('dt', null, ['Platnosť']), el('dd', null, [isTrue(p.do_odvolania) ? 'od ' + fmt(p.zaciatok, true) + ' do odvolania' : fmt(p.zaciatok, true) + ' – ' + fmt(p.koniec, true)]),
         p.denne_od ? el('dt', null, ['Denne']) : null, p.denne_od ? el('dd', null, [p.denne_od + '–' + p.denne_do]) : null,
         el('dt', null, ['Stav']), el('dd', null, [(isTrue(p.aktivna) ? 'platí teraz' : 'najbližšie od ' + fmt(p.najblizsie_od, true)) + ' · ' + (p.stav_text || p.stav)]),
         el('dt', null, ['Dopad']), el('dd', null, [isTrue(p.pomala) ? 'pomalá jazda ' + (p.rychlost ? fmtNum(p.rychlost) : '?') + ' km/h' : (isTrue(p.len_elektricka) ? 'len elektrická trakcia' : 'všetky vlaky')]),
@@ -1171,7 +1172,8 @@
           var b = Date.parse(iv[1]);
           if (isNaN(a) || isNaN(b) || b < t0 || a > t1) { return; }
           var r = svg('rect', { x: x(a), y: y + 1, width: Math.max(2, x(b) - x(a)), height: rowH - 2, class: rc.druh === 'pomala_jazda' ? 'g-slow' : 'g-closure' });
-          r.appendChild(svg('title', {}, rc.druh_text + ' ' + rc.od_stanice + ' – ' + rc.do_stanice + ': ' + fmt(iv[0], true) + ' – ' + fmt(iv[1], true)));
+          var term = isTrue(rc.do_odvolania) ? 'od ' + fmt(iv[0], true) + ' do odvolania' : fmt(iv[0], true) + ' – ' + fmt(iv[1], true);
+          r.appendChild(svg('title', {}, rc.druh_text + ' ' + rc.od_stanice + ' – ' + rc.do_stanice + ': ' + term));
           s.appendChild(r);
         });
       });

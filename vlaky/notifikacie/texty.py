@@ -210,11 +210,13 @@ def recommendation_body(rec: Recommendation) -> str:
         lines += [f"Odporúčanie: {rec.decision} – semafor {rec.color}", where,
                   "Po príchode ukončite jazdu vlaku (stav „ukončený“)."]
     elif ch:
+        # vlak čaká, kým ŽSR výluku do odvolania neodvolá (plánovač, ``chosen["do_odvolania"]``): príchod nie je známy
+        arrival = (f"Príchod: nie je známy – {ch['do_odvolania']}" if ch.get("do_odvolania") else
+                   f"Príchod: {_t(ch.get('arrival_p50'))} (90 % do {_t(ch.get('arrival_p90'))})")
         lines += [
             f"Odporúčanie: {rec.decision} – semafor {rec.color}",
             f"Trasa: {ch.get('route', '')}",
-            f"{departure_line(rec)}   "
-            f"Príchod: {_t(ch.get('arrival_p50'))} (90 % do {_t(ch.get('arrival_p90'))})",
+            f"{departure_line(rec)}   {arrival}",
             f"P(včas): {ch.get('p_on_time', 0):.0%}   P(zadržania pred výlukou): {ch.get('p_hold', 0):.0%}",
             f"Očakávaný náklad: {eur(ch.get('expected_cost', 0))} (vzorové sadzby, ak nie sú nastavené vlastné)",
         ]

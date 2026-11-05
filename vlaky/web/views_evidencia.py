@@ -16,8 +16,8 @@ from ..db import session_scope
 from ..models import (AuditLog, BorderCrossing, Closure, Driver, DriverShift, ExtractedEvent, Handover, Locomotive,
                       Order, Path, PositionReport, Recommendation, Train)
 from .auth import csrf_form, require
-from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, LOCO_SYSTEMS, TRAIN_STATUS, FormReader,
-                     NetworkUnavailable,
+from .common import (CLOSURE_KIND, CLOSURE_STATUS, DONE_TRAIN_STATES, LOCO_SYSTEMS, TRAIN_MAX_AHEAD_DAYS, TRAIN_STATUS,
+                     FormReader, NetworkUnavailable,
                      crew_color, current_params, input_dt, iso, log, redirect, render, resolve_station,
                      safe_next, station_or_error)
 from .data import (closure_edges, closure_spans, crew_matches_shift, current_shifts, data_freshness,
@@ -82,9 +82,12 @@ def _read_train_form(reader: FormReader, s, train_id: Optional[int] = None) -> d
     vmax = reader.number("vmax_kmh", "Najvyššia rýchlosť [km/h]", minimum=10, maximum=160)
     v["vmax_kmh"] = vmax if vmax is not None else 100.0
     v["rid"] = reader.flag("rid")
-    v["ready_utc"] = reader.local_dt("ready_utc", "Pripravený (miestny čas)")
-    v["planned_departure_utc"] = reader.local_dt("planned_departure_utc", "Plánovaný odchod (miestny čas)")
-    v["deadline_utc"] = reader.local_dt("deadline_utc", "Termín doručenia (miestny čas)")
+    # najviac rok dopredu: preklep v roku (napr. 2072) by dal vlak o desaťročia a zbytočne by zaťažil prepočet agenta
+    v["ready_utc"] = reader.local_dt("ready_utc", "Pripravený (miestny čas)", max_ahead_days=TRAIN_MAX_AHEAD_DAYS)
+    v["planned_departure_utc"] = reader.local_dt("planned_departure_utc", "Plánovaný odchod (miestny čas)",
+                                                 max_ahead_days=TRAIN_MAX_AHEAD_DAYS)
+    v["deadline_utc"] = reader.local_dt("deadline_utc", "Termín doručenia (miestny čas)",
+                                        max_ahead_days=TRAIN_MAX_AHEAD_DAYS)
     v["status"] = reader.choice("status", "Stav", TRAIN_STATUS.keys(), "planovany")
     v["notes"] = reader.text("notes", "Poznámka", maxlen=2000)
     order_id = reader.number("order_id", "Objednávka", integer=True, minimum=1)
@@ -420,8 +423,10 @@ def closures_page(request: Request, filter: str = "platne", user=Depends(view)):
     now = now_utc()
     with session_scope() as s:
         q = select(Closure)
+        # výluka do odvolania platí aj po technickom konci (ako v plánovači) – pri výpadku agenta môže byť už za ním
+        not_ended = (Closure.end_utc >= now) | Closure.until_revoked.is_(True)
         if filter == "aktivne":
-            q = q.where(Closure.status != "zrusene", Closure.start_utc <= now, Closure.end_utc >= now)
+            q = q.where(Closure.status != "zrusene", Closure.start_utc <= now, not_ended)
         elif filter == "planovane":
             q = q.where(Closure.status != "zrusene", Closure.start_utc > now)
         elif filter == "zrusene":
@@ -430,7 +435,7 @@ def closures_page(request: Request, filter: str = "platne", user=Depends(view)):
             pass
         else:
             filter = "platne"
-            q = q.where(Closure.status != "zrusene", Closure.end_utc >= now)
+            q = q.where(Closure.status != "zrusene", not_ended)
         closures = list(s.scalars(q.order_by(Closure.start_utc).limit(500)))
         rows = []
         for c in closures:
@@ -809,7 +814,7 @@ def handover_new(request: Request, background: BackgroundTasks, user=Depends(ope
     train_id = reader.number("train_id", "Vlak", required=True, integer=True, minimum=1)
     border_id = reader.number("border_id", "Hraničný priechod", required=True, integer=True, minimum=1)
     direction = reader.choice("direction", "Smer", ("vstup", "vystup"), "vstup")
-    eta = reader.local_dt("avizo_eta_utc", "Avízo – predpokladaný príchod")
+    eta = reader.local_dt("avizo_eta_utc", "Avízo – predpokladaný príchod", max_ahead_days=TRAIN_MAX_AHEAD_DAYS)
     if not reader.ok:
         return redirect("/hranice#preberania", " ".join(reader.errors.values()), "chyba")
     with session_scope() as s:
@@ -901,7 +906,7 @@ def handover_taken(handover_id: int, request: Request, background: BackgroundTas
 def handover_update(handover_id: int, request: Request, background: BackgroundTasks, user=Depends(operate),
                     form=Depends(csrf_form)):
     reader = FormReader(form)
-    eta = reader.local_dt("avizo_eta_utc", "Avízo – predpokladaný príchod")
+    eta = reader.local_dt("avizo_eta_utc", "Avízo – predpokladaný príchod", max_ahead_days=TRAIN_MAX_AHEAD_DAYS)
     findings = reader.text("findings", "Zistenia", maxlen=4000)
     if not reader.ok:
         return redirect("/hranice#preberania", " ".join(reader.errors.values()), "chyba")
