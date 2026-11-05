@@ -568,6 +568,9 @@ _OLD_WINDOW = re.compile(r"\b(?:meni|menia|zmeni|upravuje|upravi|posuva|posunie|
                          r"(?:-+|do|az)\s*\d{1,2}\s?:\s?\d{2}\s*(?:hod\.?|h\.?)?)\s*na\s+(?:cas\s+)?\d")
 _OLD_TERM_FILL = re.compile(r"(?:[\s.:/–—-]|\d|\b(?:povodn\w*|puvodn\w*|planovan\w*|terminu|termin|termine|dna|dne|v|vo"
                             r"|case|casu|cas|od|do|az|zo|ze|hod|h|min|vyluk\w*)\b)+")
+# dátum v pôvodnom termíne a „dňa“ či „v dňoch“ za ním, ktoré uvádza ďalší (nový) deň
+_FILL_DATE = re.compile(r"\d{1,2}\s?\.\s?\d{1,2}\s?\.")
+_FILL_NEW_DAY = re.compile(r"\b(?:dna|dne|v\s+dnoch|ve\s+dnech)\b")
 # pôvodný termín presunu pred novým („… sa presúva z 25.11.2026 08:00 – 14:00 na 26.11.2026 …“, „… sa z termínu
 # 25.11.2026 od 08:00 do 14:00 presúva na …“, „… plánovaná na 25.11.2026 … sa presúva na 26.11.2026 …“): pred obdobím
 # „z“ / „z termínu“ / „plánovaná na“ a za ním vo vete nový termín („na 26.11.“, „presúva sa na …“)
@@ -1381,6 +1384,12 @@ class _Ctx:
                     limit = next((e for s, e in self.sentences() if s <= m.start() < e), len(self.fq))
                 fill = _OLD_TERM_FILL.match(self.fq, m.end(), limit)
                 end = fill.end() if fill else m.end()
+                # ďalší deň za pôvodným („namiesto 24.11.2026 dňa 25.11.2026 od 06:00 do 12:00“) je už nový termín –
+                # pôvodný termín končí pred ním (inak by sa nový deň s oknom stratil ako „pôvodný“)
+                first = _FILL_DATE.search(self.fq, m.end(), end)
+                again = _FILL_NEW_DAY.search(self.fq, first.end(), end) if first else None
+                if again is not None and _FILL_DATE.search(self.fq, again.end(), end):
+                    end = again.start()
                 if re.search(r"\d", self.fq[m.end():end]):
                     out.append((m.start(), end))
             out += [(m.start(1), m.end(1)) for m in _OLD_WINDOW.finditer(self.fq)]
@@ -2297,6 +2306,8 @@ class RuleExtractor:
             items += self._only_part_new_items(c, items)
             items += self._replacement_items(c, items)
         items = _dedupe(_expand_cancel_terms(items))
+        if kind != "vyluka_zrusenie":
+            _same_day_terms_net(c, items)      # dva termíny na jeden deň, hoci e-mail uvádza aj iný deň – čaká
         if kind != "vyluka_zrusenie" and not c.tables:     # súborný prehľad (tabuľka) sa číta po riadkoch
             self._unassigned_notes(c, items, leftover)
         if kind != "vyluka_zrusenie":
@@ -5867,6 +5878,77 @@ def _several_replacing(items: list[ExtractedItem]) -> None:
             it.notes.append(f"E-mail uvádza {len(group)} nové termíny tej istej výluky ({shown}; {label}) – zapísané sú "
                             "ako doplnenie: pôvodný termín ostáva v registri, kým ho dispečer neupraví (každá zmena "
                             "by inak nahradila termín tou svojou a ostatné by sa stratili). Overte termín výluky.")
+
+
+# istota udalostí, ktorých termíny kontrola dní spochybnila – vždy pod prahom potvrdenia (čakajú na dispečera)
+_SAME_DAY_CONFIDENCE = 0.55
+_SAME_DAY_KINDS = ("vyluka_nova", "vyluka_zmena", "pomala_jazda", "mimoriadnost")
+
+
+def _same_day_terms_net(c: _Ctx, items: list[ExtractedItem]) -> None:
+    """Kontrola zoznamu termínov: dva termíny tej istej výluky (číslo, inak úsek) z jedného e-mailu vyšli na ten istý
+    deň, hoci vety týchto termínov uvádzajú aj iný deň, ktorý žiadny z nich nepokrýva („dňa 24.11. bude od 10:00 do
+    16:00 a dňa 25.11. bude od 06:00 do 12:00“ prečítané ako dva termíny 25.11.). Nový čas niektorého dňa sa tak
+    priradil k inému dňu a ten deň by v registri ostal so starým časom – udalosti tejto výluky čakajú na dispečera
+    (istota pod prahom potvrdenia) s upozornením.
+
+    Jednorazové okno (do 24 h, aj noc cez polnoc) patrí dňu, v ktorom začína; termín cez viac dní pokrýva všetky svoje
+    dni. Pôvodný deň presunu či zmeny („z 24.11. na 25.11.“, „namiesto 24.11.“, „pôvodne …“), dátum vydania, citácia
+    a rušený deň sa za uvedený deň nepočítajú; jeden deň s dvoma oknami („dňa 24.11. od 08:00 do 10:00 a od 13:00 do
+    16:00“) kontrolu nespustí."""
+    groups: dict = {}
+    for it in items:
+        d = it.data
+        if it.kind not in _SAME_DAY_KINDS or not d.get("start") or it.evidence.get("_ppos") is None:
+            continue
+        key = re.sub(r"[^0-9a-z/]", "", fold(str(d.get("external_ref") or ""))) or \
+            frozenset((fold(str(d.get("from_station") or "")), fold(str(d.get("to_station") or ""))))
+        groups.setdefault(key, []).append(it)
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        starts: dict = {}
+        covered: set = set()
+        for it in group:
+            s, e = _local_iv(it.data.get("start"), it.data.get("end"))
+            if s is None:
+                continue
+            last = e - timedelta(minutes=1) if e is not None and e > s else s
+            covered |= {s.date() + timedelta(days=n) for n in range((last.date() - s.date()).days + 1)}
+            if e is not None and e - s <= timedelta(hours=24) and not it.data.get("daily_from"):
+                starts.setdefault(s.date(), []).append((s, e))
+        double = sorted(day for day, ivs in starts.items() if len(ivs) > 1)
+        if not double:
+            continue
+        spans = {c.sentence_of(it.evidence["_ppos"]) for it in group}
+        old = c.old_spans()
+        named = set()
+        for t in c.toks:
+            if t.kind not in ("date", "datetime") or t.day is None or not any(a <= t.start < b for a, b in spans):
+                continue
+            if c.in_quote(t.start) or c.in_cancel(t.start) or datumy.not_term_date(c.fq, t) or \
+                    any(a <= t.start < b for a, b in old):
+                continue
+            named.add(t.day)
+        missing = sorted(day for day in named if day not in covered)
+        if not missing:
+            continue
+        day = double[0]
+        ivs = sorted(starts[day])
+        shown = ", ".join(f"{_fmt_local(s)} – {_fmt_local(e)}" for s, e in ivs[:3])
+        count = {2: "Dva termíny", 3: "Tri termíny", 4: "Štyri termíny"}.get(len(ivs))
+        head = f"{count} tej istej výluky vyšli" if count else f"{len(ivs)} termínov tej istej výluky vyšlo"
+        lost = ", ".join(f"{x:%d.%m.%Y}" for x in missing[:3])
+        which = f"aj deň {lost}, ktorý žiadny termín nemá" if len(missing) == 1 else \
+            f"aj dni {lost}, ktoré žiadny termín nemajú"
+        note = (f"{head} na ten istý deň {day:%d.%m.%Y} ({shown}), hoci e-mail uvádza {which} – nový čas "
+                "niektorého dňa sa mohol priradiť k inému dňu. Overte termíny podľa e-mailu (udalosť čaká na "
+                "potvrdenie dispečerom).")
+        for it in group:
+            if note not in it.notes:
+                it.notes.append(note)
+            it.confidence = round(min(it.confidence, _SAME_DAY_CONFIDENCE), 2)
+            it.evidence["kontrola_dni"] = f"{day:%Y-%m-%d}"
 
 
 def _existing_term(c: _Ctx, per: Period) -> bool:
