@@ -18,6 +18,13 @@ def _t(iso: str | None) -> str:
         return str(iso)
 
 
+# druhy výluk po slovensky – register výluk, fronta (web) aj odovzdávka služby
+CLOSURE_KIND = {
+    "uplna": "úplná výluka úseku", "kolaj": "výluka koľaje", "trakcne_vedenie": "vypnuté trakčné vedenie",
+    "pomala_jazda": "pomalá jazda", "obmedzenie": "obmedzenie (dĺžka, hmotnosť)", "mimoriadnost": "mimoriadnosť",
+}
+
+
 def eur(value, digits: int = 0) -> str:
     """Suma v eurách po slovensky: tisíce oddelené medzerou, desatinná čiarka („1 593 €“, „12,50 €“) – ako na
     webe. Formát Pythonu „1,593 €“ by dispečer čítal ako 1,59 €."""
@@ -127,11 +134,20 @@ def departure_line(rec: Recommendation) -> str:
     return f"Odchod: {_t(ch.get('depart'))}"
 
 
+def variant_departure_unknown(v: dict) -> bool:
+    """Termín varianty nie je známy (``do_odvolania`` – čakala by na koniec výluky do odvolania alebo by vošla do ďalšieho
+    okna výluky za koncom prehľadávaného obdobia): ani čas odchodu nie je skutočný – vlak by z neho len čakal pred
+    výlukou (napr. odchod 26.11. 04:00 vnútri výluky do odvolania na prvom úseku trasy). Texty ho neuvedú, rovnako
+    ako príchod a náklad."""
+    return bool(v.get("do_odvolania"))
+
+
 def variant_columns(rec: Recommendation, v: dict) -> tuple:
     """(čas, rozhodnutie) varianty v porovnaní variantov – rovnako pre e-mail aj web. Idúci vlak: pokračovanie bez
     čakania je „POKRAČOVAŤ“ „ihneď“ (nie VYPRAVIŤ s časom prepočtu); zvolená varianta vlaku, ktorý čaká pred
     zatvoreným cieľom dlhšie, ako siaha prehľadávané obdobie (``chosen["until_entry"]``), nemá čas odchodu (hranica
-    výpočtu nič nehovorí) – „po uvoľnení vjazdu“."""
+    výpočtu nič nehovorí) – „po uvoľnení vjazdu“; varianta, ktorej termín nie je známy (variant_departure_unknown),
+    nemá čas odchodu – „nie je známy“."""
     ch = rec.chosen or {}
     kind = v.get("kind", "")
     if ch.get("until_entry") and kind == "POČKAŤ" and v.get("depart") == ch.get("depart") and \
@@ -139,6 +155,8 @@ def variant_columns(rec: Recommendation, v: dict) -> tuple:
         return "po uvoľnení vjazdu", kind
     if is_running(rec) and kind == "VYPRAVIŤ":
         return "ihneď", "POKRAČOVAŤ"
+    if variant_departure_unknown(v):
+        return "nie je známy", kind
     return _t(v.get("depart")), kind
 
 
@@ -196,6 +214,18 @@ def _capped_status(status: str, cap: Optional[str]) -> str:
     return status if _RANK.get(status, 0) >= _RANK.get(cap, 0) else cap
 
 
+def _cost_unknown(item: dict) -> bool:
+    """Očakávaný náklad varianty nie je známy: príchod nie je známy (``do_odvolania`` – príchod by bol až po vymyslenom
+    konci výluky do odvolania či po nadväzujúcich oknách výluk; náklad je z neho vypočítaný, aj v staršom uloženom
+    odporúčaní), alebo ho plánovač vymazal."""
+    return bool(item.get("do_odvolania")) or ("expected_cost" in item and item.get("expected_cost") is None)
+
+
+def _cost(item: dict) -> str:
+    """Očakávaný náklad zvolenej varianty či varianty v porovnaní; „nie je známy“, keď nie je známy príchod."""
+    return "nie je známy" if _cost_unknown(item) else eur(item.get("expected_cost", 0))
+
+
 def recommendation_body(rec: Recommendation) -> str:
     s = settings()
     lines = [rec.summary, ""]
@@ -210,7 +240,8 @@ def recommendation_body(rec: Recommendation) -> str:
         lines += [f"Odporúčanie: {rec.decision} – semafor {rec.color}", where,
                   "Po príchode ukončite jazdu vlaku (stav „ukončený“)."]
     elif ch:
-        # vlak čaká, kým ŽSR výluku do odvolania neodvolá (plánovač, ``chosen["do_odvolania"]``): príchod nie je známy
+        # vlak čaká, kým ŽSR výluku do odvolania neodvolá, alebo kým sa po nadväzujúcich oknách výluk neuvoľní úsek
+        # (plánovač, ``chosen["do_odvolania"]``): príchod nie je známy – ani očakávaný náklad (_cost)
         arrival = (f"Príchod: nie je známy – {ch['do_odvolania']}" if ch.get("do_odvolania") else
                    f"Príchod: {_t(ch.get('arrival_p50'))} (90 % do {_t(ch.get('arrival_p90'))})")
         lines += [
@@ -218,7 +249,8 @@ def recommendation_body(rec: Recommendation) -> str:
             f"Trasa: {ch.get('route', '')}",
             f"{departure_line(rec)}   {arrival}",
             f"P(včas): {ch.get('p_on_time', 0):.0%}   P(zadržania pred výlukou): {ch.get('p_hold', 0):.0%}",
-            f"Očakávaný náklad: {eur(ch.get('expected_cost', 0))} (vzorové sadzby, ak nie sú nastavené vlastné)",
+            f"Očakávaný náklad: {_cost(ch)}" + ("" if _cost_unknown(ch) else
+                                                " (vzorové sadzby, ak nie sú nastavené vlastné)"),
         ]
     pp = rec.path_proposal or {}
     # návrh s jedinou dopravňou (zvyšok jazdy pred cieľom) nie je trasa, ktorú by sa dalo objednať
@@ -270,7 +302,7 @@ def recommendation_body(rec: Recommendation) -> str:
             when, kind = variant_columns(rec, v)
             lines.append(f"  {v.get('route', '')[:30]:<30} {when:>13} {kind:<12} "
                          f"{_capped_status(v.get('status', ''), cap):<9} P(včas) {v.get('p_on_time', 0):.0%}  "
-                         f"{eur(v.get('expected_cost', 0))}")
+                         f"{_cost(v)}")
     if rec.reasons:
         lines += ["", "Dôvody a upozornenia:"] + [f"  - {r}" for r in rec.reasons]
     age = rec.data_age or {}
@@ -345,7 +377,16 @@ def order_proposal_text(order, plan: dict) -> tuple:
                 continue
             hold = " – čakať pred výlukou" if st.get("hold") else ""
             lines.append(f"  {st['name']:<34} prích. {_t(st.get('arr')):>13}  odch. {_t(st.get('dep')):>13}{hold}")
-    lines += ["", "Ďalší krok: dispečer potvrdí termín zákazníkovi a objedná trasu v IS KIS (ad hoc trasa "
-                  "najneskôr 6 h pred odchodom). Agent nič neodosiela navonok.",
-              f"Detail: {s.public_url.rstrip('/')}/vlaky"]
+    if plan.get("date_unknown") or not pp.get("stations"):
+        # termín prepravy nie je známy (výluka do odvolania, nadväzujúce okná výluk) alebo agent návrh trasy nepripravil
+        # – nie „potvrdí termín a objedná trasu“
+        step = ("Ďalší krok: dispečer dohodne so zákazníkom, že termín zatiaľ nie je známy, a so ŽSR inú trasu alebo "
+                "čas. Agent návrh trasy nepripravil a nič neodosiela navonok.")
+    elif plan.get("decision") == "ESKALOVAŤ":
+        step = ("Ďalší krok: dispečer dohodne so zákazníkom iný termín alebo so ŽSR iný čas či trasu – návrh trasy "
+                "vyššie je len najmenej zlá možnosť (nie bezpečná varianta). Agent nič neodosiela navonok.")
+    else:
+        step = ("Ďalší krok: dispečer potvrdí termín zákazníkovi a objedná trasu v IS KIS (ad hoc trasa najneskôr 6 h "
+                "pred odchodom). Agent nič neodosiela navonok.")
+    lines += ["", step, f"Detail: {s.public_url.rstrip('/')}/vlaky"]
     return subject, "\n".join(lines)

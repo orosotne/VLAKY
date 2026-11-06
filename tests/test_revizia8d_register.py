@@ -52,6 +52,7 @@ DOPLNENIE_25 = _body(f"{SEC} sa dopĺňa o ďalší termín 25.11.2026 od 08:00 
 PRESUN_23_25 = _body(f"{SEC} sa presúva z 23.11.2026 na 25.11.2026, od 08:00 do 14:00 hod.")
 SKRATENIE_23 = _body(f"{SEC} sa skracuje, dňa 23.11.2026 bude od 08:00 do 10:00 hod.")
 TECH = re.compile(r"\b(?:0[1-9]|[12]\d|3[01])\.12\.")       # technický koniec výluky do odvolania leží v decembri
+_NAMED_TECH = re.compile(r"\(?\s*technický koniec [^)]*\)?")  # výslovne označený technický koniec (nie koniec výluky)
 
 
 def _cycle(env, session) -> None:
@@ -652,17 +653,19 @@ def test_text_samostatneho_terminu_do_odvolania(env, session):
 
 def test_karta_automaticky_zapisanych_a_odovzdavka_vyluky_do_odvolania(env, session, client):
     """Automaticky zapísaný ROV do odvolania: karta „Zapísané automaticky“ vo fronte aj odovzdávka služby uvádzajú
-    „od … do odvolania“, nie technický koniec."""
+    „od … do odvolania“ – technický koniec nanajvýš výslovne označený („technický koniec …“, ako register výluk), nikdy
+    ako koniec výluky."""
     from vlaky.agent.odovzdavka import build_report
 
     login_as(client, "dispecer1")
     _one(env, session, SUBJ, ROV_ODVOLANIE)
     page = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", client.get("/fronta").text))
     i = page.find("Zapísané automaticky")
-    assert i >= 0 and "do odvolania" in page[i:i + 900] and not TECH.search(page[i:i + 900]), page[i:i + 900]
+    card = _NAMED_TECH.sub("", page[i:i + 900])
+    assert i >= 0 and "do odvolania" in card and not TECH.search(card), page[i:i + 900]
     content, _data = build_report(session, datetime.now(timezone.utc))
     part = content[content.find("Nové alebo zmenené výluky"):][:400]
-    assert "do odvolania" in part and not TECH.search(part), part
+    assert "do odvolania" in part and not TECH.search(_NAMED_TECH.sub("", part)), part
 
 
 @pytest.mark.parametrize("how", ["zamietnutie_rov", "zrusenie_v_registri"])

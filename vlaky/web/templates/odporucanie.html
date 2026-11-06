@@ -70,7 +70,8 @@
       {% if chosen.get("p_crew_relief") is not none %}<dt>P(prekročenia pracovného času)</dt><dd>{{ chosen.get("p_crew_relief")|pct }}</dd>{% endif %}
       {# vlak čaká, kým ŽSR výluku do odvolania neodvolá: príchod nie je známy (koniec výluky nie je známy) #}
       <dt>Príchod P50 / P90</dt><dd>{% if chosen.get("do_odvolania") %}nie je známy – {{ chosen.get("do_odvolania") }}{% else %}{{ chosen.get("arrival_p50")|t }} / {{ chosen.get("arrival_p90")|t }}{% endif %}</dd>
-      <dt>Očakávaný náklad</dt><dd>{{ chosen.get("expected_cost")|eur }}</dd>
+      {# náklad je vypočítaný z príchodu – pri neznámom príchode nie je známy ani on #}
+      <dt>Očakávaný náklad</dt><dd>{% if chosen.get("do_odvolania") or chosen.get("expected_cost") is none %}nie je známy{% else %}{{ chosen.get("expected_cost")|eur }}{% endif %}</dd>
       {% endif %}
     </dl>
   </section>
@@ -118,19 +119,22 @@
     {% for v in variants %}
       {% set is_chosen = chosen and v.get("route") == chosen.get("route") and v.get("depart") == chosen.get("depart") and v.get("kind") == chosen.get("kind") %}
       {# idúci vlak: pokračovanie v jazde nie je vypravenie (jeho „odchod“ je len čas prepočtu); čakanie pred vjazdom
-         do zatvoreného cieľa nemá čas odchodu – je to len hranica výpočtu, posúva sa s každým prepočtom #}
+         do zatvoreného cieľa nemá čas odchodu – je to len hranica výpočtu, posúva sa s každým prepočtom; varianta,
+         ktorej termín nie je známy (výluka do odvolania, nadväzujúce okná výluk), nemá ani čas odchodu #}
       {% set continues = running and v.get("kind") == "VYPRAVIŤ" %}
       {% set until_entry = is_chosen and chosen.get("until_entry") %}
       <tr{% if is_chosen %} class="chosen" aria-current="true"{% endif %}>
         <td>{{ v.get("route") }}{% if is_chosen %} <span class="badge {{ 'badge-ok' if v.shown_status == 'ZELENÁ' else 'badge-warn' }}">odporúčaná</span>{% endif %}</td>
-        <td class="nowrap">{% if until_entry %}po uvoľnení vjazdu{% elif continues %}v jazde{% else %}{{ v.get("depart")|t }}{% endif %}</td>
+        <td class="nowrap">{% if until_entry %}po uvoľnení vjazdu{% elif continues %}v jazde{% elif v.get("do_odvolania") %}nie je známy{% else %}{{ v.get("depart")|t }}{% endif %}</td>
         <td>{{ "POKRAČOVAŤ" if continues else v.get("kind") }}</td>
         <td>{{ m.semafor(v.shown_status) }}</td>
         <td>{{ v.get("p_on_time")|pct }}</td>
         <td>{{ v.get("p_hold")|pct }}</td>
-        <td class="nowrap">{{ v.get("arrival_p50")|t }}</td>
-        <td class="nowrap">{{ v.get("arrival_p90")|t }}</td>
-        <td class="nowrap">{{ v.get("expected_cost")|eur }}</td>
+        {# varianta, ktorej príchod nie je známy (výluka do odvolania, nadväzujúce okná výluk): ani náklad #}
+        {% set unknown = v.get("do_odvolania") %}
+        <td class="nowrap">{% if v.get("arrival_p50") %}{{ v.get("arrival_p50")|t }}{% elif unknown %}nie je známy{% else %}—{% endif %}</td>
+        <td class="nowrap">{% if v.get("arrival_p90") %}{{ v.get("arrival_p90")|t }}{% elif unknown %}nie je známy{% else %}—{% endif %}</td>
+        <td class="nowrap">{% if unknown or v.get("expected_cost") is none %}nie je známy{% else %}{{ v.get("expected_cost")|eur }}{% endif %}</td>
         <td>{{ "áno" if v.get("needs_new_path") else "nie" }}</td>
         <td class="small">{{ (v.get("reasons") or [])|join("; ") }}</td>
       </tr>
