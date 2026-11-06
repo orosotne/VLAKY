@@ -5,10 +5,11 @@ nesmie dať VYPRAVIŤ ZELENÁ, kým ho niektorá taká správa drží zatvorený
 
 * Zmena, ktorej nový termín sa výluky nedotýka, výluke termín nenahradí, ak je skrátením či zmenou času („dňa D bude
   od … do …“), alebo ak číslo výluky má aj iná (platná či zrušená) výluka – nový termín je ďalšia výluka.
-* Potvrdená udalosť, ktorá register nemení („bez_zmeny“), sa stane zapisovateľom výluky: staršia správa potvrdená
-  neskôr ju nenahradí a zamietnutie inej udalosti s tým istým termínom výluku nezruší.
-* Zamietnutie zapísanej udalosti znova zapíše staršie udalosti, ktoré nahradila; výluku, ktorú po nej s rovnakým
-  obsahom overila iná udalosť, ponechá.
+* Potvrdená udalosť, ktorá register nemení („bez_zmeny“), výluku drží (zapisovateľ ostáva – štvrté kolo,
+  test_revizia8d_register.py): staršia správa potvrdená neskôr jej termín neodoberie a zamietnutie inej udalosti s tým
+  istým termínom ho nezruší (zapíše sa znova ako výluka držiteľa).
+* Zamietnutie zapísanej udalosti znova zapíše staršie udalosti, ktoré nahradila; termín, ktorý po nej s rovnakým
+  obsahom overila iná udalosť, ostáva.
 * Novšie predĺženie či doplnenie nerozhoduje o dňoch, o ktorých nehovorí – staršia zmena jedného dňa sa zapíše.
 * Úprava dispečera v registri výluk a výluka, ktorá vznikla až po spracovaní e-mailu, sa potvrdením staršej správy
   bez nového upozornenia neprepíšu.
@@ -159,7 +160,7 @@ def test_opakovany_rov_neprepise_samostatne_predlzenie(env, session):
 # ====================================================================== zamietnutie a nahradené udalosti
 def test_zamietnutie_prvej_kopie_nezrusi_termin_druhej(env, session):
     """ROV 23.11.; ten istý presun z dvoch zoznamov adries; ROV znova (novší zapisovateľ). Prvý presun sa zapíše,
-    druhý „bez zmeny“ (výluku prevezme); dispečer zamietne prvý ako duplicitu – 25.11. ostáva."""
+    druhý „bez zmeny“ (výluku len drží); dispečer zamietne prvý ako duplicitu – 25.11. ostáva."""
     _one(env, session, SUBJ, ROV_A)
     p1, p2 = _one(env, session, ZSUBJ, PRESUN_A), _one(env, session, ZSUBJ, PRESUN_A)
     _one(env, session, SUBJ, ROV_A)
@@ -178,7 +179,8 @@ def test_zamietnutie_novsej_kopie_ponecha_overeny_obsah_starsej(env, session):
     _confirm(session, p1)
     _cycle(env, session)
     rej = _reject(session, p2)
-    assert "ostáva podľa udalosti" in str((rej.validation or {}).get("rejection", {}).get("rollback"))
+    text = str((rej.validation or {}).get("rejection", {}).get("rollback"))
+    assert f"udalosť #{p1.id} výluku držala – jej termín zapísaný znova" in text, text
     _cycle(env, session)
     assert _closed(session, 2026, 11, 25, 10)
 
@@ -263,10 +265,10 @@ def test_zamietnute_zrusenie_vrati_zvysok_predlzenia(env, session):
     assert _closed(session, 2026, 11, 24, 10) and _closed(session, 2026, 11, 23, 20)
 
 
-# ====================================================================== prevzatie výluky a reťaz zamietnutí
+# ====================================================================== držanie výluky a reťaz zamietnutí
 def test_zamietnutie_dvoch_kopii_doplnenia_ponecha_vyluku_rov(env, session):
     """Overený ROV 23. – 25.11. denne; to isté doplnenie 25.11. (deň, ktorý výluka už má) z dvoch zoznamov adries – obe
-    potvrdené „bez zmeny“ (výluku prevezmú). Dispečer obe zamietne ako duplicity: výluku drží znova ROV – všetky tri
+    potvrdené „bez zmeny“ (výluku len držia). Dispečer obe zamietne ako duplicity: výluka ostáva podľa ROV – všetky tri
     dni ostávajú (výluka sa nezruší)."""
     rov = _one(env, session, SUBJ, ROV_B)
     _confirm(session, rov)
@@ -285,7 +287,7 @@ def test_zamietnutie_dvoch_kopii_doplnenia_ponecha_vyluku_rov(env, session):
 
 def test_starsia_kopia_presunu_neprevezme_vyluku_novsej(env, session):
     """ROV 23.11.; presun na 25.11., zrušenie 25.11., ten istý presun znova a ROV znova (novší zapisovateľ 23.11.).
-    Potvrdené: novší presun (25.11. ako samostatná výluka), starší presun (rovnaký termín – výluku 25.11. neprevezme,
+    Potvrdené: novší presun (25.11. ako samostatná výluka), starší presun (rovnaký termín – výluku 25.11. len drží,
     zapísala ju novšia správa) a staršie zrušenie 25.11.: o 25.11. rozhoduje novší presun – ostáva zatvorený."""
     from vlaky.models import Closure
 
@@ -296,7 +298,7 @@ def test_starsia_kopia_presunu_neprevezme_vyluku_novsej(env, session):
     _one(env, session, SUBJ, ROV_A)
     assert _confirm(session, newer).get("action") == "vytvorene"
     res = _confirm(session, older)
-    assert res.get("action") == "bez_zmeny", res
+    assert res.get("action") == "bez_zmeny" and res.get("held") == [res.get("id")], res
     x = session.get(Closure, res.get("id"))
     assert x.source_event_id == newer.id, (x.source_event_id, newer.id, older.id)
     _confirm(session, cancel)
@@ -305,7 +307,7 @@ def test_starsia_kopia_presunu_neprevezme_vyluku_novsej(env, session):
 
 
 def test_zamietnutie_doplnenia_po_rucne_zapisanej_vyluke(env, session):
-    """Dispečer zapíše výluku 25.11. ručne v registri výluk; doplnenie 25.11. ju potvrdením prevezme („bez zmeny“).
+    """Dispečer zapíše výluku 25.11. ručne v registri výluk; doplnenie 25.11. ju potvrdením len drží („bez zmeny“).
     Zamietnutím doplnenia ručná výluka ostáva a text návratu nehovorí o neexistujúcej udalosti."""
     from vlaky.models import Closure
     from test_revizia7_odobratie_casu import A, B

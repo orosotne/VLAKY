@@ -218,8 +218,10 @@ def build_report(session: Session, now: datetime | None = None, hours: int = 12)
         return f"{kind}, {'overená' if c.status == 'overene' else 'NEPOTVRDENÁ'}"
 
     lines += ["", f"Nové alebo zmenené výluky za {hours} h:"]
-    lines += [f"  - {c.from_station} – {c.to_station} {fmt(c.start_utc)} – {fmt(c.end_utc)} ({_state(c)})"
-              for c in new_closures] or ["  (žiadne)"]
+    # výluka do odvolania: koniec v registri je len technický (posúva sa) – „od … do odvolania“
+    lines += [f"  - {c.from_station} – {c.to_station} "
+              + (f"od {fmt(c.start_utc)} do odvolania" if c.until_revoked else f"{fmt(c.start_utc)} – {fmt(c.end_utc)}")
+              + f" ({_state(c)})" for c in new_closures] or ["  (žiadne)"]
     # fronta rovnako ako na webe (/fronta, počítadlo v hlavičke): čakajúce udalosti, automaticky zapísané výluky,
     # ktoré dispečer ešte neoveril, aj potvrdené udalosti so zlyhaným zápisom
     queue = queue_counts(session)
