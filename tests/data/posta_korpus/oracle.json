@@ -20817,6 +20817,2054 @@
      ]
     }
    ]
+  },
+  {
+   "id": "r8p_a01",
+   "origin": "r8-pravidla: deň-okno nález ver16: „dňa D1 bude od … hod. a dňa D2 bude od … hod.“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 10:00 do 16:00 hod. a dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a02",
+   "origin": "r8-pravidla: deň-okno „bude“ bez „hod.“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 10:00 do 16:00 a dňa 25.11.2026 bude od 06:00 do 12:00.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a03",
+   "origin": "r8-pravidla: deň-okno bodkočiarka medzi položkami",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 10:00 do 16:00 hod.; dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a04",
+   "origin": "r8-pravidla: deň-okno čiarka medzi položkami (dátum za čiarkou so slovom „bude“)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 10:00 do 16:00 hod., dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a05",
+   "origin": "r8-pravidla: deň-okno dve vety „… hod. Dňa …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení. Dňa 24.11.2026 bude od 10:00 do 16:00 hod. Dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a06",
+   "origin": "r8-pravidla: deň-okno položky na nových riadkoch",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení:\ndňa 24.11.2026 bude od 10:00 do 16:00 hod.\ndňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a07",
+   "origin": "r8-pravidla: deň-okno nové riadky bez „hod.“ a bez „bude“ (koniec okna nie je koncom obdobia)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení:\ndňa 24.11.2026 od 10:00 do 16:00\ndňa 25.11.2026 od 06:00 do 12:00\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a08",
+   "origin": "r8-pravidla: deň-okno „…, potom dňa …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 10:00 do 16:00 hod., potom dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a09",
+   "origin": "r8-pravidla: deň-okno „bude výluka“ v oboch položkách",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude výluka od 10:00 do 16:00 hod. a dňa 25.11.2026 bude výluka od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a10",
+   "origin": "r8-pravidla: deň-okno „bude v čase od“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude v čase od 10:00 do 16:00 hod. a dňa 25.11.2026 bude v čase od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a11",
+   "origin": "r8-pravidla: deň-okno „sa výluka uskutoční od“ a „platí od“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 sa výluka uskutoční od 10:00 do 16:00 hod., dňa 25.11.2026 platí od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a12",
+   "origin": "r8-pravidla: deň-okno „D: od …“ s dvojbodkou (rok pred dvojbodkou)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: 24.11.2026: od 10:00 do 16:00 hod., 25.11.2026: od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a13",
+   "origin": "r8-pravidla: deň-okno „D – od …“ s pomlčkou",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: 24.11.2026 – od 10:00 do 16:00 hod., 25.11.2026 – od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a14",
+   "origin": "r8-pravidla: deň-okno deň v týždni v zátvorke za dátumom",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 (utorok) od 10:00 do 16:00 hod. a dňa 25.11.2026 (streda) od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a15",
+   "origin": "r8-pravidla: deň-okno tri dni so slovom „bude“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 23.11.2026 bude od 09:00 do 15:00 hod., dňa 24.11.2026 bude od 10:00 do 16:00 hod. a dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 09:00",
+       "2026-11-23 15:00"
+      ],
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a16",
+   "origin": "r8-pravidla: deň-okno zoznam s pomlčkami „- D: W hod.“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení:\n- 24.11.2026: 10:00 – 16:00 hod.\n- 25.11.2026: 06:00 – 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a17",
+   "origin": "r8-pravidla: deň-okno „bude“ len v prvej položke (blízky variant)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 10:00 do 16:00 hod. a dňa 25.11.2026 od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a18",
+   "origin": "r8-pravidla: deň-okno „bude“ len v druhej položke (blízky variant, aj pred opravou správne)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 od 10:00 do 16:00 hod. a dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_b01",
+   "origin": "r8-pravidla: okno-deň „od W1 hod. dňa D1 a od W2 hod. dňa D2“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: od 10:00 do 16:00 hod. dňa 24.11.2026 a od 06:00 do 12:00 hod. dňa 25.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_b02",
+   "origin": "r8-pravidla: okno-deň „od W1 dňa D1, od W2 dňa D2“ (čiarka)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: od 10:00 do 16:00 dňa 24.11.2026, od 06:00 do 12:00 dňa 25.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_b03",
+   "origin": "r8-pravidla: okno-deň „v čase W1 hod. dňa D1 a v čase W2 hod. dňa D2“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: v čase 10:00 – 16:00 hod. dňa 24.11.2026 a v čase 06:00 – 12:00 hod. dňa 25.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_b04",
+   "origin": "r8-pravidla: okno-deň jedno okno pred dňom „výluka bude od … hod. dňa D“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: výluka bude od 10:00 do 16:00 hod. dňa 24.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_b05",
+   "origin": "r8-pravidla: okno-deň okno pred zoznamom dní „od … do … hod. dňa D1 a D2“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: výluka bude od 10:00 do 16:00 hod. dňa 24.11.2026 a 25.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 10:00",
+       "2026-11-25 16:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_b06",
+   "origin": "r8-pravidla: okno-deň tri okná pred dňami „od W hod. dňa D, …“ (deň za oknom je jeho dňom, nie začiatkom ďalšieho)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: od 10:00 do 16:00 hod. dňa 24.11.2026, od 06:00 do 12:00 hod. dňa 25.11.2026, od 08:00 do 14:00 hod. dňa 26.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ],
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_b07",
+   "origin": "r8-pravidla: okno-deň okná pred dňami bez „dňa“ na riadkoch",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení:\n10:00 – 16:00 hod. 24.11.2026\n06:00 – 12:00 hod. 25.11.2026\n08:00 – 14:00 hod. 26.11.2026\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ],
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_b08",
+   "origin": "r8-pravidla: okno-deň okno pred dňom vo vetách „Od W hod. D.“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení. Od 10:00 do 16:00 hod. 24.11.2026. Od 06:00 do 12:00 hod. 25.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_b09",
+   "origin": "r8-pravidla: okno-deň okná cez polnoc pred dňami – noc začína uvedeným dňom",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: od 22:00 do 04:00 hod. 24.11.2026, od 23:00 do 05:00 hod. 25.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 22:00",
+       "2026-11-25 04:00"
+      ],
+      [
+       "2026-11-25 23:00",
+       "2026-11-26 05:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_c01",
+   "origin": "r8-pravidla: noc dve noci „v noci z D na D+1 bude od … do …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: v noci z 24. na 25.11.2026 bude od 22:00 do 04:00 hod. a v noci z 25. na 26.11.2026 bude od 23:00 do 05:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 22:00",
+       "2026-11-25 04:00"
+      ],
+      [
+       "2026-11-25 23:00",
+       "2026-11-26 05:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_c02",
+   "origin": "r8-pravidla: noc dve noci „v noci D/D+1 bude …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: v noci 24./25.11.2026 bude od 22:00 do 04:00 hod. a v noci 25./26.11.2026 bude od 23:00 do 05:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 22:00",
+       "2026-11-25 04:00"
+      ],
+      [
+       "2026-11-25 23:00",
+       "2026-11-26 05:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_c03",
+   "origin": "r8-pravidla: noc v jednom zozname s dňom (noc patrí dňu, v ktorom začína)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: v noci z 24. na 25.11.2026 bude od 22:00 do 04:00 hod. a dňa 26.11.2026 bude od 08:00 do 14:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 22:00",
+       "2026-11-25 04:00"
+      ],
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_c04",
+   "origin": "r8-pravidla: noc nová výluka v dvoch nociach s „bude“",
+   "subject": "ROV č. 2331/2026 Ružomberok – Liptovský Mikuláš",
+   "body": "Dobrý deň,\n\núplná výluka v úseku Ružomberok – Liptovský Mikuláš (ROV č. 2331/2026) v noci z 24. na 25.11.2026 bude od 22:00 do 04:00 hod. a v noci z 25. na 26.11.2026 bude od 23:00 do 05:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "rk": "uplna",
+     "iv": [
+      [
+       "2026-11-24 22:00",
+       "2026-11-25 04:00"
+      ],
+      [
+       "2026-11-25 23:00",
+       "2026-11-26 05:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_d01",
+   "origin": "r8-pravidla: viac-dní dve obdobia „v dňoch … bude denne od …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: v dňoch 23.11. – 24.11.2026 bude denne od 10:00 do 16:00 hod. a v dňoch 26.11. – 27.11.2026 bude denne od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 10:00",
+       "2026-11-24 16:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie",
+     "daily": [
+      "10:00",
+      "16:00"
+     ]
+    },
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 06:00",
+       "2026-11-27 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie",
+     "daily": [
+      "06:00",
+      "12:00"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r8p_d02",
+   "origin": "r8-pravidla: viac-dní obdobie a potom deň",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: v dňoch 23.11. – 24.11.2026 bude denne od 10:00 do 16:00 hod. a dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 10:00",
+       "2026-11-24 16:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie",
+     "daily": [
+      "10:00",
+      "16:00"
+     ]
+    },
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_d03",
+   "origin": "r8-pravidla: viac-dní deň a potom obdobie (okno dňa nedostane obdobie)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 25.11.2026 bude od 06:00 do 12:00 hod. a v dňoch 23.11. – 24.11.2026 bude denne od 10:00 do 16:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    },
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 10:00",
+       "2026-11-24 16:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie",
+     "daily": [
+      "10:00",
+      "16:00"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r8p_d04",
+   "origin": "r8-pravidla: viac-dní viacdňový termín „od D1 W do D2 W“ a potom deň s „bude“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: od 24.11.2026 10:00 do 25.11.2026 16:00 hod. a dňa 26.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-25 16:00"
+      ],
+      [
+       "2026-11-26 06:00",
+       "2026-11-26 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_d05",
+   "origin": "r8-pravidla: viac-dní noc a potom obdobie s denným oknom",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: v noci z 24. na 25.11.2026 bude od 22:00 do 04:00 hod. a v dňoch 26.11. – 27.11.2026 bude denne od 08:00 do 14:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 22:00",
+       "2026-11-25 04:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    },
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-27 14:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie",
+     "daily": [
+      "08:00",
+      "14:00"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r8p_d06",
+   "origin": "r8-pravidla: viac-dní zoznam nocí so spoločným oknom a potom deň",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: v nociach 24./25.11. a 25./26.11.2026 bude od 22:00 do 04:00 hod. a dňa 27.11.2026 bude od 08:00 do 14:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 22:00",
+       "2026-11-25 04:00"
+      ],
+      [
+       "2026-11-25 22:00",
+       "2026-11-26 04:00"
+      ],
+      [
+       "2026-11-27 08:00",
+       "2026-11-27 14:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_d07",
+   "origin": "r8-pravidla: viac-dní okná cez polnoc pri dňoch (noc patrí dňu, v ktorom začína)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 22:00 do 06:00 hod. a dňa 25.11.2026 bude od 23:00 do 05:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 22:00",
+       "2026-11-25 06:00"
+      ],
+      [
+       "2026-11-25 23:00",
+       "2026-11-26 05:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_d08",
+   "origin": "r8-pravidla: viac-dní deň s dvoma oknami a ďalší deň („…, resp. dňa …“ pri ďalšej položke)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 10:00 do 12:00 a od 13:00 do 16:00 hod., resp. dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 12:00"
+      ],
+      [
+       "2026-11-24 13:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_e01",
+   "origin": "r8-pravidla: zoznam dva dni so spoločným oknom „dňa D1 a D2 bude od …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11. a 25.11.2026 bude od 10:00 do 16:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 10:00",
+       "2026-11-25 16:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_e02",
+   "origin": "r8-pravidla: zoznam „dňa D1 a dňa D2 bude od …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 a dňa 25.11.2026 bude od 10:00 do 16:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 10:00",
+       "2026-11-25 16:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_e03",
+   "origin": "r8-pravidla: zoznam jeden deň s dvoma oknami (kontrola dní sa nespustí)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 08:00 do 10:00 hod. a od 13:00 do 16:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 08:00",
+       "2026-11-24 10:00"
+      ],
+      [
+       "2026-11-24 13:00",
+       "2026-11-24 16:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_e04",
+   "origin": "r8-pravidla: zoznam dva dni, prvý s dvoma oknami (kontrola dní sa nespustí)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 od 08:00 do 10:00 a od 13:00 do 16:00 hod., dňa 25.11.2026 od 08:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 08:00",
+       "2026-11-24 10:00"
+      ],
+      [
+       "2026-11-24 13:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 08:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_f01",
+   "origin": "r8-pravidla: presun „sa presúva z D1 na D2, kde bude od …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa presúva z 24.11.2026 na 25.11.2026, kde bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "presun"
+    }
+   ]
+  },
+  {
+   "id": "r8p_f02",
+   "origin": "r8-pravidla: presun „bude namiesto D1 dňa D2 od …“ (nový deň za pôvodným)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 bude namiesto 24.11.2026 dňa 25.11.2026 od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "presun"
+    }
+   ]
+  },
+  {
+   "id": "r8p_f03",
+   "origin": "r8-pravidla: presun „bude dňa D2 (namiesto D1) od …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 bude dňa 25.11.2026 (namiesto 24.11.2026) od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "presun"
+    }
+   ]
+  },
+  {
+   "id": "r8p_f04",
+   "origin": "r8-pravidla: presun „namiesto D1 od W1 hod. dňa D2 od W2“ (pôvodný deň s oknom)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 bude namiesto 24.11.2026 od 08:00 do 14:00 hod. dňa 25.11.2026 od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "presun"
+    }
+   ]
+  },
+  {
+   "id": "r8p_f05",
+   "origin": "r8-pravidla: presun „namiesto dňa D1 bude výluka dňa D2“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026: namiesto dňa 24.11.2026 bude výluka dňa 25.11.2026 od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "presun"
+    }
+   ]
+  },
+  {
+   "id": "r8p_f06",
+   "origin": "r8-pravidla: presun dve okná nového dňa (pôvodný deň kontrolu dní nespustí)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa presúva z 24.11.2026 na 25.11.2026, kde bude od 06:00 do 10:00 a od 13:00 do 16:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 10:00"
+      ],
+      [
+       "2026-11-25 13:00",
+       "2026-11-25 16:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_f07",
+   "origin": "r8-pravidla: presun nový čas dňa „(namiesto W)“ za oknom so slovom „bude“ – pôvodný čas nie je ďalším termínom",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 08:00 do 18:00 hod. (namiesto 08:00 – 14:00).\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 08:00",
+       "2026-11-24 18:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_f08",
+   "origin": "r8-pravidla: presun nový čas dňa „(pôvodne W)“ bez slova „bude“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 od 08:00 do 18:00 hod. (pôvodne 08:00 – 14:00).\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 08:00",
+       "2026-11-24 18:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_g01",
+   "origin": "r8-pravidla: zámer doplnenie dvoch dní s „bude“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa dopĺňa o termíny: dňa 26.11.2026 bude od 08:00 do 14:00 hod. a dňa 27.11.2026 bude od 09:00 do 15:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ],
+      [
+       "2026-11-27 09:00",
+       "2026-11-27 15:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_g02",
+   "origin": "r8-pravidla: zámer predĺženie o dva dni s vlastnými oknami",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa predlžuje: dňa 26.11.2026 bude od 08:00 do 14:00 hod. a dňa 27.11.2026 bude od 09:00 do 15:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-26 08:00",
+       "2026-11-26 14:00"
+      ],
+      [
+       "2026-11-27 09:00",
+       "2026-11-27 15:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "predlzenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_g03",
+   "origin": "r8-pravidla: zámer skrátenie dvoch dní (dve zmeny jednej výluky sú doplnením)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa skracuje: dňa 24.11.2026 bude od 08:00 do 10:00 hod. a dňa 25.11.2026 bude od 08:00 do 11:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 08:00",
+       "2026-11-24 10:00"
+      ],
+      [
+       "2026-11-25 08:00",
+       "2026-11-25 11:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_g04",
+   "origin": "r8-pravidla: zámer predĺženie do dňa s oknom bez čiarky „do D od W1 do W2“ (okno je denné, koniec nie je W1)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa predlžuje do 29.11.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       null,
+       "2026-11-29 14:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "predlzenie",
+     "daily": [
+      "08:00",
+      "14:00"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r8p_g05",
+   "origin": "r8-pravidla: zámer obdobie dňa „dňa D1 bude od … do … dňa D2“ (koniec v ďalší deň)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 23.11.2026 bude od 08:00 do 16:00 dňa 24.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-23 08:00",
+       "2026-11-24 16:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_h01",
+   "origin": "r8-pravidla: blízky variant dátum vydania „zo dňa D:“ pred zoznamom dní",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 zo dňa 20.11.2026: dňa 24.11.2026 bude od 10:00 do 16:00 hod. a dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_h02",
+   "origin": "r8-pravidla: blízky variant pôvodný deň v zátvorke „dňa D (pôvodne D0) bude od …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 (pôvodne 23.11.2026) bude od 10:00 do 16:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_h03",
+   "origin": "r8-pravidla: blízky variant druhý deň bez vlastného času „(25.11. bez zmeny)“ – nie je termínom",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 10:00 do 16:00 hod. (25.11.2026 bez zmeny).\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_h04",
+   "origin": "r8-pravidla: zrušenie jedného dňa a nový čas iného dňa v dvoch vetách – rušený deň okno nedostane",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 dňa 24.11.2026 sa ruší. Dňa 25.11.2026 bude výluka od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_h05",
+   "origin": "r8-pravidla: zrušenie jedného dňa a nový čas iného dňa v jednej vete",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 dňa 24.11.2026 sa ruší a dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ],
+   "xfail": "zrušenie a nový termín v jednej vete – zmena je bez termínu s poznámkou o zrušení (čaká na dispečera; register ostáva bez zmeny)"
+  },
+  {
+   "id": "r8p_i01",
+   "origin": "r8-pravidla: citácia odpoveď s citovanou pôvodnou správou – termíny len z nového textu",
+   "subject": "RE: Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nposielame opravu: dňa 24.11.2026 bude od 10:00 do 16:00 hod. a dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk\n\n> Dňa 20.11.2026 o 10:00 Marta Vzorová napísala:\n> výluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 od 08:00 do 14:00 hod. a dňa 25.11.2026 od 08:00 do 14:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_i02",
+   "origin": "r8-pravidla: citácia preposlaná zmena so zoznamom dní",
+   "subject": "Fwd: Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nposielam ďalej.\n\n---------- Preposlaná správa ----------\nOd: ZSR OR Zilina <vyluky.orza@zsr.example>\nDátum: 20.11.2026 10:00\nPredmet: Zmena ROV č. 2331/2026\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 bude od 10:00 do 16:00 hod. a dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_j01",
+   "origin": "r8-pravidla: nová výluka „dňa D1 bude od … a dňa D2 bude od …“",
+   "subject": "ROV č. 2331/2026 Ružomberok – Liptovský Mikuláš",
+   "body": "Dobrý deň,\n\núplná výluka v úseku Ružomberok – Liptovský Mikuláš (ROV č. 2331/2026) dňa 24.11.2026 bude od 10:00 do 16:00 hod. a dňa 25.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "rk": "uplna",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_j02",
+   "origin": "r8-pravidla: nová výluka okno pred dňom",
+   "subject": "ROV č. 2331/2026 Ružomberok – Liptovský Mikuláš",
+   "body": "Dobrý deň,\n\núplná výluka v úseku Ružomberok – Liptovský Mikuláš (ROV č. 2331/2026) bude od 10:00 do 16:00 hod. dňa 24.11.2026 a od 06:00 do 12:00 hod. dňa 25.11.2026.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "rk": "uplna",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_j03",
+   "origin": "r8-pravidla: nová výluka položky „D: W“ na riadkoch",
+   "subject": "ROV č. 2331/2026 Ružomberok – Liptovský Mikuláš",
+   "body": "Dobrý deň,\n\núplná výluka v úseku Ružomberok – Liptovský Mikuláš (ROV č. 2331/2026):\n24.11.2026: 10:00 – 16:00 hod.\n25.11.2026: 06:00 – 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "rk": "uplna",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a19",
+   "origin": "r8-pravidla: deň-okno číslo km s desatinnou čiarkou medzi dňom a oknom („v km 12,5 bude od …“)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 v km 12,5 bude od 10:00 do 16:00 hod. a dňa 25.11.2026 v km 12,5 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_a20",
+   "origin": "r8-pravidla: deň-okno poradové číslo etapy v zátvorke za dňom („(1. etapa) od …“)",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 (1. etapa) od 10:00 do 16:00 hod. a dňa 25.11.2026 (2. etapa) od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026",
+     "zamer": "doplnenie"
+    }
+   ]
+  },
+  {
+   "id": "r8p_j04",
+   "origin": "r8-pravidla: nová výluka číslo km medzi dňom a oknom",
+   "subject": "ROV č. 2331/2026 Ružomberok – Liptovský Mikuláš",
+   "body": "Dobrý deň,\n\núplná výluka v úseku Ružomberok – Liptovský Mikuláš (ROV č. 2331/2026) dňa 24.11.2026 v km 12,5 bude od 10:00 do 16:00 hod. a dňa 25.11.2026 v km 12,5 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_nova",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "rk": "uplna",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_k01",
+   "origin": "r8-pravidla: zrušenie druhé okno dňa a veta o zrušení iného dňa „… hod. Dňa D sa výluka nekoná.“ – okno ostáva dňu pred ním",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 25.11.2026 bude od 06:00 do 10:00 a od 13:00 do 16:00 hod. Dňa 24.11.2026 sa výluka nekoná.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 10:00"
+      ],
+      [
+       "2026-11-25 13:00",
+       "2026-11-25 16:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_k02",
+   "origin": "r8-pravidla: zoznam druhé okno dňa a ďalší deň v novej vete „… hod. Dňa D2 bude od …“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 25.11.2026 bude od 06:00 do 10:00 a od 13:00 do 16:00 hod. Dňa 26.11.2026 bude od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 10:00"
+      ],
+      [
+       "2026-11-25 13:00",
+       "2026-11-25 16:00"
+      ],
+      [
+       "2026-11-26 06:00",
+       "2026-11-26 12:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_k03",
+   "origin": "r8-pravidla: zoznam druhé okno dňa a za čiarkou zoznam ďalších dní so spoločným oknom",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 24.11.2026 od 08:00 do 10:00 a od 13:00 do 16:00 hod., 25.11. a 26.11.2026 od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 08:00",
+       "2026-11-24 10:00"
+      ],
+      [
+       "2026-11-24 13:00",
+       "2026-11-24 16:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ],
+      [
+       "2026-11-26 06:00",
+       "2026-11-26 12:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_k04",
+   "origin": "r8-pravidla: okno-deň okno pred dňom a za čiarkou zoznam ďalších dní s vlastným oknom",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: od 08:00 do 12:00 hod. dňa 24.11.2026, 25.11. a 26.11.2026 od 06:00 do 12:00 hod.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 08:00",
+       "2026-11-24 12:00"
+      ],
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ],
+      [
+       "2026-11-26 06:00",
+       "2026-11-26 12:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_k05",
+   "origin": "r8-pravidla: zrušenie deň s oknom a za čiarkou zrušenie skoršieho dňa – nie obdobie do skoršieho dňa",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: dňa 25.11.2026 bude od 06:00 do 12:00 hod., dňa 24.11.2026 sa výluka nekoná.\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-25 06:00",
+       "2026-11-25 12:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
+  },
+  {
+   "id": "r8p_k06",
+   "origin": "r8-pravidla: okno-deň okno a za čiarkou deň s dňom v týždni „…, dňa D (utorok).“",
+   "subject": "Zmena ROV č. 2331/2026",
+   "body": "Dobrý deň,\n\nvýluka v úseku Ružomberok – Liptovský Mikuláš podľa ROV č. 2331/2026 sa mení: od 10:00 do 16:00 hod., dňa 24.11.2026 (utorok).\n\nS pozdravom\nMarta Vzorová\nOR Žilina, oddelenie výluk",
+   "received": "2026-11-16 09:00",
+   "sender": "vyluky.orza@zsr.example",
+   "expect": [
+    {
+     "kind": "vyluka_zmena",
+     "frm": "Ružomberok",
+     "to": "Liptovský Mikuláš",
+     "iv": [
+      [
+       "2026-11-24 10:00",
+       "2026-11-24 16:00"
+      ]
+     ],
+     "ref": "2331/2026"
+    }
+   ]
   }
  ]
 }

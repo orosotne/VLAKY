@@ -27,16 +27,19 @@ MONTHS = {
 _MONTH_ALT = "|".join(sorted(MONTHS, key=len, reverse=True))
 
 _ISO_RE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?:[t ](\d{1,2}):(\d{2})(?::\d{2})?)?(?!\d)")
+# rok za dátumom: dvojmiestny nie pred dvojbodkou („12.11. 10:00“ – 10 je hodina), štvormiestny aj pred dvojbodkou bez
+# číslice za ňou („24.11.2026: od 10:00 do 16:00“ – deň zoznamu s dvojbodkou má rok uvedený)
 _DAYRANGE_RE = re.compile(
-    r"(?<![\d.,/:])(\d{1,2})\.?\s?-\s?(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
-_DATE_RE = re.compile(r"(?<![\d.,/:])(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
+    r"(?<![\d.,/:])(\d{1,2})\.?\s?-\s?(\d{1,2})\s?\.\s?(\d{1,2})\s?\."
+    r"(?:\s?(\d{4}(?!\d|:\d|\.\d)|\d{2}(?![\d:]|\.\d)))?")
+_DATE_RE = re.compile(r"(?<![\d.,/:])(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}(?!\d|:\d|\.\d)|\d{2}(?![\d:]|\.\d)))?")
 # druhý dátum hneď za lomkou („v noci 12.11.2026/13.11.2026“, „12.11./13.11.2026“) – _DATE_RE ho nevezme (lomka
 # pred ním), bez neho by sa „13.11“ prečítalo ako čas 13:11; platí len za iným dátumom
-_SLASH_DATE_RE = re.compile(r"/(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
+_SLASH_DATE_RE = re.compile(r"/(\d{1,2})\s?\.\s?(\d{1,2})\s?\.(?:\s?(\d{4}(?!\d|:\d|\.\d)|\d{2}(?![\d:]|\.\d)))?")
 # noc z jedného dňa na druhý: „z 12. na 13.11.2026“, „12./13.11.2026“, „z 12. na 13. novembra 2026“ – obdobie
 # začína prvým dňom (skupiny: deň, deň, mesiac číslom, mesiac slovom, rok)
 _NIGHT_RE = re.compile(r"(?<![\d.,/:])(\d{1,2})\s?\.\s?(?:na\s+|/\s?)(\d{1,2})\s?\.\s?(?:(\d{1,2})\s?\.|(" + _MONTH_ALT
-                       + r")\b)(?:\s?(\d{4}|\d{2})(?![\d:]|\.\d))?")
+                       + r")\b)(?:\s?(\d{4}(?!\d|:\d|\.\d)|\d{2}(?![\d:]|\.\d)))?")
 _NIGHT_GAP = re.compile(r"^\s*(?:na|/)\s*$")
 # noc je to len vtedy, keď ju text tak označuje („v noci“, „nočná“) alebo okno za ňou prechádza cez polnoc;
 # „presúva sa z 12.11. na 13.11.“ je presun termínu na nový deň (nie noc)
@@ -59,12 +62,12 @@ _BARE_BEFORE = re.compile(r"(?<![\d.,/:])(?<!\d\.\s)(\d{1,2})\s?\.(?:\s?(na\s+|/
 # z 14. na 15.11.“ – mesiac a rok z druhej noci
 _NIGHT_RANGE_BEFORE = re.compile(r"(?<![\d.,/:])(\d{1,2})\s?\.\s?(?:na\s+|/\s?)(\d{1,2})\s?\.(?P<to>\s*(?:-+|do|az)\s*)"
                                  r"(?:z\s+|zo\s+)?\Z")
-# dátum, ktorý podľa textu pred ním nie je termínom: pôvodný deň presunu („z 12.11. na 13.11.“, „namiesto 12.11.“),
-# dátum vydania, vyhotovenia či rozhodnutia („ROV z 30.10.“, „zo dňa 30.10.“), platnosť samotného rozkazu
+# dátum, ktorý podľa textu pred ním nie je termínom: pôvodný deň presunu („z 12.11. na 13.11.“, „namiesto (dňa)
+# 12.11.“), dátum vydania, vyhotovenia či rozhodnutia („ROV z 30.10.“, „zo dňa 30.10.“), platnosť samotného rozkazu
 NOT_TERM_BEFORE = re.compile(r"(?<![^\s(])(?:z|zo|ze)\s+(?:termin\w*\s+)?$|(?:zo|ze)\s+dn[ae]\s*$|v\s+\w+\s+dn[ae]\s*$"
-                             r"|\b(?:namiesto|namisto|misto)\s*$|povodn|puvodn|doterajs|vydan|vydavan|rozhodnut"
-                             r"|vyhotoven|vypracovan|\b(?:platnost|ucinnost)\w*\s+(?:rov|srov|rozkaz|telegram|tlg|potr"
-                             r"|oznamen)\w*\s+od\s*$")
+                             r"|\b(?:namiesto|namisto|misto)\s*(?:dna\s+|dne\s+)?$|povodn|puvodn|doterajs|vydan|vydavan"
+                             r"|rozhodnut|vyhotoven|vypracovan"
+                             r"|\b(?:platnost|ucinnost)\w*\s+(?:rov|srov|rozkaz|telegram|tlg|potr|oznamen)\w*\s+od\s*$")
 _OLD_WORD = re.compile(r"povodn|puvodn|doterajs")
 # slová nového či ďalšieho termínu za slovom „pôvodný“ – dátum za nimi pôvodným termínom nie je
 _NEW_AFTER_OLD = re.compile(r"\b(?:nov|nahradn|pridava|pridan|prida|dopln|pribud|pribuda|presuva|presunie|presunut"
@@ -85,6 +88,33 @@ _HOUR_CTX_RE = re.compile(r"(?:\bo|\bod|\bdo|-|\baz|\bv|\bvo)\s*$")
 _AT_GAP = re.compile(r"^[\s,]*(?:(?:o|v|vo|od|o\s+case|v\s+case|case|cas|cca|asi|at|um|zaciatok|s\s+casom)\b[\s,:]*)*$")
 _TIME_DATE_GAP = re.compile(r"^[\s,]*(?:(?:hod\.?|h\.?|dna|dne|dnom|v\s+den|zo\s+dna|ze\s+dne)\b[\s,.:]*)*$")
 _TO_GAP = re.compile(r"^\s*(?:hod\.?\s*)?(?:-+|do|az|until|till|bis|>)\s*(?:dna\s*|dne\s*)?$")
+# slovo vety medzi dňom (obdobím) a jeho časovým oknom („dňa 24.11.2026 bude od 10:00“, „… výluka bude trvať v čase
+# od …“, „v dňoch 23.11. – 24.11.2026 bude denne od …“) – nie spojka či predložka, ktorá začína ďalší údaj („a“,
+# „potom“, „namiesto“, „z … na …“, „do“): za ňou okno k dňu pred ňou patriť nemusí; ani slovo denného okna („denne“,
+# „vždy“) – také okno patrí obdobiu („sa predlžuje do 29.11.2026, denne od 08:00 do 14:00“), nie len dňu pred ním
+_HEAD_WORD = (r"(?!(?:a|aj|i|ale|alebo|ani|ci|potom|dalej|nasledne|resp|respektive|tiez|taktiez|okrem|namiesto|namisto"
+              r"|misto|miesto|povodne|puvodne|z|zo|ze|na|do|az|od|v|vo|dna|dne|denne|dennne|kazdy|kazdu|kazdodenne"
+              r"|vzdy|jednotlivych|cely|celodenne|nepretrzite)\b)[a-z]+")
+# koniec otvoreného obdobia pred dátumom („sa predlžuje do 29.11.2026 od 08:00 do 14:00“, „až do 29.11.2026 …“) – okno
+# za ním je denné okno obdobia, nie začiatok dňa 29.11. (koniec by inak bol 29.11. 08:00 a okno toho dňa by sa stratilo)
+_OPEN_END_BEFORE = re.compile(r"(?<![\w.])(?:do|az)\s+(?:dna\s+|dne\s+)?$")
+# pôvodný čas toho istého dňa za novým oknom („… od 08:00 do 18:00 hod. (namiesto 08:00 – 14:00)“, „…, pôvodne 08:00 –
+# 14:00“) – dostane deň nového okna (pravidlá ho označia za pôvodný termín, nie nový)
+_OLD_AND_GAP = re.compile(r"^\s*(?:hod\.?\s*)?[,;]?\s*\(?\s*(?:namiesto|namisto|misto|miesto|povodne|puvodne|predtym"
+                          r"|predtim|doteraz|dosial|dosud)\s+(?:od\s+|v\s+case\s+|z\s+)?$")
+# medzera medzi dňom a začiatkom jeho okna vo vete („ bude od “, „: od “, „ – výluka bude v čase od “, „ (utorok) od “):
+# bez číslice, bez oddeľovača vety či zoznamu (čiarka, dvojbodka či pomlčka len hneď za dňom), najviac štyri slová
+_HEAD_GAP = re.compile(rf"^\s*(?:[,:]|-+)?\s*(?:\((?:[a-z]+\s*){{1,2}}\)\s*[,:]?\s*)?(?:{_HEAD_WORD}\s+){{0,4}}"
+                       r"(?:(?:v|vo)\s+(?:case|dobe|casoch|hodinach)\s+|v\s+)?(?:od\s+)?$")
+# deň na konci svojej vety či položky („…, dňa 24.11.2026.“, „…, dňa 24.11.2026 (utorok), …“) – nie začiatok ďalšej
+# vety („…, dňa 24.11.2026 sa výluka nekoná“)
+_DAY_ENDS_CLAUSE = re.compile(r"\s*(?:\([^()\n]{0,30}\)\s*)?(?:[.,;!?\n]|\Z)")
+# za dňom pokračuje zoznam či údaj toho istého termínu („… dňa 25.11.2026 a od 08:00 …“, „… dňa 25.11.2026 v úseku …“)
+_DAY_GOES_ON = re.compile(r"\s*(?:\([^()\n]{0,30}\)\s*)?(?:a|aj|i|ani|alebo|potom|dalej|nasledne|resp|respektive|tiez"
+                          r"|taktiez|od|do|az|v|vo|z|zo|na|pri|medzi|cez|hod|h)\b")
+# oddeľovač položiek zoznamu medzi oknom a ďalším dňom („…, dňa 25.11.“, „ a dňa “, „; “, „ potom “, nový riadok) – nie
+# desatinná čiarka („v km 12,5“)
+_ITEM_SEP = re.compile(r",(?!\d)|[;\n]|\b(?:a|aj|potom|dalej|nasledne|resp|respektive|tiez|taktiez)\b|[a-z]\.\s")
 # zmena času z jedného okna na druhé („sa mení z 08:00 – 14:00 hod. na 06:00 – 16:00 hod.“, „posúva sa zo
 # 22:00 – 04:00 na 20:00 – 06:00“): medzera medzi oknami a predložka pred pôvodným oknom
 _WIN_SHIFT_GAP = re.compile(r"^\s*(?:hod\.?|h\.?)?\s*na\s*(?:cas\s+|case\s+)?$")
@@ -95,9 +125,11 @@ _SENT_BREAK = re.compile(r"[a-z]\.\s+(?!(?:v|vo|od|do|dna|dne|denne|a|aj|vzdy|ka
 _OWN_DAY_AFTER = re.compile(r"^\s*(?:hod\.?\s*)?(?:,\s*)?(?:(?:dna|dne|v\s+den|v\s+dnoch|ve\s+dnech)\s+)?$")
 _WIN_SHIFT_BEFORE = re.compile(r"(?<![^\s(])(?:z|zo|ze)\s+(?:casu\s+|case\s+)?(?:od\s+)?$")
 # denné okno hneď za obdobím („v dňoch 23.11. – 27.11. denne 10:00 – 12:00 a 30.11. – …“, „od 23.11. do 27.11. denne
-# v čase 10:00 – 12:00 hod., od 30.11. …“, „…, vždy od 08:00 …“) – patrí tomuto obdobiu, nikdy nasledujúcemu
+# v čase 10:00 – 12:00 hod., od 30.11. …“, „…, vždy od 08:00 …“, „v dňoch 23.11. – 24.11. bude denne od …“) – patrí
+# tomuto obdobiu, nikdy nasledujúcemu
 _WIN_AFTER_RANGE = re.compile(r"^\s*(?:hod\.?\s*)?[,(]?\s*(?:(?:denne|kazdy\s+den|kazdodenne|vzdy|v\s+jednotlivych\s+dnoch"
-                              r"|v\s+case|v\s+dobe|v\s+casoch|v\s+hodinach|cas|casovo|od|v)\s*[,:]?\s*){0,4}$")
+                              r"|v\s+case|v\s+dobe|v\s+casoch|v\s+hodinach|cas|casovo|od|v)\s*[,:]?\s*"
+                              rf"|{_HEAD_WORD}\s+){{0,6}}$")
 _UNTIL_REVOKED = re.compile(r"^\s*(?:hod\.?\s*)?(?:do\s+(?:odvolania|odvolani|odvolani|odvolania)|az\s+do\s+odvolani\w*)")
 _DAILY_RE = re.compile(r"\b(?:denne|kazdy\s+den|kazdodenne|vzdy|v\s+jednotlivych\s+dnoch|v\s+dnoch|ve\s+dnech|v\s+case|dennne)\b")
 
@@ -557,6 +589,67 @@ def _night_day(day: date, night: bool, wa: Temporal) -> date:
     return day + timedelta(days=1) if night and _after_midnight(wa.tm, wa.plus_day) else day
 
 
+def _opens_window(folded: str, toks: list[Temporal], j: int) -> bool:
+    """Čas ``toks[j]`` začína časové okno („10:00 – 16:00“, „od 10:00 do 16:00“)."""
+    nxt = toks[j + 1] if j + 1 < len(toks) else None
+    if nxt is None or toks[j].kind != "time" or nxt.kind != "time":
+        return False
+    gap = folded[toks[j].end:nxt.start]
+    return len(gap) <= 14 and bool(_TO_GAP.match(gap))
+
+
+def _own_window_gap(folded: str, toks: list[Temporal], j: int, gap: str) -> bool:
+    """Medzera ``gap`` pred časom ``toks[j]`` spája deň pred ňou s oknom, ktoré čas začína: „ od “, „ v čase “ (aj pri
+    samotnom čase) alebo slová vety bez oddeľovača („ bude od “, „: od “, „ – výluka bude v čase od “) – tie len pri
+    okne."""
+    return (len(gap) <= 16 and bool(_AT_GAP.match(gap))) or (
+        len(gap) <= 40 and bool(_HEAD_GAP.match(gap)) and _opens_window(folded, toks, j))
+
+
+def _window_day_after(folded: str, out: list[Temporal], t: Temporal) -> bool:
+    """„od 10:00 do 16:00 hod. dňa 24.11.2026“: čas ``t`` uzatvára okno, ktorého začiatok je čas bez dňa – dátum za ním
+    je dňom celého okna (nie koniec obdobia s neznámym začiatkom). Samotné okno cez polnoc („od 22:00 do 04:00 dňa
+    25.11.“) sa tak nečíta: či noc v uvedený deň začína, alebo končí, z textu isté nie je (ostáva ako doteraz – bez
+    obdobia, udalosť čaká na dispečera); v zozname „okno – deň“ ho deň dostane (:func:`_window_tail`)."""
+    prev = out[-1] if out else None
+    if prev is None or prev.kind != "time" or not _TO_GAP.match(folded[prev.end:t.start]):
+        return False
+    a = prev.tm.hour * 60 + prev.tm.minute + (24 * 60 if prev.plus_day else 0)
+    b = t.tm.hour * 60 + t.tm.minute + (24 * 60 if t.plus_day else 0)
+    return b > a
+
+
+def _window_tail(folded: str, out: list[Temporal], t: Temporal, after: str) -> bool:
+    """Dátum ``t`` hneď za oknom bez dňa, od ktorého ho nedelí oddeľovač, ale od ďalšieho okna áno („od 10:00 do 16:00
+    hod. 24.11.2026, od 06:00 do 12:00 hod. 25.11.2026“) – je dňom predchádzajúceho okna, nie začiatkom ďalšieho."""
+    if len(out) < 2 or out[-1].kind != "time" or out[-2].kind != "time" or \
+            not _TO_GAP.match(folded[out[-2].end:out[-1].start]):
+        return False
+    tail = folded[out[-1].end:t.start]
+    return len(tail) <= 14 and bool(_TIME_DATE_GAP.match(tail)) and not re.search(r"[,;\n]", tail) and \
+        bool(re.search(r"[,;\n]", after))
+
+
+def _chained_window(folded: str, out: list[Temporal], t: Temporal) -> bool:
+    """Okno ``out[-1]`` – ``t`` je ďalším oknom dňa pred ním („dňa 25.11.2026 od 06:00 do 10:00 a od 13:00 do
+    16:00“): pred ním stojí okno so začiatkom s dňom a medzi oknami „ a “, „, ďalej“ …"""
+    if len(out) < 3 or out[-1].kind != "time" or out[-2].kind != "time" or out[-3].kind not in ("date", "datetime"):
+        return False
+    return bool(_TO_GAP.match(folded[out[-1].end:t.start]) and _TO_GAP.match(folded[out[-3].end:out[-2].start])
+                and _AND_GAP.match(folded[out[-2].end:out[-1].start]))
+
+
+def _own_clause_day(folded: str, wb: Temporal, d: Temporal) -> bool:
+    """Dátum ``d`` za oknom s koncom ``wb`` začína vlastnú vetu: od okna ho delí čiarka, bodkočiarka, nový riadok či
+    koniec vety („… 16:00 hod. Dňa …“) a za ním stojí jeho vlastný prísudok („…, dňa 24.11.2026 sa výluka nekoná“,
+    „… hod. Dňa 24.11.2026 platí pôvodný čas“). Deň na konci vety („…, dňa 24.11.2026.“) či pred ďalšou položkou
+    zoznamu („… hod. dňa 25.11.2026 a od 08:00 …“) takým nie je."""
+    gap = folded[wb.end:d.start]
+    if not (re.search(r"[,;\n]", gap) or folded[wb.start:wb.end].endswith(".")):
+        return False
+    return not (_DAY_ENDS_CLAUSE.match(folded, d.end) or _DAY_GOES_ON.match(folded, d.end))
+
+
 def _merge(folded: str, toks: list[Temporal]) -> list[Temporal]:
     out: list[Temporal] = []
     i = 0
@@ -565,12 +658,17 @@ def _merge(folded: str, toks: list[Temporal]) -> list[Temporal]:
         if i + 1 < len(toks):
             u = toks[i + 1]
             gap = folded[t.end:u.start]
-            if t.kind == "date" and u.kind == "time" and len(gap) <= 16 and _AT_GAP.match(gap):
+            # „dňa 24.11.2026 od 10:00“, „dňa 24.11.2026 bude od 10:00 do 16:00“ – deň so začiatkom svojho okna (nie
+            # deň predchádzajúceho okna: „od 10:00 do 16:00 24.11.2026, od 06:00 …“)
+            if t.kind == "date" and u.kind == "time" and _own_window_gap(folded, toks, i + 1, gap) and \
+                    not _window_tail(folded, out, t, gap):
                 # „v dňoch 10.–14.11.2026 v čase 8:00–14:00“ = obdobie dátumov + denné okno, nespájať
                 prev = out[-1] if out else None
                 nxt = toks[i + 2] if i + 2 < len(toks) else None
                 range_end = prev is not None and prev.kind == "date" and \
                     bool(_TO_GAP.match(folded[prev.end:t.start]))
+                # aj koniec otvoreného obdobia („sa predlžuje do 29.11.2026 od 08:00 do 14:00“)
+                range_end = range_end or bool(_OPEN_END_BEFORE.search(folded, max(0, t.start - 14), t.start))
                 window = nxt is not None and nxt.kind == "time" and \
                     bool(_TO_GAP.match(folded[u.end:nxt.start]))
                 if not (range_end and window):
@@ -578,8 +676,40 @@ def _merge(folded: str, toks: list[Temporal]) -> list[Temporal]:
                                         t.year_given, night=t.night, unordered=t.unordered))
                     i += 2
                     continue
+            if t.kind == "time" and u.kind == "date" and len(gap) <= 14 and _TIME_DATE_GAP.match(gap) and \
+                    not re.search(r"[,;\n]", gap) and _window_day_after(folded, out, t) and \
+                    not (_chained_window(folded, out, t) and (_own_clause_day(folded, t, u)
+                                                              or _list_item_after_window(folded, out, toks, i, gap))):
+                # okno bez dňa a dátum hneď za ním bez oddeľovača („od 10:00 do 16:00 hod. dňa 24.11.2026“, „… 16:00
+                # hod. 24.11.2026, od 06:00 …“) – deň celého okna, aj keď za ním stojí ďalšie okno (zoznam „okno –
+                # deň“); nie dátum ďalšej vety za druhým oknom dňa („… a od 13:00 do 16:00 hod. Dňa 26.11.2026 od
+                # 06:00 …“, „… hod. Dňa 24.11.2026 sa výluka nekoná“)
+                out += [t, u]
+                i += 2
+                continue
             if t.kind == "time" and u.kind == "date" and len(gap) <= 14 and _TIME_DATE_GAP.match(gap) \
                     and gap.strip() and not _list_item_after_window(folded, out, toks, i, gap):
+                if _window_day_after(folded, out, t) and _DAY_ENDS_CLAUSE.match(folded, u.end):
+                    # deň za čiarkou bez vlastného okna na konci vety („od 10:00 do 16:00, dňa 24.11.2026.“) – deň
+                    # celého okna ostane dátumom (okno ho dostane v :func:`periods`); deň, za ktorým pokračuje jeho
+                    # vlastná veta („od 10:00 do 16:00 hod., dňa 24.11.2026 sa …“), oknu nepatrí – ostáva ako doteraz
+                    out += [t, u]
+                    i += 2
+                    continue
+                prev = out[-1] if out else None
+                if _chained_window(folded, out, t) and _own_clause_day(folded, t, u):
+                    # druhé okno dňa a za ním veta iného dňa („dňa 25.11.2026 od 06:00 do 10:00 a od 13:00 do 16:00
+                    # hod., dňa 24.11.2026 sa výluka nekoná“) – okno patrí dňu pred ním, dátum ostáva samostatný
+                    out.append(t)
+                    i += 1
+                    continue
+                if prev is not None and prev.kind in ("date", "datetime") and prev.day is not None and \
+                        u.day is not None and u.day < prev.day and _TO_GAP.match(folded[prev.end:t.start]):
+                    # dátum za čiarkou pred dňom začiatku („dňa 25.11.2026 od 06:00 do 12:00 hod., dňa 24.11.2026 sa
+                    # výluka nekoná“) nie je koncom obdobia – koniec by bol pred začiatkom
+                    out.append(t)
+                    i += 1
+                    continue
                 out.append(Temporal("datetime", t.start, u.end, u.day, t.tm, t.plus_day, u.year_given))
                 i += 2
                 continue
@@ -590,9 +720,10 @@ def _merge(folded: str, toks: list[Temporal]) -> list[Temporal]:
 
 def _list_item_after_window(folded: str, out: list[Temporal], toks: list[Temporal], i: int, gap: str) -> bool:
     """„12.11.2026 od 8:00 do 14:00, 13.11.2026 od 9:00 do 15:00“: čas ``toks[i]`` uzatvára okno a dátum za
-    čiarkou (bodkočiarkou, bodkou – „… do 14:00 h. Dňa 13.11.2026 od 9:00 …“) má vlastný čas – je to ďalší deň
+    čiarkou (bodkočiarkou, bodkou, novým riadkom – „… do 14:00 h. Dňa 13.11.2026 od 9:00 …“, „… do 14:00\\n13.11.2026
+    od 9:00“) má vlastný čas, aj za slovami vety („…, dňa 13.11.2026 bude od 9:00 do 15:00“) – je to ďalší deň
     zoznamu, nie koniec obdobia „do 14:00 13.11.2026“."""
-    if not (re.search(r"[,;.]", gap) or folded[toks[i].start:toks[i].end].endswith(".")):
+    if not (re.search(r"[,;.\n]", gap) or folded[toks[i].start:toks[i].end].endswith(".")):
         return False
     prev = out[-1] if out else None
     nxt = toks[i + 2] if i + 2 < len(toks) else None
@@ -605,10 +736,16 @@ def _list_item_after_window(folded: str, out: list[Temporal], toks: list[Tempora
     # „… denne 10:00 – 12:00, 26.11. – 27.11.2026 denne 08:00 – 14:00“ – dátum za čiarkou začína ďalšie obdobie
     if nxt is not None and nxt.kind == "date" and _TO_GAP.match(folded[toks[i + 1].end:nxt.start]):
         return True
+    # „… 16:00 hod., 25.11. a 26.11.2026 od 06:00 …“ – dátum za čiarkou začína zoznam dní s vlastným oknom
+    j = i + 2
+    while j < len(toks) and toks[j].kind == "date" and _LIST_GAP.match(folded[toks[j - 1].end:toks[j].start]):
+        j += 1
+    if j > i + 2 and j < len(toks) and toks[j].kind == "time" and \
+            _own_window_gap(folded, toks, j, folded[toks[j - 1].end:toks[j].start]):
+        return True
     if nxt is None or nxt.kind != "time":
         return False
-    after = folded[toks[i + 1].end:nxt.start]
-    return len(after) <= 16 and bool(_AT_GAP.match(after))
+    return _own_window_gap(folded, toks, i + 2, folded[toks[i + 1].end:nxt.start])
 
 
 def _hhmm(t: time) -> str:
@@ -667,9 +804,59 @@ def _listed_dates(folded: str, toks: list[Temporal], i: int, used: set[int], ste
         if not (_LIST_GAP.match(gap) or (left.night and right.night and _NIGHT_LIST_NA.match(gap))) or \
                 not_term_date(folded, toks[j]):
             break
+        # deň okna pred ním („od 08:00 do 12:00 hod. dňa 24.11.2026, 25.11. a 26.11.2026 od 06:00 …“) do zoznamu
+        # ďalšieho okna nepatrí
+        if step < 0 and j >= 2 and toks[j - 1].kind == "time" and toks[j - 2].kind == "time" and \
+                _TO_GAP.match(folded[toks[j - 2].end:toks[j - 1].start]) and \
+                _TIME_DATE_GAP.match(folded[toks[j - 1].end:toks[j].start]) and \
+                not re.search(r"[,;\n]", folded[toks[j - 1].end:toks[j].start]):
+            break
         out.append(j)
         j += step
     return out
+
+
+def _heads_next(folded: str, windows: list[tuple[Temporal, Temporal]], k: int, t: Temporal) -> bool:
+    """Dátum ``t`` za oknom ``windows[k]`` začína ďalšiu položku zoznamu: od okna ho delí oddeľovač („…, dňa 25.11.“,
+    „ a dňa “, „; “, „potom“, nový riadok, koniec vety „hod. Dňa“) a za ním stojí jeho vlastné okno bez ďalšieho
+    oddeľovača („ bude od “, „ od “, „: “, „ (2. etapa) od “) – „dňa 24.11. bude od 10:00 do 16:00 a dňa 25.11. bude od
+    06:00 do 12:00“."""
+    wb = windows[k][1]
+    sep_before = bool(_ITEM_SEP.search(folded, wb.end, t.start))
+    if not (sep_before or folded[wb.start:wb.end].endswith(".")):
+        return False
+    nxt = next((w for w in windows[k + 1:] if w[0].start >= t.end), None)
+    if nxt is None:
+        return False
+    gap = folded[t.end:nxt[0].start]
+    # bez zátvoriek („(2. etapa)“); koniec vety za dátumom („… 25.11.2026. 08:00 – 14:00 …“) je oddeľovač
+    plain = re.sub(r"\([^()]*\)", " ", gap)
+    sep_after = bool(_ITEM_SEP.search(plain) or re.search(r"\.\s", plain))
+    if sep_after and not sep_before:
+        return False        # oddeľovač je až za dátumom („… hod. dňa 25.11.2026, od 08:00 …“) – deň okna ``k``
+    return len(gap) <= 40 and bool(_AT_GAP.match(gap) or _HEAD_GAP.match(gap) or not sep_after)
+
+
+def _clause_date(folded: str, windows: list[tuple[Temporal, Temporal]], k: int, near: list[Temporal], tails: set[int],
+                 ws: int) -> Temporal:
+    """Deň okna ``windows[k]`` z dátumov ``near`` pri ňom – dátum vlastnej vety (položky zoznamu), inak najbližší.
+
+    Ak sú dátumy pred oknom aj za ním: dátum za oknom, ktorý začína ďalšiu položku s vlastným oknom
+    (:func:`_heads_next`), patrí jej, a dátum pred oknom, ktorý už dostalo predchádzajúce okno spoza seba („od 10:00 do
+    16:00 dňa 24.11., od 06:00 do 12:00 dňa 25.11.“ – ``tails``), patrí tomu. Bez tohto pravidla by vzdialenosť
+    rozhodla podľa počtu znakov („bude od“ je dlhšie ako „ a dňa “) a nový čas jedného dňa by dostal iný deň."""
+    wa, wb = windows[k]
+
+    def dist(t: Temporal) -> int:
+        return min(abs(wa.start - t.end), abs(t.start - wb.end), abs(ws - t.end))
+
+    before = [t for t in near if t.end <= wa.start]
+    after = [t for t in near if t.start >= wb.end]
+    if before and after:
+        keep = {id(t) for t in before if id(t) not in tails} | \
+            {id(t) for t in after if not _heads_next(folded, windows, k, t)}
+        near = [t for t in near if id(t) in keep] or near
+    return min(near, key=dist)
 
 
 def periods(folded: str, toks: list[Temporal]) -> list[Period]:
@@ -682,6 +869,8 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
     windows: list[tuple[Temporal, Temporal]] = []
     # [dni ako dátumové tokeny (deň, noc), koniec posledného okna] – ďalšie okno „a 13:00 – 16:00“ pre tie isté dni
     chains: list[list] = []
+    # dátumy, ktoré okno dostalo spoza seba („od 10:00 do 16:00 dňa 24.11.“) – deň predchádzajúceho okna, nie ďalšieho
+    tails: set[int] = set()
     i = 0
     while i < len(toks):
         a = toks[i]
@@ -858,10 +1047,12 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
         # ďalšie okno tých istých dní: „12.11.2026 v čase 8:00 – 12:00 a 13:00 – 16:00“ – len okno ZA reťazou
         # (okno pred ňou, napr. „Kontakt: 7:00 – 15:30“, k nej nepatrí) a v tom istom odseku
         chain = next((c for c in chains if wa.start > c[1] and "\n\n" not in folded[c[1]:wa.start]
-                      and _AND_GAP.match(folded[c[1]:wa.start])), None)
-        # okno s vlastným dňom hneď za ním („… a 13:00 – 16:00 dňa 11.12.2026“) k reťazi nepatrí
-        if chain is not None and any(t.kind == "date" and 0 <= t.start - wb.end <= 25 and _OWN_DAY_AFTER.match(
-                folded[wb.end:t.start]) for t in toks):
+                      and (_AND_GAP.match(folded[c[1]:wa.start]) or _OLD_AND_GAP.match(folded[c[1]:wa.start]))), None)
+        # okno s vlastným dňom hneď za ním („… a 13:00 – 16:00 dňa 11.12.2026“) k reťazi nepatrí; dátum ďalšej vety
+        # („… a od 13:00 do 16:00 hod., dňa 24.11.2026 sa výluka nekoná“) nie je jeho dňom
+        if chain is not None and any(t.kind == "date" and n not in used and 0 <= t.start - wb.end <= 25 and
+                                     _OWN_DAY_AFTER.match(folded[wb.end:t.start]) and not _own_clause_day(folded, wb, t)
+                                     for n, t in enumerate(toks)):
             chain = None
         if chain is not None:
             for d in chain[0]:
@@ -877,7 +1068,9 @@ def periods(folded: str, toks: list[Temporal]) -> list[Period]:
         # pôvodný deň presunu či dátum vydania („dňa 24.11.2026 (namiesto 23.11.2026) od 08:00 do 14:00“) okno
         # nedostane, ak je pri okne aj deň termínu
         near = [t for t in near if not not_term_date(folded, t)] or near
-        d = min(near, key=lambda t: min(abs(wa.start - t.end), abs(t.start - wb.end), abs(ws - t.end)))
+        d = _clause_date(folded, windows, k, near, tails, ws)
+        if d.start >= wb.end:
+            tails.add(id(d))
         out.append(_token_period(d, wa, wb, min(d.start, wa.start), max(d.end, wb.end)))
         # zoznam dní pri okne („8:00 – 14:00 v dňoch 12.11. a 13.11.2026“, „12.11., 13.11. v čase 8:00 – 14:00“)
         di = next(n for n, t in enumerate(toks) if t is d)
