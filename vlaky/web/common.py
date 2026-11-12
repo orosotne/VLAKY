@@ -139,6 +139,8 @@ AUDIT_ACTION = {
     "closure_update_conflict": "úprava výluky odmietnutá (výluku medzitým zmenil niekto iný)",
     "zmeny_zrusenej_vyluky_odstranene": "dočasné záznamy zmien zrušenej výluky odstránené",
     "udalost_potvrdena": "udalosť z e-mailu potvrdená", "udalost_zamietnuta": "udalosť z e-mailu zamietnutá",
+    "vyluka_drzitel_znova": "termín novšej správy znova zapísaný ako výluka",
+    "vyluka_obnovena_po_zamietnuti": "výluka obnovená po zamietnutí udalosti",
     "udalost_aplikovana": "udalosť z e-mailu zapísaná",
     "vyluka_navrh_na_potvrdenie": "výluka z e-mailu čaká na potvrdenie",
     "vyluka_navrh_zlyhal": "zápis výluky z e-mailu zlyhal", "vyluka_do_odvolania_predlzena": "výluka do odvolania predĺžená",

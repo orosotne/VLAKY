@@ -4,6 +4,10 @@ from __future__ import annotations
 from datetime import timedelta
 
 from test_web_spolocne import login_as, make_recommendation, make_train
+from datetime import datetime, timedelta, timezone  # noqa: E402,F811
+# udalosť jazdy spred hodiny (API staré udalosti odmieta – pevný dátum by časom zastaral)
+_TS = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(second=0, microsecond=0)
+
 
 pytest_plugins = ["test_web_spolocne"]
 
@@ -133,7 +137,7 @@ def test_udalosti_jazdy_a_prichod_na_hranicu(client):
         s.add(h)
         s.flush()
         handover_id = h.id
-    body = {"train_number": "44005", "station": "Cadca", "event": "prichod", "ts": "2026-10-31T10:15:00+01:00",
+    body = {"train_number": "44005", "station": "Cadca", "event": "prichod", "ts": _TS.isoformat(),
             "delay_min": 25}
     assert client.post("/api/udalosti-jazdy", json=body).status_code == 401
     unknown = client.post("/api/udalosti-jazdy", json={**body, "station": "Neexistujúca stanica XY"}, headers=TOKEN)
@@ -147,10 +151,10 @@ def test_udalosti_jazdy_a_prichod_na_hranicu(client):
         assert p.source == "zsr" and p.nearest_station == "Čadca" and p.speed_kmh is None
         h = s.get(Handover, handover_id)
         assert h.status == "prisiel"
-        assert h.arrived_utc.replace(tzinfo=None).isoformat() == "2026-10-31T09:15:00"
+        assert h.arrived_utc.replace(tzinfo=None).isoformat() == _TS.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
     # odchod z inej stanice nemení preberanie; zdroj TAF TSI
     r2 = client.post("/api/udalosti-jazdy", headers=TOKEN, json={"train_number": "44005", "station": "Žilina",
-                                                                 "event": "odchod", "ts": "2026-10-31T10:30:00Z",
+                                                                 "event": "odchod", "ts": (_TS + timedelta(minutes=15)).isoformat(),
                                                                  "source": "taf"})
     assert r2.status_code == 200 and r2.json()["handover_id"] is None
     bad = client.post("/api/udalosti-jazdy", headers=TOKEN, json={**body, "event": "stoji"})
