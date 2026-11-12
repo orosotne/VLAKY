@@ -295,15 +295,18 @@ def _notify_params(session, text: str, ps_id) -> None:
     oprave a novej chybnej sade príde znova): kto ho dostal, nedostane ho druhý raz; komu sa ho nepodarilo doručiť,
     tomu sa zopakuje s odstupom ako ostatné správy (retry_targets)."""
     from ..notifikacie.odosielanie import retry_targets, send_internal
+    from ..planovanie.planovac import _buffer_excess, current_params
 
     key = f"nastavenia:{ps_id or 0}"
     targets = retry_targets(session, key)  # None = zatiaľ nikomu, inak len tým, ktorým neprišlo (po odstupe)
     if targets is not None and not targets:
         return
+    many = len(_buffer_excess(current_params(session))) > 1  # obe rezervy nad limitom – množné číslo
     body = (f"Agent dispečer: {text[:1].upper()}{text[1:]}.\n\n"
-            f"Plánovač s uloženou hodnotou blokuje úseky výluk (vlaky drží pred výlukou či po nej zodpovedajúco dlhšie) "
-            f"a vlaky, ktorých plán zasahujú vzdialenejšie okná výluk, nedostanú ZELENÚ. Vedúci dispečer: opravte "
-            f"rezervu v Nastaveniach a uložte novú sadu parametrov.\n"
+            f"Plánovač s {'uloženými hodnotami' if many else 'uloženou hodnotou'} blokuje úseky výluk (vlaky drží pred "
+            f"výlukou či po nej zodpovedajúco dlhšie) a vlaky, ktorých plán zasahujú vzdialenejšie okná výluk, "
+            f"nedostanú ZELENÚ. Vedúci dispečer: opravte {'rezervy' if many else 'rezervu'} v Nastaveniach a uložte "
+            f"novú sadu parametrov.\n"
             f"Nastavenia: {settings().public_url.rstrip('/')}/nastavenia")
     send_internal(session, "upozornenie", "[AGENT][DÔLEŽITÉ] Nastavenia rozhodovania: rezerva nad limitom 24 h", body,
                   "DÔLEŽITÉ", dedup_key=key, channels=["email"], only=targets)

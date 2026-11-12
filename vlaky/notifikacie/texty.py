@@ -69,6 +69,25 @@ def number(value) -> str:
     return text.replace(",", " ").replace(".", ",")
 
 
+def exact_number(value) -> str:
+    """Číslo po slovensky bez zaokrúhlenia (tisíce medzerou, desatinná čiarka, všetky desatinné miesta uloženej hodnoty
+    bez koncových núl – najkratší presný zápis): „1 440,4“, „1 440,0000004“, „4 200“ – napr. uložená hodnota nad
+    limitom, ktorá sa nesmie zaokrúhliť na limit („1 440 min … je nad limitom 1 440 min“)."""
+    from decimal import Decimal
+
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value if value is not None else "")
+    if v != v or v in (float("inf"), float("-inf")):
+        return str(v)
+    whole, _, frac = format(Decimal(repr(v)), "f").partition(".")
+    sign = "-" if whole.startswith("-") else ""
+    grouped = f"{int(whole.lstrip('-')):,}".replace(",", " ")
+    frac = frac.rstrip("0")
+    return f"{sign}{grouped}" + (f",{frac}" if frac else "")
+
+
 def _duty_h(crew: dict) -> str:
     try:
         return hours(float(crew.get("max_duty_h") or 13))
@@ -135,11 +154,31 @@ def departure_line(rec: Recommendation) -> str:
 
 
 def variant_departure_unknown(v: dict) -> bool:
-    """Termín varianty nie je známy (``do_odvolania`` – čakala by na koniec výluky do odvolania alebo by vošla do ďalšieho
-    okna výluky za koncom prehľadávaného obdobia): ani čas odchodu nie je skutočný – vlak by z neho len čakal pred
-    výlukou (napr. odchod 26.11. 04:00 vnútri výluky do odvolania na prvom úseku trasy). Texty ho neuvedú, rovnako
-    ako príchod a náklad."""
-    return bool(v.get("do_odvolania"))
+    """Termín varianty nie je známy (``do_odvolania`` a bez predpokladaného príchodu – čakala by na koniec výluky do
+    odvolania alebo by vošla do ďalšieho okna výluky za koncom prehľadávaného obdobia): ani čas odchodu nie je skutočný –
+    vlak by z neho len čakal pred výlukou (napr. odchod 26.11. 04:00 vnútri výluky do odvolania na prvom úseku trasy).
+    Texty ho neuvedú, rovnako ako príchod a náklad. Ak nie je známy len príchod pri zdržaní (``p90_do_odvolania``; aj
+    staršie odporúčanie s ``do_odvolania`` a známym príchodom P50), odchod je skutočný a uvádza sa."""
+    return bool(v.get("do_odvolania")) and not v.get("arrival_p50")
+
+
+def p90_unknown(item: dict) -> str:
+    """Príchod pri zdržaní (P90) nie je známy, hoci predpokladaný príchod áno (``p90_do_odvolania`` – jazda so zdržaním
+    by vošla do úseku výluky do odvolania po jej začiatku alebo do okna výluky za koncom prehľadávaného obdobia; aj
+    staršie odporúčanie s ``do_odvolania`` a príchodom P50): text dôvodu („výluka … platí od … do odvolania“), inak „“."""
+    if item.get("p90_do_odvolania"):
+        return str(item["p90_do_odvolania"])
+    if item.get("do_odvolania") and item.get("arrival_p50") and not item.get("arrival_p90"):
+        return str(item["do_odvolania"])
+    return ""
+
+
+def arrival_p90_text(item: dict) -> str:
+    """„90 % do 25.11. 10:30“, pri neznámom príchode pri zdržaní „90 % jázd: príchod nie je známy – …“ (p90_unknown)."""
+    why = p90_unknown(item)
+    if why:
+        return f"90 % jázd: príchod nie je známy – {why}"
+    return f"90 % do {_t(item.get('arrival_p90'))}"
 
 
 def variant_columns(rec: Recommendation, v: dict) -> tuple:
@@ -217,8 +256,9 @@ def _capped_status(status: str, cap: Optional[str]) -> str:
 def _cost_unknown(item: dict) -> bool:
     """Očakávaný náklad varianty nie je známy: príchod nie je známy (``do_odvolania`` – príchod by bol až po vymyslenom
     konci výluky do odvolania či po nadväzujúcich oknách výluk; náklad je z neho vypočítaný, aj v staršom uloženom
-    odporúčaní), alebo ho plánovač vymazal."""
-    return bool(item.get("do_odvolania")) or ("expected_cost" in item and item.get("expected_cost") is None)
+    odporúčaní), nie je známy príchod pri zdržaní (``p90_do_odvolania``), alebo ho plánovač vymazal."""
+    return bool(item.get("do_odvolania")) or bool(item.get("p90_do_odvolania")) or \
+        ("expected_cost" in item and item.get("expected_cost") is None)
 
 
 def _cost(item: dict) -> str:
@@ -242,8 +282,9 @@ def recommendation_body(rec: Recommendation) -> str:
     elif ch:
         # vlak čaká, kým ŽSR výluku do odvolania neodvolá, alebo kým sa po nadväzujúcich oknách výluk neuvoľní úsek
         # (plánovač, ``chosen["do_odvolania"]``): príchod nie je známy – ani očakávaný náklad (_cost)
-        arrival = (f"Príchod: nie je známy – {ch['do_odvolania']}" if ch.get("do_odvolania") else
-                   f"Príchod: {_t(ch.get('arrival_p50'))} (90 % do {_t(ch.get('arrival_p90'))})")
+        # nie je známy len príchod pri zdržaní (p90_do_odvolania): predpokladaný príchod áno
+        arrival = (f"Príchod: nie je známy – {ch['do_odvolania']}" if variant_departure_unknown(ch) else
+                   f"Príchod: {_t(ch.get('arrival_p50'))} ({arrival_p90_text(ch)})")
         lines += [
             f"Odporúčanie: {rec.decision} – semafor {rec.color}",
             f"Trasa: {ch.get('route', '')}",
@@ -289,9 +330,15 @@ def recommendation_body(rec: Recommendation) -> str:
                       f"{_duty_h(crew)} h do {_t(crew.get('limit'))}; koniec služby po ukončení jazdy "
                       f"– {crew.get('status', '')}"]
     elif crew:
+        # koniec služby pri neznámom termíne jazdy nie je známy (ani pri zdržaní, keď nie je známy príchod P90)
+        if not crew.get("end_p50"):
+            end = "koniec nie je známy"
+        elif not crew.get("end_p90"):
+            end = f"koniec {_t(crew.get('end_p50'))} (90 % jázd: nie je známy)"
+        else:
+            end = f"koniec {_t(crew.get('end_p50'))} (90 % do {_t(crew.get('end_p90'))})"
         lines += ["", f"Rušňovodič: {crew.get('driver') or '—'}; nástup {_t(crew.get('start'))}, limit "
-                      f"{_duty_h(crew)} h do {_t(crew.get('limit'))}; koniec {_t(crew.get('end_p50'))} "
-                      f"(90 % do {_t(crew.get('end_p90'))}) – {crew.get('status', '')}"]
+                      f"{_duty_h(crew)} h do {_t(crew.get('limit'))}; {end} – {crew.get('status', '')}"]
         if crew.get("status") in ("ORANŽOVÁ", "ČERVENÁ") and crew.get("relieve_by"):
             late = relief_overdue(crew)
             lines.append(f"  → Vystriedať ihneď ({late})." if late else
@@ -377,7 +424,23 @@ def order_proposal_text(order, plan: dict) -> tuple:
                 continue
             hold = " – čakať pred výlukou" if st.get("hold") else ""
             lines.append(f"  {st['name']:<34} prích. {_t(st.get('arr')):>13}  odch. {_t(st.get('dep')):>13}{hold}")
-    if plan.get("date_unknown") or not pp.get("stations"):
+    if plan.get("p90_unknown") and not plan.get("date_unknown") and plan.get("decision") == "ESKALOVAŤ":
+        # žiadna bezpečná varianta: jazda so zdržaním by vošla do okna výluky za koncom obdobia (príchod pri zdržaní
+        # nie je známy) – nie „potvrdí termín“
+        step = ("Ďalší krok: dispečer dohodne so ŽSR, či vlak úsek prejde včas, inak so zákazníkom iný termín alebo so "
+                "ŽSR iný čas či trasu – najneskorší príchod zatiaľ nie je známy. Agent návrh trasy nepripravil a nič "
+                "neodosiela navonok.")
+    elif plan.get("p90_unknown") and not plan.get("date_unknown"):
+        # predpokladaný príchod je známy, príchod pri zdržaní nie (výluka do odvolania, do ktorej by vošla jazda so
+        # zdržaním) – nie „potvrdí termín“ ani „termín zatiaľ nie je známy“
+        step = ("Ďalší krok: dispečer dohodne so ŽSR, či vlak úsek prejde včas (inak inú trasu alebo čas), a zákazníkovi "
+                "uvedie len predpokladaný príchod – najneskorší príchod zatiaľ nie je známy. Agent návrh trasy "
+                "nepripravil a nič neodosiela navonok.")
+    elif plan.get("proposal_note") and not plan.get("date_unknown") and plan.get("decision") != "ESKALOVAŤ":
+        # termín je známy, návrh trasy agent nepripravil (nemôže sledovať simuláciu – dôvod vo vysvetlení)
+        step = ("Ďalší krok: dispečer dohodne so ŽSR trasu podľa odchodu a predpokladaného príchodu vyššie (agent návrh "
+                "trasy nepripravil – dôvod vyššie) a potvrdí termín zákazníkovi. Agent nič neodosiela navonok.")
+    elif plan.get("date_unknown") or not pp.get("stations"):
         # termín prepravy nie je známy (výluka do odvolania, nadväzujúce okná výluk) alebo agent návrh trasy nepripravil
         # – nie „potvrdí termín a objedná trasu“
         step = ("Ďalší krok: dispečer dohodne so zákazníkom, že termín zatiaľ nie je známy, a so ŽSR inú trasu alebo "

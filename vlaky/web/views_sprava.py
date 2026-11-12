@@ -43,8 +43,13 @@ def _buffer_warning(key: str, value) -> str:
         return ""
     if key not in BUFFER_PARAMS or v <= BUFFER_MAX_MIN:
         return ""
+    from ..notifikacie.texty import exact_number
+
     label = PARAM_META.get(key, (key,))[0]
-    return (f"{label}: uložená hodnota {fmt_num(v)} min ({fmt_num(v / 60, 1)} h) je nad limitom {fmt_num(BUFFER_MAX_MIN)} "
+    # uložená hodnota presne (nie zaokrúhlená na limit – „1 440 min … je nad limitom 1 440 min“), hodiny s toľkými
+    # desatinnými miestami, aby neboli rovné limitu 24 h
+    digits = next((d for d in range(1, 16) if round(v / 60, d) > BUFFER_MAX_MIN / 60), 15)
+    return (f"{label}: uložená hodnota {exact_number(v)} min ({fmt_num(v / 60, digits)} h) je nad limitom {fmt_num(BUFFER_MAX_MIN)} "
             f"min (24 h) – zrejme preklep zo staršej verzie formulára (napr. hodiny namiesto minút). Plánovač s ňou "
             f"zatiaľ počíta: vlak drží pred úsekom výluky zodpovedajúco dlhšie, okná výluk ďalej ako 24 h počíta "
             f"súhrnne (prísnejšie) a vlaky, ktorých plán také okno zasahuje, nedostanú ZELENÚ. Opravte hodnotu a uložte "

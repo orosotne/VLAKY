@@ -690,6 +690,7 @@ Podrobný návod: [deploy/monitoring/README.md](../deploy/monitoring/README.md).
 | Schránka | `python -m vlaky health` (detail `schranka`) a `/zdravie`: čas poslednej úplnej kontroly („pred N min“). Nahromadená pošta sa dočítava po dávkach 50 e-mailov (ďalšia dávka o 5 s); „dočítava sa (…), posledná úplná kontrola pred N min“ je v poriadku, kým od poslednej úplnej kontroly neuplynulo 30 min, potom je to chyba zdravia aj cyklu „schránka: dočítava sa … (viac ako 30 min!)“ | `/fail` alebo kontajner agenta „unhealthy“ |
 | Nastavenie odosielania | detail `konfiguracia`: kanál s príjemcami bez servera správ, chýbajúci e-mail dispečerov `VLAKY_NOTIFY_EMAILS` (v tieňovej prevádzke prázdny `VLAKY_SHADOW_EMAILS`) – mimo vývoja, testov a ukážky (`VLAKY_ENV`) chyba zdravia aj cyklu „nastavenie odosielania: …“; neznáme premenné `VLAKY_*` a v tieňovej prevádzke chýbajúci `VLAKY_NOTIFY_EMAILS` sú len upozornenie; agent ho vypíše aj pri štarte | `/fail` |
 | Chybné odporúčanie | odporúčanie, ktorého správu sa nedá pripraviť (chyba programu alebo neočakávané údaje), hlási každý cyklus ako „odporúčanie #N: …“ (heartbeat `/fail`, detail so stopou v `/zdravie`, komponent „Plánovanie (prepočet vlakov)“); ostatné odporúčania sa doručujú normálne | `/fail` |
+| Nastavenia rozhodovania | rezerva pred výlukou alebo po nej v platnej sade parametrov je nad limitom 1 440 min (24 h) – uložila ju staršia verzia formulára (napr. 4 200 namiesto 42, hodiny namiesto minút): agent v každom cykle hlási chybu „nastavenia rozhodovania: rezerva … je nad limitom 1 440 min (24 h) …“ (heartbeat `/fail`), `python -m vlaky health` vráti chybu s detailom `nastavenia` (kontajner agenta je „unhealthy“, `update.sh` a `check.sh` to ohlásia), `/zdravie` ju ukáže ako problém (komponent „Nastavenia rozhodovania“) a dispečeri dostanú k platnej sade jedno upozornenie DÔLEŽITÉ. Plánovač s uloženou hodnotou počíta prísnejšie (vzdialenejšie okná výluk súhrnne, vlak, ktorého plán zasahujú, nedostane ZELENÚ). Postup v kapitole 13 („Chyba nastavenia rozhodovania“) | `/fail` alebo kontajner agenta „unhealthy“ |
 
 Externý monitoring musí bežať **mimo tohto servera** a upozorňovať aspoň dvoch ľudí.
 
@@ -765,6 +766,23 @@ Postup:
    po prvej úspešnej správe tomu istému príjemcovi) – aj hlásenia rušňovodičov o probléme, pripomienky výluk do
    odvolania a upozornenia na čakajúce udalosti z e-mailov (kapitola 6.5). Odosielanie over:
    `docker compose exec agent python -m vlaky test-notify` (kód 0 = odišlo; over, že správa prišla).
+
+### Chyba nastavenia rozhodovania (zdravie: `nastavenia`)
+
+Príznaky: heartbeat `/fail` a chyba cyklu „nastavenia rozhodovania: rezerva pred výlukou … (alebo po výluke …) v platnej
+sade parametrov #N je nad limitom 1 440 min (24 h) …“, `python -m vlaky health` s detailom `nastavenia` (kontajner
+agenta „unhealthy“), na `/zdravie` komponent „Nastavenia rozhodovania“ a u dispečerov jedno upozornenie DÔLEŽITÉ
+„Nastavenia rozhodovania: rezerva nad limitom 24 h“. Agent beží a odporúča – nejde o výpadok.
+
+1. **Dispečing:** pracuje normálne; odporúčania sú prísnejšie (vlak drží pred úsekom výluky podľa uloženej rezervy,
+   vlaky, ktorých plán zasahujú vzdialenejšie okná výluk, nie sú ZELENÉ) a každé uvádza dôvod „Rezerva … je nad
+   limitom 1 440 min (24 h) …“.
+2. **Vedúci dispečer:** Nastavenia → rezerva pred výlukou / po výluke (stránka ukáže uloženú hodnotu presne
+   a upozornenie „uložená hodnota … je nad limitom …“) → zadať správnu hodnotu v minútach (najviac 1 440) a uložiť
+   novú sadu parametrov (kým je hodnota nad limitom, formulár neuloží ani inú zmenu).
+3. Chyba zmizne v ďalšom cykle agenta (do 5 min; heartbeat znova bez `/fail`, kontajner „healthy“) a vlaky sa
+   prepočítajú s opravenou rezervou. Ak by sa objavila znova, skontroluj v Nastaveniach → História sád parametrov,
+   či nie je naplánovaná ďalšia sada so starou hodnotou.
 
 ### Neobvyklé záznamy auditu pošty
 

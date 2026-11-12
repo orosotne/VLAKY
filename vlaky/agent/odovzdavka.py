@@ -152,10 +152,13 @@ def closure_line(c: Closure) -> str:
 
     kind = _track_part(c.track) if c.kind == "kolaj" else \
         (CLOSURE_KIND.get(c.kind) or f"{c.kind} (neznámy druh – počíta sa ako úplná výluka)")
-    if c.kind == "pomala_jazda" and c.speed_kmh:
-        kind += f" (max {number(c.speed_kmh)} km/h)"
-    elif c.electric_only and c.kind != "trakcne_vedenie":
-        kind += " (len elektrická trakcia)"  # ako stĺpec Dopad v registri výluk
+    # dopad ako stĺpec Dopad v registri výluk: rýchlosť pomalej jazdy a „len elektrická trakcia“ (aj spolu – pomalá
+    # jazda len pre elektrickú trakciu sa motorového vlaku netýka)
+    impact = [f"max {number(c.speed_kmh)} km/h"] if c.kind == "pomala_jazda" and c.speed_kmh else []
+    if c.electric_only and c.kind != "trakcne_vedenie":
+        impact.append("len elektrická trakcia")
+    if impact:
+        kind += f" ({', '.join(impact)})"
     parts = [kind]
     if c.daily_from or c.daily_to:
         parts.append(f"denne {c.daily_from or '?'} – {c.daily_to or '?'}")

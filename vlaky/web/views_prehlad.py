@@ -704,10 +704,18 @@ def _next_steps(rec: Recommendation, color: Optional[str] = None) -> list:
         # idúci vlak pred zatvoreným cieľom: čaká pred vjazdom, kým sa neuvoľní (bez času odchodu)
         steps.append("Počkať pred vjazdom do cieľa, kým sa neuvoľní vjazd; rušňovodiča vystriedať podľa limitu 13 h.")
     if rec.decision in ("POČKAŤ", "ODSTAVIŤ", "PRESMEROVAŤ", "ESKALOVAŤ"):
-        # bez predpokladaného príchodu (napr. vlak čaká, kým ŽSR výluku do odvolania neodvolá) termín nie je známy
-        known = chosen.get("arrival_p50") and not chosen.get("do_odvolania")
-        steps.append("Informovať zákazníka o novom predpokladanom príchode." if known else
-                     "Informovať zákazníka, že nový termín zatiaľ nie je známy.")
+        # bez predpokladaného príchodu (napr. vlak čaká, kým ŽSR výluku do odvolania neodvolá) termín nie je známy;
+        # pri zdržaní (jazda so zdržaním by vošla do úseku výluky do odvolania po jej začiatku či do okna výluky za
+        # koncom prehľadávaného obdobia) nie je známy najneskorší príchod
+        from ..notifikacie.texty import p90_unknown, variant_departure_unknown
+
+        known = chosen.get("arrival_p50") and not variant_departure_unknown(chosen)
+        if known and p90_unknown(chosen):
+            steps.append("Informovať zákazníka o novom predpokladanom príchode – najneskorší príchod zatiaľ nie je "
+                         "známy.")
+        else:
+            steps.append("Informovať zákazníka o novom predpokladanom príchode." if known else
+                         "Informovať zákazníka, že nový termín zatiaľ nie je známy.")
     running = rec.train is not None and rec.train.status == "v_jazde"
     if rec.decision == "POKRAČOVAŤ":
         # idúci vlak sa nevypravuje – pri vlaku v cieli (aj len podľa plánu) treba ukončiť jazdu, resp. overiť polohu

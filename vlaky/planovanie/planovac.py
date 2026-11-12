@@ -24,7 +24,7 @@ from dataclasses import dataclass, fields, replace
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import case, select, text as sql_text
+from sqlalchemy import and_, case, func, or_, select, text as sql_text
 from sqlalchemy.orm import Session
 
 from ..audit import audit
@@ -146,13 +146,62 @@ ORPHAN_NOTE = ("zrušenie z e-mailu nemá v registri čo zrušiť – môže ís
                "dispečer nevybaví, počíta sa s výlukou v úseku a čase zrušenia")
 
 
-def _closure_rows(session: Session, start: datetime, end: datetime):
+def _closure_rows(session: Session, start: datetime, end: datetime, history_before: Optional[datetime] = None):
     """Výluky registra (aj nepotvrdené), ktoré môžu mať okno v [start, end]. Výluka do odvolania platí aj po technickom
     konci (ten sa len posúva – posta.spracovanie._extend_open_ended): vlak naplánovaný ďalej ako o 30 dní by ju inak
-    „nevidel“ (falošná ZELENÁ)."""
-    return session.scalars(select(Closure).where(Closure.status.in_(("navrh", "overene")),
-                                                 (Closure.end_utc >= start) | Closure.until_revoked.is_(True),
-                                                 Closure.start_utc <= end))
+    „nevidel“ (falošná ZELENÁ). ``history_before`` – bez histórie, ktorú súhrnne vracia _history_windows (_history)."""
+    query = select(Closure).where(Closure.status.in_(("navrh", "overene")),
+                                  (Closure.end_utc >= start) | Closure.until_revoked.is_(True),
+                                  Closure.start_utc <= end)
+    if history_before is not None:
+        query = query.where(~_history(history_before))
+    return session.scalars(query)
+
+
+# druhy výluk, ktorých staré záznamy sa pri uloženej rezerve nad limitom počítajú súhrnne (_history_windows): bez výluky
+# koľaje (prekrytia výluk oboch koľají sa počítajú z presných okien) a bez neznámeho druhu (poznámka pre dispečera)
+HISTORY_KINDS = ("uplna", "mimoriadnost", "trakcne_vedenie", "pomala_jazda", "obmedzenie")
+
+
+def _history(before: datetime):
+    """Podmienka pre staré záznamy registra, ktoré sa počítajú súhrnne (_history_windows): výluka bez denného okna,
+    ktorá skončila pred ``before`` (nie do odvolania, nie poistka zrušenia bez cieľa, známy druh okrem výluky koľaje)."""
+    return and_(Closure.end_utc < before, or_(Closure.until_revoked.is_(None), Closure.until_revoked.is_(False)),
+                func.coalesce(Closure.daily_from, "") == "", func.coalesce(Closure.daily_to, "") == "",
+                func.coalesce(Closure.kind, "").in_(HISTORY_KINDS), func.coalesce(Closure.source, "") != ORPHAN_SOURCE)
+
+
+def _history_windows(session: Session, start: datetime, before: datetime) -> list:
+    """Staré výluky (skončili od ``start`` do ``before`` – pred rozsahom, v ktorom sa okná rozbaľujú po jednom; uložená
+    rezerva po výluke nad limitom formulára, _plan_windows) súhrnne: jedno okno za úsek, druh, stav a trakciu (Window.coarse
+    – od začiatku prvej po koniec poslednej, ref poslednej). Načítajú sa jedným súhrnným dotazom, nie záznam po zázname –
+    pri rezerve 1 000 000 min by inak každý prepočet vlaku prechádzal roky histórie registra.
+
+    Pre blokovanie je súhrnné okno rovnaké ako všetky jeho výluky: každá skončila najskôr pri min(teraz, pripravenosť)
+    − rezerva po výluke − 30 min (_lookback), takže s rezervou po výluke blokuje aspoň po min(teraz, pripravenosť) − 30
+    min, a každá začala pred ``before`` – rezervy všetkých sa navzájom prekrývajú. Plán, ktorý také okno ovplyvní,
+    nedostane ZELENÚ (_coarse_hits); neoverená výluka z e-mailu medzi nimi ostane poistkou (stav a udalosť)."""
+    ev = case((Closure.source_event_id.is_(None), 0), else_=1)
+    keys = (Closure.from_station, Closure.to_station, Closure.line_ref, Closure.kind, Closure.electric_only,
+            Closure.status, ev)
+    rows = session.execute(select(*keys, func.min(Closure.start_utc), func.max(Closure.end_utc), func.count(),
+                                  func.max(Closure.id), func.max(Closure.source_event_id))
+                           .where(Closure.status.in_(("navrh", "overene")), Closure.end_utc >= start,
+                                  Closure.start_utc <= before, _history(before))
+                           .group_by(*keys))
+    out = []
+    for a, b, _ref, kind, electric, status, has_event, s_, e_, n, last_id, event_id in rows:
+        if n == 1:
+            note = (f"výluka tohto úseku, ktorá skončila pred {fmt(before)}, sa pre rezervu po výluke nad limitom 1 440 min "
+                    f"(24 h) počíta bez rozpisu (s uloženou rezervou blokuje rovnako) – opravte rezervu v Nastaveniach")
+        else:
+            many = f"{n} výluky" if n < 5 else f"{n} výluk"
+            note = (f"{many} tohto úseku, ktoré skončili pred {fmt(before)}, sa pre rezervu po výluke nad limitom 1 440 "
+                    f"min (24 h) počítajú súhrnne – od začiatku prvej po koniec poslednej (s uloženou rezervou blokujú "
+                    f"rovnako) – opravte rezervu v Nastaveniach")
+        out.append(Window(last_id, kind, ensure_utc(s_), ensure_utc(e_), bool(electric) or kind == "trakcne_vedenie",
+                          None, a, b, status, note, source_event_id=event_id if has_event else None, coarse=True))
+    return out
 
 
 COARSE_NOTE = ("okná výluky mimo najbližších dní sa pre rezervu pred výlukou alebo po nej nad limitom 1 440 min (24 h) "
@@ -266,11 +315,72 @@ def _closure_term_windows(c: Closure, start: datetime, end: datetime,
 def closure_windows(session: Session, start: datetime, end: datetime, exact: Optional[tuple] = None) -> list:
     """Konkrétne časové okná výluk v intervale (rozbalí denné opakovanie v miestnom čase) – _closure_term_windows,
     a k nim úplné výluky z výluk oboch koľají (_both_tracks_windows). ``exact`` = (od, do) – denné okná mimo tohto
-    rozsahu súhrnne (Window.coarse; uložená rezerva nad limitom formulára – _plan_windows)."""
+    rozsahu súhrnne (Window.coarse; uložená rezerva nad limitom formulára – _plan_windows); prekrytia výluk oboch koľají
+    sa aj tam počítajú len z presných denných okien (_coarse_both_tracks), nikdy zo súhrnných okien."""
+    # staré výluky pred rozsahom rozbaľovania (uložená rezerva po výluke nad limitom) súhrnne – nie záznam po zázname
+    history = max(start, exact[0]) if exact is not None and exact[0] > start else None
+    rows = list(_closure_rows(session, start, end, history_before=history))
     out = []
-    for c in _closure_rows(session, start, end):
+    for c in rows:
         out += _closure_term_windows(c, start, end, exact=exact)
-    return out + _both_tracks_windows(out, _closure_line_refs(session, [w for w in out if w.kind == "kolaj"]))
+    if history is not None:
+        out += _history_windows(session, start, history)
+    refs = _closure_line_refs(session, [w for w in out if w.kind == "kolaj"])
+    derived = _both_tracks_windows(out, refs)
+    if exact is not None and any(w.coarse and w.kind == "kolaj" for w in out):
+        derived += _coarse_both_tracks(rows, out, start, end, exact, refs)
+    return out + derived
+
+
+def _coarse_both_tracks(rows: list, windows: list, start: datetime, end: datetime, exact: tuple,
+                        refs: dict) -> list:
+    """Úplné výluky z výluk oboch koľají mimo rozsahu, v ktorom sa denné okná rozbaľujú po jednom (``exact`` – uložená
+    rezerva nad limitom formulára, _plan_windows). Súhrnné okná výluk koľají (Window.coarse – od prvého po posledné
+    okno) sa nekombinujú (_both_tracks_windows): koľaj 1 denne 08 – 12 a koľaj 2 denne 14 – 18 sa nikdy neprekrývajú,
+    ich súhrnné okná áno – vznikla by úplná výluka, ktorá neexistuje (a s ňou zbytočné čakanie či obchádzka). Preto sa
+    denné okná výluk koľají, ktoré majú súhrnné okno, na tento účel rozbalia po jednom (len výpočet, nie okná pre
+    simuláciu) a prekrytia sa hľadajú medzi presnými oknami – tými, ktoré ležia mimo rozsahu rozbaľovania, a ostatnými
+    oknami výluk koľají. Prekrytia na každej strane sa zlúčia do jedného súhrnného okna (Window.coarse – rezervy
+    susedných denných prekrytí sa pri rezerve nad limitom prekrývajú, pre blokovanie je rovnaké; vlak, ktorého plán
+    zasahuje, nedostane ZELENÚ – _coarse_hits)."""
+    x0, x1 = max(start, exact[0]), min(end, exact[1])
+    coarse_ids = {w.closure_id for w in windows if w.kind == "kolaj" and w.coarse}
+    kolaj = [c for c in rows if (c.kind if c.kind in KNOWN_KINDS else "uplna") == "kolaj"]
+    out: list = []
+    for lo, hi, before in ((start, x0, True), (x1, end, False)):
+        if hi <= lo:
+            continue
+        exact_wins, sub = [], set()
+        for c in kolaj:
+            for w in _closure_term_windows(c, lo, hi):
+                if w.kind != "kolaj":
+                    continue
+                exact_wins.append(w)
+                # presné okno časti, ktorú plán vidí len súhrnne (pred začiatkom alebo po konci rozsahu rozbaľovania)
+                if c.id in coarse_ids and ((before and w.end < x0) or (not before and w.start > x1)):
+                    sub.add(id(w))
+        if not sub:
+            continue
+        derived = _both_tracks_windows(exact_wins, refs, pair_ok=lambda x, y: id(x) in sub or id(y) in sub)
+        groups: dict = {}
+        for w in derived:
+            key = (_sources(w), w.edges, w.open_end, w.status, w.from_station, w.to_station)
+            groups.setdefault(key, []).append(w)
+        for ws in groups.values():
+            first = min(ws, key=lambda w: w.start)
+            s_, e_ = first.start, max(w.end for w in ws)
+            if len(ws) == 1:
+                out.append(first)
+                continue
+            old_when = f"od {fmt(first.start)} do odvolania" if first.open_end else \
+                f"v čase {fmt(first.start)} – {fmt(first.end)}"
+            when = f"od {fmt(s_)} do odvolania" if first.open_end else \
+                "v čase {} – {} (denne)".format(*_fmt_span(s_, e_))
+            note = first.note[len(old_when):] if first.note.startswith(old_when) else f" – {first.note}"
+            if COARSE_NOTE not in note:
+                note += f"; {COARSE_NOTE}"
+            out.append(replace(first, start=s_, end=e_, coarse=True, note=f"{when}{note}"))
+    return out
 
 
 DETAIL_BEFORE_READY = timedelta(hours=48)  # všetky okná výluk od pripravenosti − pohľad späť − toľko (_plan_windows)
@@ -315,16 +425,30 @@ def _coarse_hits(affecting, earliest: datetime, latest: datetime, p: Params) -> 
     """Súhrnné okná výluk (Window.coarse) na trase (``affecting`` z build_segments), ktoré môžu ovplyvniť jazdu medzi
     najskorším odchodom ``earliest`` a najneskorším možným koncom jazdy ``latest``: aj s rezervou po výluke skončia až
     po ňom (_can_affect) a s rezervou pred výlukou začnú najneskôr ``latest``. Vlak, ktorého správne posúdenie
-    potrebuje okná ďalej ako 24 h, nesmie byť ZELENÝ – súhrnné okno je len horná hranica okien výluky."""
+    potrebuje okná ďalej ako 24 h, nesmie byť ZELENÝ – súhrnné okno je len horná hranica okien výluky. Pomalá jazda,
+    výluka koľaje a obmedzenie sa počítajú bez rezerv (simulácia ich bez rezerv uplatní len počas jazdy): súhrnné okno
+    takej výluky, ktoré skončilo pred najskorším odchodom, plán neovplyvní (prekrytia výluk oboch koľají sú presné –
+    _coarse_both_tracks)."""
     before = timedelta(minutes=p.buffer_before_closure_min)
-    return [w for w, _a, _b in affecting or ()
-            if w.coarse and _can_affect(w, earliest, p) and w.start - before <= latest]
+    out = []
+    for w, _a, _b in affecting or ():
+        if not w.coarse:
+            continue
+        if w.kind in BLOCKING:
+            if _can_affect(w, earliest, p) and w.start - before <= latest:
+                out.append(w)
+        elif (earliest is None or ensure_utc(w.end) > ensure_utc(earliest)) and w.start <= latest:
+            out.append(w)
+    return out
 
 
 def _excess_reason(excess: dict, hit: bool) -> str:
-    """Dôvod v odporúčaní pri uloženej rezerve nad limitom formulára (_buffer_excess); ``hit`` – plán vlaku zasahujú
-    súhrnné okná výluk (_coarse_hits): vlak nemôže byť ZELENÝ."""
-    vals = " a ".join(f"{_BUFFER_TEXT.get(k, k)} {number(v)} min" for k, v in excess.items())
+    """Dôvod v odporúčaní pri uloženej rezerve nad limitom formulára (_buffer_excess); ``hit`` – plán vlaku (na
+    ktorejkoľvek trase) zasahujú súhrnné okná výluk (_coarse_hits): vlak nemôže byť ZELENÝ. Uložená hodnota sa
+    neuvádza zaokrúhlená (exact_number), dve rezervy v množnom čísle."""
+    from ..notifikacie.texty import exact_number
+
+    vals = " a ".join(f"{_BUFFER_TEXT.get(k, k)} {exact_number(v)} min" for k, v in excess.items())
     many = len(excess) > 1
     text = (f"{'Rezervy' if many else 'Rezerva'} {vals} v platnej sade parametrov {'sú' if many else 'je'} nad limitom "
             f"1 440 min (24 h) – zrejme preklep zo staršej verzie formulára (napr. hodiny namiesto minút). Plánovač s "
@@ -332,7 +456,7 @@ def _excess_reason(excess: dict, hit: bool) -> str:
     if hit:
         text += ("; okná výluk ďalej ako 24 h počíta súhrnne od prvého po posledné okno (prísnejšie) a vlak, ktorého "
                  "plán také okno zasahuje, nemôže byť ZELENÝ")
-    return text + ". Vedúci dispečer: opravte rezervu v Nastaveniach."
+    return text + f". Vedúci dispečer: opravte {'rezervy' if many else 'rezervu'} v Nastaveniach."
 
 
 def _lookback(p: Optional[Params] = None) -> timedelta:
@@ -476,7 +600,7 @@ def _section_points(net: Network, from_station: str, to_station: str, ref: str, 
     return res
 
 
-def _both_tracks_windows(windows: list, line_refs: Optional[dict] = None) -> list:
+def _both_tracks_windows(windows: list, line_refs: Optional[dict] = None, pair_ok=None) -> list:
     """Výluky koľají, ktoré v rovnakom čase vylučujú 1. aj 2. traťovú koľaj tej istej časti trate (dve výluky koľaje
     s rôznymi neprázdnymi koľajami – napr. dva rozkazy, aj s rôznym číslom ROV či trate, alebo dva riadky súborného
     rozkazu –, alebo jedna výluka koľaje s oboma či všetkými koľajami): trať tam vtedy nie je zjazdná. Výluka koľaje je
@@ -497,7 +621,11 @@ def _both_tracks_windows(windows: list, line_refs: Optional[dict] = None) -> lis
 
     Výluka koľaje bez uvedenej koľaje („výluka koľaje“ bez čísla – napr. druh zmenený vo fronte) môže byť výlukou druhej
     koľaje: s inou výlukou koľaje toho istého úseku (či spoločnej časti úsekov) v rovnakom čase sa počíta ako úplná
-    výluka s poznámkou, že koľaj treba overiť (prísnejší prípad)."""
+    výluka s poznámkou, že koľaj treba overiť (prísnejší prípad).
+
+    Súhrnné okno (Window.coarse – rezerva nad limitom formulára) sa s ničím nekombinuje: je to len rozsah od prvého po
+    posledné denné okno výluky, prekrytie súhrnných okien by bolo úplnou výlukou, ktorá neexistuje – prekrytia v jeho
+    rozsahu počíta _coarse_both_tracks z presných okien. ``pair_ok(x, y)`` – len tieto dvojice okien."""
     from ..siet.graf import norm, norm_line_ref
 
     tracked: list = []
@@ -549,6 +677,8 @@ def _both_tracks_windows(windows: list, line_refs: Optional[dict] = None) -> lis
     seen: set = set()
     for i, j in _overlapping_pairs([w for w, _p in tracked]):
         (x, px), (y, py) = tracked[i], tracked[j]
+        if x.coarse or y.coarse or (pair_ok is not None and not pair_ok(x, y)):
+            continue
         tx, ty = track_numbers(x), track_numbers(y)
         tracks = tx | ty
         # výluka koľaje bez uvedenej koľaje (FE1): môže ísť o druhú koľaj – spolu s inou výlukou koľaje toho istého
@@ -581,9 +711,8 @@ def _both_tracks_windows(windows: list, line_refs: Optional[dict] = None) -> lis
             what = (f"možno všetky traťové koľaje (výluka {blind} neuvádza koľaj – môže ísť o druhú koľaj; "
                     "overte koľaj v registri výluk)")
         status = "overene" if x.status == y.status == "overene" else "navrh"
-        # súhrnné okno (rezerva nad limitom formulára): prekrytie je len horná hranica skutočných prekrytí
-        coarse = x.coarse or y.coarse
-        tail = f"; {COARSE_NOTE}" if coarse else ""
+        coarse = False  # súhrnné okná sa nekombinujú (vyššie) – prekrytie je z presných okien
+        tail = ""
         if px == py:
             key = (min(x.closure_id, y.closure_id), s, e)
             if key in seen:
@@ -892,13 +1021,19 @@ def build_segments(net: Network, groute: GRoute, windows: list, t0: datetime, sp
             affecting.append((w, a.name, b.name))
             if not _can_affect(w, earliest, params):
                 continue  # skončí (aj s rezervou) pred najskorším odchodom – simulácia ho nepotrebuje
+            if w.kind not in BLOCKING and earliest is not None and ensure_utc(w.end) <= ensure_utc(earliest):
+                # pomalá jazda či výluka koľaje (bez rezerv – Slowdown) skončila najneskôr pri najskoršom odchode: jazdu
+                # nepredĺži (simulácia ju vynechá – rozhodovanie.evaluate); ostáva vo výlukách na trase
+                continue
             ws, we = _min(t0, w.start), _min(t0, w.end)
             # poloha obmedzenia v úseku (podiel dĺžky ≈ podiel jazdnej doby); podľa koľají celý úsek
             f0, f1 = (0.0, 1.0) if part is None or km <= 0 else \
                 (min(1.0, max(0.0, (part[1] - a.km) / km)), min(1.0, max(0.0, (part[2] - a.km) / km)))
             if w.kind in BLOCKING:
+                # výluka do odvolania bez skutočného konca (Window.open_end): simulácia určí, ktoré vzorky do jej úseku
+                # vojdú po jej začiatku (Evaluation.p_open); ref – okno, ktoré vzorky zdržalo (_Termin)
                 closures.append(DClosure(start=ws, end=we, electric_only=w.electric_only,
-                                         label=f"výluka #{w.closure_id}"))
+                                         label=f"výluka #{w.closure_id}", open_end=w.open_end, ref=id(w)))
             elif w.kind == "kolaj":
                 slowdowns.append(Slowdown(ws, we, extra_p50=3.0, extra_p90=15.0, group=w.closure_id,
                                           label=f"výluka koľaje #{w.closure_id}", part_from=f0, part_to=f1))
@@ -921,7 +1056,63 @@ def build_segments(net: Network, groute: GRoute, windows: list, t0: datetime, sp
     merged, spans = _merge_with_spans(segments)
     if spans_out is not None:
         spans_out.extend(spans)
+    # výluky zlúčeného úseku, ktorých okná sa aj s rezervami prekrývajú, sú pre simuláciu jedno okno (rovnaké čakanie
+    # každej vzorky – _union_closures); až po zlúčení úsekov, aby sa ich delenie (a rozdelenie náhodných zdržaní) nezmenilo
+    merged = [replace(s, closures=_union_closures(s, params)) if len(s.closures) > 1 else s for s in merged]
     return merged, wps, affecting
+
+
+def _union_closures(seg: Segment, p: Optional[Params]) -> tuple:
+    """Blokujúce okná úseku simulácie, ktorých intervaly s rezervami [začiatok − rezerva pred, koniec + rezerva po] sa
+    prekrývajú alebo dotýkajú (a rovnako platia pre motorovú trakciu – electric_only), zlúčené do jedného okna.
+
+    Vzorka, ktorá vojde do ktoréhokoľvek z nich, v simulácii (rozhodovanie.evaluate) čaká postupne až do konca
+    posledného z nich (z každého času vnútri spojených okien vojde do niektorého ďalšieho) – rovnako ako pred zlúčeným
+    oknom; vzorka, ktorá nevojde do žiadneho, nevojde ani do zlúčeného. Výsledok simulácie sa nemení, počet okien na
+    úsek však nerastie s históriou výluk (uložená rezerva po výluke nad limitom formulára – výluky spred rokov blokujú
+    dodnes a všetky sa prekrývajú). Simulácia po čakaní prepočíta jazdnú dobu s pomalými jazdami úseku až po prejdení
+    všetkých okien (rozhodovanie.evaluate) – poradie oddelených okien pri tom môže rozhodnúť; úsek s pomalou jazdou sa
+    preto zlučuje, len keď sú všetky jeho okná spojené do jedného, inak ostanú okná v pôvodnom poradí.
+
+    Zlúčené okno s výlukou do odvolania je do odvolania (jej úsek vzorka nemôže prejsť po jej začiatku, ani keď čaká na
+    koniec inej výluky – Closure.open_end) a jeho ref je ref tejto výluky."""
+    p = p or Params()
+    before, after = float(p.buffer_before_closure_min), float(p.buffer_after_closure_min)
+    closures = list(seg.closures)
+    # spojené okná (rovnaká trakcia, prekrývajúce sa či dotýkajúce sa intervaly s rezervami): index → skupina
+    group: dict = {}
+    groups: list = []
+    for flag in (False, True):
+        idx = sorted((i for i, c in enumerate(closures) if bool(c.electric_only) == flag),
+                     key=lambda i: (closures[i].start, closures[i].end))
+        end = None
+        for i in idx:
+            c = closures[i]
+            if end is not None and c.start - before <= end + after:
+                groups[-1].append(i)
+                end = max(end, c.end)
+            else:
+                groups.append([i])
+                end = c.end
+            group[i] = len(groups) - 1
+    if len(groups) == len(closures) or (seg.slowdowns and len(groups) > 1):
+        return seg.closures
+    out: list = []
+    done: set = set()
+    for i, c in enumerate(closures):
+        g = group[i]
+        if g in done:
+            continue
+        done.add(g)
+        members = [closures[j] for j in groups[g]]
+        if len(members) == 1:
+            out.append(c)
+            continue
+        opened = [m for m in members if m.open_end]
+        lead = opened[0] if opened else members[0]
+        out.append(replace(lead, start=min(m.start for m in members), end=max(m.end for m in members),
+                           open_end=bool(opened)))
+    return tuple(out)
 
 
 def _merge_slowdowns(a: Segment, b: Segment) -> tuple:
@@ -1153,6 +1344,10 @@ def _unverified_email(affecting: list, lo: datetime, hi: datetime, first: bool =
 
 RESTRICTION_CAP = "obmedzenie na trase – overte parametre vlaku"
 TRACK_CAP = "výluka koľaje na trase neuvádza koľaj – overte ju"
+# príchod pri zdržaní nie je známy (Unknown.partial): jazda so zdržaním by vošla do úseku výluky do odvolania po jej
+# začiatku či do okna výluky za koncom prehľadávaného obdobia – ZELENÁ by sľubovala jazdu, ktorá pri zdržaní uviazne
+# (okno za koncom obdobia simulácia ani nevidela)
+P90_CAP = "príchod pri zdržaní nie je známy – dohodnite so ŽSR, či vlak úsek s výlukou prejde včas"
 
 
 def _unknown_track(w: Window) -> bool:
@@ -1162,11 +1357,21 @@ def _unknown_track(w: Window) -> bool:
     return w.kind == "kolaj" and not _track_numbers(w.track)
 
 
+def _fmt_span(start: datetime, end: datetime) -> tuple:
+    """Začiatok a koniec obdobia v texte; obdobie cez prelom roka (súhrnné okno – Window.coarse) s rokom."""
+    if local(start).year != local(end).year:
+        return local(start).strftime("%d.%m.%Y %H:%M"), local(end).strftime("%d.%m.%Y %H:%M")
+    return fmt(start), fmt(end)
+
+
 def _term(w: Window) -> str:
-    """Čas okna výluky v texte pre dispečera: „23.11. 08:00 – 23.11. 14:00“; výluka do odvolania, ktorej okno nemá
-    skutočný koniec (Window.open_end – len technický koniec alebo koniec prehľadávaného obdobia): „od 23.11. 08:00 do
-    odvolania“."""
-    return f"od {fmt(w.start)} do odvolania" if w.open_end else f"{fmt(w.start)} – {fmt(w.end)}"
+    """Čas okna výluky v texte pre dispečera: „23.11. 08:00 – 23.11. 14:00“ (súhrnné okno cez prelom roka s rokom);
+    výluka do odvolania, ktorej okno nemá skutočný koniec (Window.open_end – len technický koniec alebo koniec
+    prehľadávaného obdobia): „od 23.11. 08:00 do odvolania“."""
+    if w.open_end:
+        return f"od {fmt(w.start)} do odvolania"
+    a, b = _fmt_span(w.start, w.end) if w.coarse else (fmt(w.start), fmt(w.end))
+    return f"{a} – {b}"
 
 
 def _open_blocks(affecting, electric: bool) -> list:
@@ -1176,18 +1381,18 @@ def _open_blocks(affecting, electric: bool) -> list:
             if w.open_end and w.kind in BLOCKING and not (w.electric_only and not electric)]
 
 
-def _open_wait(ev: Optional[Evaluation], affecting, now: datetime, electric: bool,
-               entered: Optional[set] = None) -> Optional[Window]:
-    """Výluka do odvolania na trase varianty ``ev``, na ktorej koniec varianta čaká: blokujúce okno bez skutočného konca
-    (len technický koniec alebo koniec prehľadávaného obdobia) a predpokladaný príchod (P50) až po jeho konci. Časy
-    odchodu a príchodu, náklad ani návrh trasy takej varianty nie sú skutočné – vlak úsekom prejde, až keď ŽSR výluku
-    odvolá. Inak None. ``entered`` – id() okien, do ktorých úseku by vlak vošiel po ich začiatku (_Termin.entered);
-    okno, ktorého úsek vlak prejde ešte pred začiatkom výluky (s rezervou), sa ho netýka, hoci príde neskôr."""
-    if ev is None:
+def _open_hit(ev: Optional[Evaluation], affecting, electric: bool) -> Optional[Window]:
+    """Výluka do odvolania na trase varianty ``ev``, do ktorej úseku vojdú vzorky simulácie po jej začiatku (s rezervou
+    pred výlukou – Evaluation.p_open, open_refs): okno, ktoré zdržalo najviac vzoriek (ref okna v simulácii –
+    build_segments), inak prvé blokujúce okno výluky do odvolania na trase. Bez takých vzoriek None."""
+    if ev is None or not getattr(ev, "p_open", 0):
         return None
-    arrival = _dt(now, ev.arrival_p50)
-    hits = [w for w in _open_blocks(affecting, electric) if w.end <= arrival and (entered is None or id(w) in entered)]
-    return min(hits, key=lambda w: (w.start, w.closure_id)) if hits else None
+    by_ref = {id(w): w for w in _open_blocks(affecting, electric)}
+    for ref in getattr(ev, "open_refs", ()) or ():
+        if ref in by_ref:
+            return by_ref[ref]
+    blocks = list(by_ref.values())
+    return min(blocks, key=lambda w: (w.start, w.closure_id)) if blocks else None
 
 
 def _open_text(w: Window) -> str:
@@ -1277,18 +1482,51 @@ def _open_reason(session: Session, w: Window) -> str:
 
 @dataclass(frozen=True)
 class Unknown:
-    """Prečo termín jazdy varianty nie je známy: čakala by na koniec výluky do odvolania bez skutočného konca
-    (_open_wait) alebo by po poslednom okne výluk, ktoré simulácia videla, vošla do ďalšieho okna za koncom
-    prehľadávaného obdobia (_chain_wait – okná výluk nadväzujú bez času na prejazd úseku)."""
+    """Prečo termín jazdy varianty nie je známy: vzorky simulácie (medián) vojdú do úseku výluky do odvolania po jej
+    začiatku – čakali by na koniec výluky bez skutočného konca (_Termin._open, Evaluation.p_open) – alebo by plán po
+    poslednom okne výluk, ktoré simulácia videla, vošiel do ďalšieho okna za koncom prehľadávaného obdobia (_chain_wait
+    – okná výluk nadväzujú bez času na prejazd úseku, výluka do odvolania, ktorá začne až po konci obdobia).
+
+    ``partial`` – týka sa len jazdy so zdržaním (príchod P90, ďalej neskoršie vzorky): odchod a predpokladaný príchod
+    (medián) sú skutočné, príchod P90, očakávaný náklad a koniec služby rušňovodiča pri zdržaní nie; návrh trasy ani
+    koncepty správ sa neuvádzajú (časy by sľubovali jazdu, ktorá pri zdržaní uviazne). ``unseen`` – okno je za koncom
+    prehľadávaného obdobia (_chain_wait) a simulácia ho nevidela: P(včas) ani semafor jazdu so zdržaním, ktorá doň
+    vojde, nezahŕňajú – odporúčanie je ESKALOVAŤ (najmenej zlá možnosť s odchodom a predpokladaným príchodom)."""
     text: str     # krátky text: „výluka … platí od … do odvolania“ – do súhrnu, príchodu („nie je známy – …“) a variant
     reason: str   # dôvod v odporúčaní (bez časov, návrhu trasy a objednávky trasy)
     tail: str     # koniec vety v súhrne: kedy vlak úsekom prejde
     window: Optional[Window] = None
+    partial: bool = False
+    unseen: bool = False
 
 
-def _unknown_open(session: Session, w: Window) -> Unknown:
+# koniec dôvodu, keď nie je známy len príchod pri zdržaní (Unknown.partial)
+_P90_TAIL = ("Príchod pri zdržaní (90 % jázd) ani očakávaný náklad sa preto nedajú určiť; predpokladaný príchod (medián) "
+             "platí, len ak vlak úsek prejde včas. Agent neuvádza návrh trasy ani koncepty správ (objednávku trasy "
+             "v IS KIS, informáciu pre zákazníka) – dohodnite so ŽSR, či vlak úsek prejde včas, inak inú trasu alebo čas, "
+             "a zákazníkovi neuvádzajte najneskorší čas príchodu.")
+
+
+def _share_text(share: Optional[float]) -> str:
+    """„ (podľa simulácie 15 % jázd)“, „ (podľa simulácie menej ako 1 % jázd)“ – podiel vzoriek simulácie; bez podielu
+    prázdne."""
+    if not share:
+        return ""
+    pct = "menej ako 1" if share * 100 < 0.5 else f"{round(share * 100):.0f}"
+    return f" (podľa simulácie {pct} % jázd)"
+
+
+def _unknown_open(session: Session, w: Window, partial: bool = False, share: Optional[float] = None) -> Unknown:
+    """Termín jazdy pri výluke do odvolania ``w``: ``partial`` – do jej úseku po jej začiatku vojde len jazda so zdržaním
+    (príchod P90), ``share`` – podiel takých vzoriek simulácie."""
     what = "výluky" if len(_sources(w)) > 1 else "obmedzenie"
-    return Unknown(_open_text(w), _open_reason(session, w), f"kým ŽSR {what} neodvolá, vlak úsekom neprejde", w)
+    if not partial:
+        return Unknown(_open_text(w), _open_reason(session, w), f"kým ŽSR {what} neodvolá, vlak úsekom neprejde", w)
+    text = _open_text(w)
+    reason = (f"{text[:1].upper()}{text[1:]} ({_which(session, _sources(w))}) – pri zdržaní by vlak vošiel do tohto úseku "
+              f"po začiatku výluky (s rezervou pred výlukou) a čakal by, kým ŽSR {what} neodvolá{_share_text(share)}. "
+              f"{_P90_TAIL}")
+    return Unknown(text, reason, "", w, partial=True)
 
 
 def _track_text(track: str) -> str:
@@ -1320,13 +1558,15 @@ def _closure_term(c: Closure) -> str:
     return f"{track}{daily + ' ' if daily else ''}{period}"
 
 
-def _unknown_chain(session: Session, hit: Window, prev: Optional[Window], p: Params, chained: bool = True) -> Unknown:
+def _unknown_chain(session: Session, hit: Window, prev: Optional[Window], p: Params, chained: bool = True,
+                   partial: bool = False) -> Unknown:
     """Texty pre plán, ktorý by po poslednom okne výluk, ktoré simulácia videla (``prev`` – posledné okno toho istého
     úseku pred ``hit``), vošiel do ďalšieho okna ``hit`` za koncom prehľadávaného obdobia – čas odchodu ani príchodu nie
     je známy. ``chained`` – okná na seba nadväzujú bez času na prejazd úseku (s rezervami pred a po výluke); inak by
     plán po dlhom čakaní vošiel do ďalšieho okna výluky, ktoré simulácia nevidela. Menuje všetky výluky (aj obe výluky
     koľají) s ich termínom z registra (začiatok výluky, nie začiatok okna, ktoré simulácia videla ako posledné); koniec
-    prehľadávaného obdobia (hranica výpočtu) nie je čas výluky – neuvádza sa.
+    prehľadávaného obdobia (hranica výpočtu) nie je čas výluky – neuvádza sa. ``partial`` – do okna by vošla len jazda so
+    zdržaním (príchod P90): odchod a predpokladaný príchod ostávajú (Unknown.partial).
 
     Viac výluk v množnom čísle („výluky #1 a #2 … nenechávajú … kým ŽSR výluky neukončí“), mimoriadnosť ako
     mimoriadnosť, číslo rozkazu pri svojej výluke (_names). Nadväzujúce okná výluk s pevným koncom v registri nie sú
@@ -1379,6 +1619,10 @@ def _unknown_chain(session: Session, hit: Window, prev: Optional[Window], p: Par
         what = (f"Najmenej zlá možnosť by po dlhom čakaní vošla do ďalšieho okna výluky, ktoré agent pri výpočte "
                 f"nevidel – {long_} ({after}).")
         tail = "čas prejazdu úseku treba dohodnúť so ŽSR"
+    if partial:
+        reason = (f"Pri zdržaní (90 % jázd) by vlak vošiel do okna výluky, ktoré agent pri výpočte nevidel – {long_} "
+                  f"({after}). {_P90_TAIL}")
+        return Unknown(text, reason, "", hit, partial=True)
     reason = (f"{what} Čas odchodu ani príchodu sa preto nedá určiť: agent neuvádza najmenej zlú možnosť s časmi, "
               f"návrh trasy ani objednávku trasy v IS KIS. Dohodnite so ŽSR inú trasu alebo čas a zákazníkovi "
               f"oznámte, že termín zatiaľ nie je známy.")
@@ -1390,7 +1634,7 @@ def _beyond_windows(session: Session, end: datetime, until: datetime, exact_unti
     nevidela (napr. ďalšie okno dennej výluky 00:00 – 24:00, druhá z dvoch striedajúcich sa výluk, ďalšie prekrytie
     výluk oboch koľají, výluka do odvolania, ktorá začne až po konci obdobia – aj pokračovanie „do odvolania“ zapísané
     ako ďalšia výluka toho istého úseku; jej okno nemá skutočný koniec, Window.open_end). Okno výluky do odvolania, ktoré
-    začalo skôr, simulácia videla – rieši ho _open_wait. ``exact_until`` – po jednom sa denné okná rozbalia len po tento
+    začalo skôr, simulácia videla – rieši ho simulácia (Evaluation.p_open, _Termin._open). ``exact_until`` – po jednom sa denné okná rozbalia len po tento
     čas, ďalej súhrnne (uložená rezerva pred výlukou nad limitom formulára – _plan_windows)."""
     lo = end - timedelta(days=1)
     exact = (lo, exact_until) if exact_until is not None and exact_until < until else None
@@ -1406,36 +1650,32 @@ def _times(v) -> Optional[tuple]:
         return None
 
 
-def _open_variant(v: dict, affecting, electric: bool, chain: Optional[Unknown] = None,
-                  entered: Optional[set] = None) -> None:
-    """Varianta v porovnaní, ktorej príchod je až po konci výluky do odvolania na jej trase (koniec okna je len
-    technický koniec alebo koniec prehľadávaného obdobia), alebo ktorá by po poslednom okne výluk, ktoré simulácia
-    videla, vošla do ďalšieho okna (``chain`` – _chain_wait): príchod sa neuvádza (nie je známy), očakávaný náklad
-    tiež nie (vypočítaný z vymysleného príchodu) a dôvod to povie (``do_odvolania`` – texty neuvedú ani čas odchodu
-    varianty). ``entered`` – id() okien výluk do odvolania, do ktorých úseku by varianta vošla (_Termin.entered);
-    výluka, ktorej úsek varianta prejde pred jej začiatkom, sa varianty netýka."""
-    blocks = [w for w in _open_blocks(affecting, electric) if entered is None or id(w) in entered]
-    hit = None
-    median = False  # príchod P50 je po konci výluky do odvolania – aj rezerva voči termínu je z vymysleného konca
-    for key in ("arrival_p50", "arrival_p90"):
-        try:
-            t = ensure_utc(datetime.fromisoformat(str(v.get(key)))) if v.get(key) else None
-        except ValueError:
-            continue
-        over = [w for w in blocks if t is not None and w.end <= t]
-        if over:
-            v[key] = None
-            median = median or key == "arrival_p50"
-            hit = hit or min(over, key=lambda w: (w.start, w.closure_id))
-    text = _open_text(hit) if hit is not None else (chain.text if chain is not None else None)
-    if chain is not None and hit is None:
+def _open_variant(v: dict, unknown: Optional[Unknown] = None, cost: Optional[str] = None) -> None:
+    """Varianta v porovnaní (slovník _ev_dict), ktorej termín nie je známy (_Termin.ev): ``unknown`` celý – vzorky
+    simulácie (medián) by čakali na koniec výluky do odvolania alebo by plán vošiel do okna výluky za koncom
+    prehľadávaného obdobia – príchod sa neuvádza, očakávaný náklad tiež nie (vypočítaný z vymysleného príchodu) a dôvod
+    to povie (``do_odvolania`` – texty neuvedú ani čas odchodu varianty, ten nie je skutočný); ``unknown.partial`` – len
+    jazda so zdržaním: odchod a príchod P50 ostávajú, príchod P90 a náklad nie (``p90_do_odvolania``). ``cost`` – len
+    niektoré vzorky (menej ako 10 %) by čakali na koniec výluky do odvolania: náklad nie je známy (dôvod ``cost``).
+    Varianta s neznámym termínom či príchodom pri zdržaní nie je ZELENÁ (ani keď simulácia okno za koncom prehľadávaného
+    obdobia nevidela)."""
+    if unknown is not None and v.get("status") == ZELENA:
+        v["status"] = ORANZOVA
+    if unknown is not None and not unknown.partial:
         v["arrival_p50"] = v["arrival_p90"] = None
-        median = True
-    if text is not None:
-        v["do_odvolania"] = text
+        v["do_odvolania"] = unknown.text
         v["expected_cost"] = None
-        v["reasons"] = [r for r in v.get("reasons") or [] if not (median and str(r).startswith(
-            "rezerva voči termínu"))] + [f"{text} – príchod nie je známy"]
+        # rezerva voči termínu (medián) je z vymysleného príchodu
+        v["reasons"] = [r for r in v.get("reasons") or [] if not str(r).startswith("rezerva voči termínu")] + \
+            [f"{unknown.text} – príchod nie je známy"]
+    elif unknown is not None:
+        v["arrival_p90"] = None
+        v["p90_do_odvolania"] = unknown.text
+        v["expected_cost"] = None
+        v["reasons"] = list(v.get("reasons") or []) + [f"{unknown.text} – príchod 90 % jázd nie je známy"]
+    elif cost:
+        v["expected_cost"] = None
+        v["reasons"] = list(v.get("reasons") or []) + [cost]
 
 
 _TECH_NOTE =("NÁVRH", "Zdroj:", "Potvrdené podľa", "Zmenené podľa", "Rozdelené podľa", "Platí do odvolania",
@@ -1887,11 +2127,24 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
     # prehľadávaného obdobia – výluka platí, kým ju ŽSR neodvolá), alebo by po poslednom okne výluk, ktoré simulácia
     # videla, vošla do ďalšieho okna (okná výluk nadväzujú bez času na prejazd aj za koncom prehľadávaného obdobia): jej
     # časy odchodu a príchodu nie sú skutočné a vlak úsekom neprejde – nikdy nie je bezpečná (aj keby ju simulácia
-    # nehodnotila ako ČERVENÚ)
+    # nehodnotila ako ČERVENÚ). Ak sa to týka len jazdy so zdržaním (p90 – Unknown.partial), odchod a predpokladaný
+    # príchod (medián) ostávajú; príchod P90, náklad, koniec služby rušňovodiča pri zdržaní, návrh trasy a koncepty správ
+    # nie. Ak by na koniec výluky do odvolania čakali len niektoré jazdy (menej ako desatina), nie je známy len náklad.
     unknown = termin.ev(chosen)
+    p90: Optional[Unknown] = None
+    if unknown is not None and unknown.partial:
+        p90, unknown = unknown, None
+    cost_note = termin.cost(chosen) if unknown is None and p90 is None else None
     if unknown is not None and decision != ESKALOVAT:
         decision = ESKALOVAT
+    if p90 is not None and p90.unseen and decision != ESKALOVAT:
+        # jazda so zdržaním by vošla do okna výluky za koncom prehľadávaného obdobia, ktoré simulácia nevidela – P(včas)
+        # ani semafor ju nezahŕňajú: žiadna bezpečná varianta (najmenej zlá možnosť s odchodom a predpokladaným
+        # príchodom, príchod pri zdržaní nie je známy)
+        decision = ESKALOVAT
     color = chosen.status if chosen else CERVENA
+    if p90 is not None and color == ZELENA:
+        color = ORANZOVA  # príchod pri zdržaní nie je známy – vlak, ktorý pri zdržaní uviazne, nie je ZELENÝ (P90_CAP)
     if ready_unknown and color == ZELENA:
         color = ORANZOVA  # vlak ešte neprišiel na hranicu a avízo uplynulo (chýba) – pripravenosť nie je istá
     if hold_exceeded:
@@ -1925,6 +2178,10 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
     if unknown is not None and not least_bad_near:
         shown = None
         reasons.append(unknown.reason)
+    if p90 is not None:
+        reasons.append(p90.reason)
+    if cost_note:
+        reasons.append(f"{cost_note[:1].upper()}{cost_note[1:]}.")
     if running and decision == VYPRAVIT:
         decision = POKRACOVAT
     ordered = _ordered(chosen, requested, params)  # nová trasa objednaná podľa prijatého odporúčania
@@ -2026,7 +2283,9 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
                for name in groute_of}
     coarse_of = {name: bool(excess) and bool(_coarse_hits(affecting_of.get(name, []), ready, plan_hi[name], params))
                  for name in groute_of}
-    coarse_hit = coarse_of.get(route_name, False)
+    # súhrnné okná na ktorejkoľvek trase obmedzia všetky trasy: výber trasy a odchodu (aj obchádzka, ktorú vyvolala
+    # výluka hlavnej trasy) mohol závisieť od nich – žiadna varianta nie je ZELENÁ
+    coarse_hit = any(coarse_of.values())
     if excess:
         reasons.append(_excess_reason(excess, coarse_hit))
     if coarse_hit and color == ZELENA:
@@ -2076,10 +2335,11 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
         crew = _crew_estimate(train, shift, crew_ref, paths, now, params, run_since)
     else:
         crew = _crew_info(shift, crew_ref, now, params, current=current_ref is not None)
-    if crew and crew_ref is not None and (unknown if crew_ref is chosen else termin.ev(crew_ref)) is not None:
+    crew_term = ((unknown or p90) if crew_ref is chosen else termin.ev(crew_ref)) if crew_ref is not None else None
+    if crew and crew_term is not None:
         # koniec služby pri neznámom termíne jazdy (koniec výluky do odvolania, nadväzujúce okná výluk) nie je skutočný
-        # čas (limit a vystriedanie áno)
-        crew = {**crew, "end_p50": None, "end_p90": None}
+        # čas (limit a vystriedanie áno); ak nie je známy len príchod pri zdržaní, ani koniec služby P90
+        crew = {**crew, "end_p90": None} if crew_term.partial else {**crew, "end_p50": None, "end_p90": None}
     # plánovaný (ešte nezačatý) nástup rušňovodiča zbytočne skoro → navrhnúť posun (krok C.11 príbehu vlaku)
     if shift is not None and shown is not None and shown.kind != ODSTAVIT and \
             ensure_utc(shift.start_utc) > now:
@@ -2133,6 +2393,7 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
         (any(w.kind == "obmedzenie" for w in restrictions), RESTRICTION_CAP),
         (any(_unknown_track(w) for w in restrictions), TRACK_CAP),
         (coarse_hit, COARSE_CAP),
+        (p90 is not None, P90_CAP),
     ) if flag]
     if caps:
         data_age["obmedzenie"] = caps
@@ -2140,28 +2401,35 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
     # návrh trasy na objednanie: nie pre zvyšok jazdy tesne pred cieľom (jediná dopravňa – nedá sa objednať); pri
     # zadržaní pred blokujúcou výlukou s čakaním na dopravni pred ňou tam, kde čaká simulácia (nie časy vnútri výluky);
     # nie pri neznámom termíne jazdy (shown None – odchod po vymyslenom konci by bol objednávkou trasy do platnej
-    # výluky) a nikdy nie do okna výluky za koncom prehľadávaného obdobia (poistka _path_proposal)
-    until = termin.reaches((_dt(now, shown.depart), _dt(now, shown.arrival_p50), _dt(now, shown.arrival_p90))
-                           if shown is not None else None)
+    # výluky), ani keď nie je známy príchod pri zdržaní (p90 – návrh a koncepty by sľubovali jazdu, ktorá pri zdržaní
+    # uviazne), a nikdy nie do okna výluky za koncom prehľadávaného obdobia ani keď návrh nemôže sledovať simuláciu
+    # (poistky _path_proposal – dôvod v pp_notes)
+    proposed = shown if p90 is None else None
+    until = termin.reaches((_dt(now, proposed.depart), _dt(now, proposed.arrival_p50),
+                            _dt(now, proposed.arrival_p90)) if proposed is not None else None)
+    pp_notes: list = []
     path_proposal = {} if near else _path_proposal(
-        net, groute_of.get(route_name, primary), shown, now, start_km if running else 0.0, rec,
+        net, groute_of.get(route_name, primary), proposed, now, start_km if running else 0.0, rec,
         affecting=affecting_of.get(route_name, affecting), electric=electric, params=params,
         pace=run_scale if route_name == routes[0].name and run_scale != 1.0 else 1 + RUN_MARGIN,
         beyond=termin.beyond(route_name, until) if until is not None and route_name in groute_of else (),
-        zones=termin.zones(route_name) if route_name in groute_of else None)
+        zones=termin.zones(route_name) if route_name in groute_of else None,
+        sim=termin.sim(route_name, proposed) if proposed is not None else None, notes=pp_notes)
+    reasons.extend(pp_notes)
     if path_proposal:
-        path_proposal["drafts"] = _drafts(train, decision, shown, path_proposal, now, deadline)
+        path_proposal["drafts"] = _drafts(train, decision, proposed, path_proposal, now, deadline)
     # poistky ZELENEJ pri každej trase: jej varianty nie sú ZELENÉ a okná nezvolenej trasy nie sú okná bezpečného
     # odchodu; čakajúce zrušenie či zmena pridelenej trasy obmedzí len varianty na pridelenej trase
     guards_of = {name: _route_guards(unmapped_of[name], pending_of.get(name, []), unverified_of[name],
-                                     what="varianta nemôže byť ZELENÁ") + ([COARSE_CAP] if coarse_of[name] else [])
+                                     what="varianta nemôže byť ZELENÁ") + ([COARSE_CAP] if coarse_hit else [])
                  for name in groute_of}
     path_guard = [n.rstrip(".") for n in path_notes]
     windows_iso = {name: [[_dt(now, a).isoformat(), _dt(now, b).isoformat()] for a, b in wins]
                    for name, wins in rec.green_windows.items()
                    if name == route_name or not guards_of.get(name)}
-    variants = _variants(rec, now)
-    for v in variants:
+    var_evs: list = []
+    variants = _variants(rec, now, var_evs)
+    for v, ev in zip(variants, var_evs):
         extra = guards_of.get(v.get("route", ""), []) + ([] if v.get("needs_new_path") else path_guard)
         extra += [_restriction_reason(session, w, what="varianta nemôže byť ZELENÁ").rstrip(".")
                   for w in _variant_restrictions(v, affecting_of.get(v.get("route", ""), []), electric)]
@@ -2169,18 +2437,24 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
             v["status"] = ORANZOVA
             v["reasons"] = list(v.get("reasons") or []) + extra
         # varianta, ktorá by čakala na koniec výluky do odvolania alebo vošla do okna výluky za koncom prehľadávaného
-        # obdobia: príchod ani náklad nie sú známe (texty neuvedú ani čas odchodu)
-        termin.variant(v, affecting_of.get(v.get("route", ""), []))
+        # obdobia: príchod ani náklad nie sú známe (texty neuvedú ani čas odchodu); len pri zdržaní: príchod P90 a
+        # náklad nie sú známe
+        termin.variant(v, ev)
     priority = _priority(session, train, decision, fp_color or color, shown, crew, running, now)
     summary = _summary(train, decision, shown, now, crew, rec, horizon_min, has_path=bool(paths), ordered=ordered,
                        near_km=near_km, near_estimated=near_estimated, until_entry=until_entry, unknown=unknown,
-                       least_kind=chosen.kind if chosen is not None else "")
+                       least_kind=chosen.kind if chosen is not None else "", p90=p90)
     chosen_d = _ev_dict(shown, now) if shown else {}
     if shown is not None and unknown is not None:
         # vlak pred cieľom čaká, kým ŽSR výluku do odvolania neodvolá (alebo kým sa neuvoľní vjazd po nadväzujúcich
         # oknách výluk): príchod nie je známy (texty, web, porovnanie) – ani očakávaný náklad, ten je z vymysleného
         # príchodu
         chosen_d.update(arrival_p50=None, arrival_p90=None, expected_cost=None, do_odvolania=unknown.text)
+    elif shown is not None and p90 is not None:
+        # príchod pri zdržaní (P90) nie je známy – ani očakávaný náklad (texty, web, mapa – eta_p90)
+        chosen_d.update(arrival_p90=None, expected_cost=None, p90_do_odvolania=p90.text)
+    elif shown is not None and cost_note:
+        chosen_d.update(expected_cost=None)
     if shown is not None and (decision in (ESKALOVAT, POKRACOVAT) or least_bad_near or (
             shown.needs_new_path and abs(shown.depart - params.new_path_lead_min) <= cfg.step_minutes + 1e-6)):
         # odchod „čo najskôr“ (idúci vlak, najskoršia nová trasa po lehote P5, najmenej zlá možnosť pri
@@ -2218,7 +2492,7 @@ def _evaluate_train(session: Session, train_id: int, now: Optional[datetime], tr
                   summary=summary, chosen=chosen_d, variants=variants,
                   windows=windows_iso, path_proposal=path_proposal, crew=crew,
                   reasons=_dedupe(reasons), data_age=data_age, fingerprint_color=fp_color,
-                  open_end=unknown is not None)
+                  open_end=unknown is not None, p90_open=p90 is not None)
 
 
 def _grid_origin(anchor: datetime, step_min: float) -> float:
@@ -2488,7 +2762,8 @@ def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) 
     rec = two_stage_recommend(droutes, _min(now, ready), deadline_min, params, [NO_PATH_SENTINEL], None,
                               anchor=now)
 
-    # uložená rezerva nad limitom formulára: varianta, ktorej plán zasahujú súhrnné okná výluk, nie je ZELENÁ
+    # uložená rezerva nad limitom formulára: ak súhrnné okná výluk zasahujú plán na ktorejkoľvek trase, nie je ZELENÁ
+    # žiadna varianta (výber trasy a odchodu mohol závisieť od nich – ako pri vlaku)
     excess = _buffer_excess(params)
     coarse_by_route = {}
     for g, d in zip(groutes, droutes):
@@ -2496,12 +2771,13 @@ def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) 
                  ([_dt(now, rec.chosen.arrival_p90)] if rec.chosen is not None else []))
         coarse_by_route[d.name] = bool(excess) and bool(_coarse_hits(affecting_by_route.get(d.name, []), ready, hi,
                                                                       params))
+    coarse_any = any(coarse_by_route.values())
 
     def guards(route: str) -> list:
         out_ = _route_guards(unmapped_by_route.get(route, []), pending_by_route.get(route, []),
                              unverified_by_route.get(route, []), what="varianta nemôže byť ZELENÁ")
         return out_ + ([mailbox_reason.rstrip(".")] if mailbox_reason else []) + \
-            ([COARSE_CAP] if coarse_by_route.get(route) else [])
+            ([COARSE_CAP] if coarse_any else [])
 
     electric = spec.traction == "E"
 
@@ -2520,15 +2796,24 @@ def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) 
         d.name: _Route(g, 0.0, affecting_by_route.get(d.name, []), 1 + RUN_MARGIN, d.segments,
                        spans_by_route.get(d.name)) for g, d in zip(groutes, droutes)})
     unknown = termin.ev(ch)
-    if unknown is not None:
+    # len jazda so zdržaním by vošla do výluky do odvolania (či do okna za koncom obdobia): odchod a predpokladaný
+    # príchod ostávajú, príchod P90, náklad a návrh trasy nie (ako pri vlaku)
+    p90: Optional[Unknown] = None
+    if unknown is not None and unknown.partial:
+        p90, unknown = unknown, None
+    cost_note = termin.cost(ch) if unknown is None and p90 is None else None
+    if unknown is not None or (p90 is not None and p90.unseen):
+        # termín nie je známy, alebo by jazda so zdržaním vošla do okna výluky za koncom obdobia, ktoré simulácia
+        # nevidela (ako pri vlaku)
         decision = ESKALOVAT
     if ch is not None and decision != ESKALOVAT:
+        cost = "nie je známy" if p90 is not None or cost_note else eur(ch.expected_cost)
         explanation.append(f"{decision} po trase „{ch.route}“ s odchodom {fmt(_dt(now, ch.depart))}: "
                            f"P(včas) {ch.p_on_time:.0%}, príchod {fmt(_dt(now, ch.arrival_p50))} "
-                           f"(90 % do {fmt(_dt(now, ch.arrival_p90))}), očakávaný náklad {eur(ch.expected_cost)}.")
+                           f"({_p90_part(_dt(now, ch.arrival_p90), p90)}), očakávaný náklad {cost}.")
         explanation.append("Trasu treba objednať v IS KIS (ad hoc trasa P5 najneskôr 6 h pred odchodom).")
         amber = (list(ch.reasons) if ch.status != ZELENA else []) + guards(ch.route) + \
-            restricted(ch.route, _ev_dict(ch, now))
+            restricted(ch.route, _ev_dict(ch, now)) + ([P90_CAP] if p90 is not None else [])
         if amber:
             explanation.append("ORANŽOVÁ – vyžaduje potvrdenie dispečera: " + "; ".join(amber))
     else:
@@ -2538,35 +2823,48 @@ def plan_order(session: Session, order_id: int, now: Optional[datetime] = None) 
             text = unknown.text
             explanation.append(f"{text[:1].upper()}{text[1:]} – {unknown.tail}; termín prepravy po trase „{ch.route}“ "
                                f"nie je známy, návrh trasy sa preto nepripravuje.")
+    if p90 is not None:
+        explanation.append(p90.reason)
+    if cost_note:
+        explanation.append(f"{cost_note[:1].upper()}{cost_note[1:]}.")
     for w in unmapped:
         explanation.append(f"POZOR: {_kind_label(w.kind)} {w.from_station} – {w.to_station} {_term(w)} sa nepodarilo "
                            f"umiestniť na sieť – overte, či sa prepravy netýka.")
     if excess:
-        explanation.append(_excess_reason(excess, coarse_by_route.get(ch.route if ch is not None else "", False)))
-    variants = _variants(rec, now)
-    for v in variants:
+        explanation.append(_excess_reason(excess, coarse_any))
+    var_evs: list = []
+    variants = _variants(rec, now, var_evs)
+    for v, ev in zip(variants, var_evs):
         extra = guards(v.get("route", "")) + restricted(v.get("route", ""), v)
         if extra and v.get("status") == ZELENA:
             v["status"] = ORANZOVA
             v["reasons"] = list(v.get("reasons") or []) + extra
-        # termín varianty nie je známy (výluka do odvolania, okno za koncom obdobia): bez príchodu, nákladu aj odchodu
-        termin.variant(v, affecting_by_route.get(v.get("route", ""), []))
+        # termín varianty nie je známy (výluka do odvolania, okno za koncom obdobia): bez príchodu, nákladu aj odchodu;
+        # len pri zdržaní: bez príchodu P90 a nákladu
+        termin.variant(v, ev)
     out = {"order_id": order.id, "decision": decision, "explanation": explanation,
            "variants": variants, "routes": []}
     if unknown is not None:
         out["date_unknown"] = unknown.text  # termín prepravy nie je známy (texty – ďalší krok dispečera)
+    if p90 is not None:
+        out["p90_unknown"] = p90.text  # príchod pri zdržaní nie je známy (texty – ďalší krok dispečera)
     for g, d in zip(groutes, droutes):
         out["routes"].append({"name": d.name, "km": round(g.length_m / 1000, 1), "minutes": round(g.minutes),
                               "stations": [s.name for s, _, _ in g.stations if s.type == "station"]})
-    if rec.chosen and unknown is None:
+    if rec.chosen and unknown is None and p90 is None:
         idx = [d.name for d in droutes].index(rec.chosen.route)
         until = termin.reaches((_dt(now, rec.chosen.depart), _dt(now, rec.chosen.arrival_p50),
                                 _dt(now, rec.chosen.arrival_p90)))
+        notes: list = []
         out["path_proposal"] = _path_proposal(net, groutes[idx], rec.chosen, now, 0.0, rec,
                                               affecting=affecting_by_route.get(rec.chosen.route, []),
                                               electric=electric, params=params,
                                               beyond=termin.beyond(rec.chosen.route, until) if until else (),
-                                              zones=termin.zones(rec.chosen.route))
+                                              zones=termin.zones(rec.chosen.route),
+                                              sim=termin.sim(rec.chosen.route, rec.chosen), notes=notes)
+        if notes:
+            explanation.extend(notes)
+            out["proposal_note"] = notes[0]  # prečo návrh trasy nie je (texty – ďalší krok dispečera)
     return out
 
 
@@ -2600,8 +2898,9 @@ def _ev_dict(ev: Evaluation, now: datetime) -> dict:
             "needs_new_path": ev.needs_new_path}
 
 
-def _variants(rec, now: datetime) -> list:
-    """Najlepšia varianta každej trasy a každého stavu (prehľadná tabuľka pre dispečera)."""
+def _variants(rec, now: datetime, evs_out: Optional[list] = None) -> list:
+    """Najlepšia varianta každej trasy a každého stavu (prehľadná tabuľka pre dispečera); ``evs_out`` – doplní sa
+    vyhodnotenie (Evaluation) každej varianty v rovnakom poradí (kontrola termínu – _Termin.variant)."""
     best: dict = {}
     for ev in rec.candidates:
         key = (ev.route, ev.status)
@@ -2617,6 +2916,8 @@ def _variants(rec, now: datetime) -> list:
             continue
         seen.add(k)
         uniq.append(_ev_dict(ev, now))
+        if evs_out is not None and len(evs_out) < 6:
+            evs_out.append(ev)
     return uniq[:6]
 
 
@@ -2792,49 +3093,106 @@ def _timelines(groute: GRoute, start_km: float, times: tuple, affecting, electri
     return m0, out
 
 
-def _chain_wait(session: Session, groute: GRoute, start_km: float, times: Optional[tuple], affecting, beyond,
-                electric: bool, p: Params, pace: float, zones: Optional[dict] = None) -> Optional[Unknown]:
-    """Plán varianty (odchod, príchod P50 a P90 – ``times``) by vošiel do okna blokujúcej výluky, ktoré začína až za
-    koncom prehľadávaného obdobia (``beyond`` – výluky za ním na tej istej trase, build_segments z _beyond_windows)?
-    Simulácia také okno nevidela: vlak, ktorý čaká na koniec posledného okna, ktoré videla (denné okná 00:00 – 24:00,
-    08:00 – 07:50, dve striedajúce sa výluky 06 – 18 a 18 – 06, dlhá denná výluka …), by vyrazil rovno do ďalšieho
-    okna – čas odchodu, príchod, návrh trasy aj koncept objednávky trasy by boli vymyslené; výluka do odvolania, ktorá
-    začne až po konci obdobia (aj na ďalšom úseku či ako pokračovanie výluky toho istého úseku), vlak nepustí, kým ju
-    ŽSR neodvolá. Priebeh jazdy je rovnaký ako v návrhu trasy a čaká sa tam, kde čaká simulácia (``zones`` – úseky
-    simulácie, _sim_zones: nie pred prvým z radu susedných úsekov s výlukami), posudzuje sa s príchodom P50 aj P90.
-    Vráti dôvod, prečo termín nie je známy (_unknown_chain, _unknown_open), inak None."""
+def _far_blocks(blocks: list) -> list:
+    """Bloky výluk (_route_blocks) s oknom výluky do odvolania bez konca (FAR_FUTURE – vlak úsekom neprejde, kým ju
+    ŽSR neodvolá, ani po technickom konci jej okna)."""
+    return [(blk[0], blk[1], blk[2], FAR_FUTURE if blk[4].open_end else blk[3]) + tuple(blk[4:]) for blk in blocks]
+
+
+def _seg_map(spans: Optional[list], segs) -> Optional[dict]:
+    """Úsek simulácie (index v ``segs``) pre každý úsek medzi bodmi trasy (index z build_segments, ako ho vracia
+    _route_blocks); bez rozsahov úsekov či pri nesúlade None."""
+    if not spans or not segs or len(spans) != len(segs):
+        return None
+    return {i: k for k, (i0, i1) in enumerate(spans) for i in range(i0, i1)}
+
+
+def _run_conflict(run: Optional[tuple], seg_of: Optional[dict], blocks: list, now: datetime) -> Optional[tuple]:
+    """Prvé okno z ``blocks`` (_route_blocks výluk za koncom prehľadávaného obdobia, ktoré simulácia nevidela; okno
+    výluky do odvolania bez konca – _far_blocks), do ktorého by vošiel priebeh simulácie ``run`` (_sim_run – jazda so
+    zdržaním rovnakého kvantilu v každom úseku): jeho jazda úsekom simulácie, ktorý okno obsahuje, sa prekrýva s oknom
+    s rezervami. Od úseku, kde priebeh vojde do úseku výluky do odvolania, ktorú simulácia videla, po jej začiatku, už
+    časy priebehu nie sú skutočné – ďalej sa neposudzuje (rieši to Evaluation.p_open). Inak None."""
+    if run is None or seg_of is None:
+        return None
+    passes, opened = run
+    stop = opened[0] if opened is not None else None
+    hits = []
+    for blk in blocks:
+        k = seg_of.get(blk[7]) if len(blk) > 7 else None
+        if k is None or k >= len(passes) or (stop is not None and k >= stop):
+            continue
+        _arrive, enter, leave = passes[k]
+        ws = _min(now, blk[2])
+        we = math.inf if blk[3] >= FAR_FUTURE else _min(now, blk[3])
+        if enter < we and leave > ws:
+            hits.append(blk)
+    return min(hits, key=lambda b: (b[2], b[0])) if hits else None
+
+
+def _chain_wait(session: Session, r: "_Route", times: Optional[tuple], beyond, electric: bool, p: Params,
+                zones: Optional[dict] = None, runs: Optional[dict] = None, now: Optional[datetime] = None,
+                p50_only: bool = False) -> Optional[Unknown]:
+    """Plán varianty (odchod, príchod P50 a P90 – ``times``) na trase ``r`` (_Route) by vošiel do okna blokujúcej
+    výluky, ktoré začína až za koncom prehľadávaného obdobia (``beyond`` – výluky za ním na tej istej trase,
+    build_segments z _beyond_windows)? Simulácia také okno nevidela: vlak, ktorý čaká na koniec posledného okna, ktoré
+    videla (denné okná 00:00 – 24:00, 08:00 – 07:50, dve striedajúce sa výluky 06 – 18 a 18 – 06, dlhá denná výluka …),
+    by vyrazil rovno do ďalšieho okna – čas odchodu, príchod, návrh trasy aj koncept objednávky trasy by boli
+    vymyslené; výluka do odvolania, ktorá začne až po konci obdobia (aj na ďalšom úseku či ako pokračovanie výluky toho
+    istého úseku), vlak nepustí, kým ju ŽSR neodvolá.
+
+    Posudzuje sa priebeh jazdy ako v návrhu trasy (jazdná doba, čaká sa tam, kde čaká simulácia – ``zones``, _sim_zones;
+    s príchodom P50 aj P90) a priebeh simulácie so zdržaním (``runs`` – _sim_run so stredným zdržaním a so zdržaním P90
+    v každom úseku, aj s pomalými jazdami): okno, ktoré priebeh bez zdržania tesne minie, vlak so zdržaním nemusí.
+    Vojde doň priebeh so stredným zdržaním (alebo návrh trasy) → termín nie je známy (Unknown); vojde doň len jazda so
+    zdržaním P90 → príchod pri zdržaní nie je známy (Unknown.partial; ``p50_only`` – posudzuje sa len stredné zdržanie).
+    Vráti dôvod (_unknown_chain, _unknown_open), inak None."""
+    groute, start_km = r.groute, r.start_km
     if times is None or not beyond or not groute.stations:
         return None
-    extra = _route_blocks(groute, start_km, beyond, electric, p)
+    extra = _far_blocks(_route_blocks(groute, start_km, beyond, electric, p))
     if not extra:
         return None
-    m0, timelines = _timelines(groute, start_km, times, affecting, electric, p, pace, zones)
-    for anchors in timelines:
+    m0, timelines = _timelines(groute, start_km, times, r.affecting, electric, p, r.pace, zones)
+    found: dict = {}
+    for level, anchors in zip(("p50", "p90"), timelines):
         hit = _first_conflict(anchors, m0, extra)
-        if hit is None:
-            continue
-        lo, hi, w, a_name, b_name = hit[0], hit[1], hit[4], hit[5], hit[6]
-        if w.open_end:
-            # výluka do odvolania, ktorá začne až po konci prehľadávaného obdobia – vlak úsekom neprejde, kým ju ŽSR
-            # neodvolá
-            return _unknown_open(session, w)
-        prev = max((x for x, a, b in affecting or () if a == a_name and b == b_name and x.kind in BLOCKING
-                    and not (x.electric_only and not electric) and x.start < w.start),
-                   key=lambda x: (x.end, x.start), default=None)
-        # nadväzujúce okná: medzera po predchádzajúcom okne úseku je kratšia ako rezervy pred a po výluke a jazda úsekom
-        gap = timedelta(minutes=p.buffer_before_closure_min + p.buffer_after_closure_min + max(0.0, hi - lo) * pace)
-        chained = prev is not None and w.start - prev.end < gap
-        return _unknown_chain(session, w, prev, p, chained=chained)
-    return None
+        if hit is not None:
+            found.setdefault(level, []).append(hit)
+    seg_of = _seg_map(r.spans, r.segs)
+    for level, run in (runs or {}).items():
+        hit = _run_conflict(run, seg_of, extra, now)
+        if hit is not None:
+            found.setdefault(level, []).append(hit)
+    level = "p50" if found.get("p50") else ("p90" if found.get("p90") and not p50_only else None)
+    if level is None:
+        return None
+    hit = min(found[level], key=lambda b: (b[2], b[0]))
+    partial = level == "p90"
+    lo, hi, w, a_name, b_name = hit[0], hit[1], hit[4], hit[5], hit[6]
+    if w.open_end:
+        # výluka do odvolania, ktorá začne až po konci prehľadávaného obdobia – vlak úsekom neprejde, kým ju ŽSR
+        # neodvolá
+        return _unknown_open(session, w, partial=partial)
+    prev = max((x for x, a, b in r.affecting or () if a == a_name and b == b_name and x.kind in BLOCKING
+                and not (x.electric_only and not electric) and x.start < w.start),
+               key=lambda x: (x.end, x.start), default=None)
+    # nadväzujúce okná: medzera po predchádzajúcom okne úseku je kratšia ako rezervy pred a po výluke a jazda úsekom
+    gap = timedelta(minutes=p.buffer_before_closure_min + p.buffer_after_closure_min + max(0.0, hi - lo) * r.pace)
+    chained = prev is not None and w.start - prev.end < gap
+    return _unknown_chain(session, w, prev, p, chained=chained, partial=partial)
 
 
-def _sim_passes(segs, depart: float, p: Params, electric: bool, z: float = Z90) -> list:
+def _sim_run(segs, depart: float, p: Params, electric: bool, z: float = Z90) -> tuple:
     """Priebeh jazdy ako v simulácii (rozhodovanie.evaluate) pre jednu vzorku s rovnakým kvantilom zdržania ``z``
-    v každom úseku (predvolene P90 – neskôr ako takmer každá vzorka simulácie): [(vstup do úseku po čakaní, výstup)]
-    v minútach od teraz pre každý úsek simulácie. Pred úsekom s blokujúcou výlukou čaká, kým ho celý neprejde mimo
-    výluky s rezervami; pomalá jazda a výluka koľaje predĺžia jazdu (_slowed)."""
-    out, t = [], depart
-    for seg in segs:
+    v každom úseku (Z90 – neskôr ako takmer každá vzorka simulácie, 0 – stredné zdržanie): ([(príchod k úseku, vstup do
+    úseku po čakaní, výstup)] v minútach od teraz pre každý úsek simulácie, (index úseku, ref okna) prvej výluky do
+    odvolania, do ktorej úseku priebeh vojde od jej začiatku − rezerva pred výlukou – alebo None). Pred úsekom
+    s blokujúcou výlukou čaká, kým ho celý neprejde mimo výluky s rezervami; pomalá jazda a výluka koľaje predĺžia jazdu
+    (_slowed)."""
+    out, t, opened = [], depart, None
+    for k, seg in enumerate(segs):
+        arrive = t
         base = seg.run_min + _lognormal(seg, z)
         travel = _slowed(seg, z, t, base) if seg.slowdowns else base
         moved = True
@@ -2849,9 +3207,15 @@ def _sim_passes(segs, depart: float, p: Params, electric: bool, z: float = Z90) 
                     t, moved = we, True
             if moved and seg.slowdowns:
                 travel = _slowed(seg, z, t, base)
-        out.append((t, t + travel))
+        if opened is None:
+            for c in seg.closures:
+                if c.open_end and not (c.electric_only and not electric) and \
+                        t + travel > c.start - p.buffer_before_closure_min:
+                    opened = (k, c.ref)
+                    break
+        out.append((arrive, t, t + travel))
         t += travel
-    return out
+    return out, opened
 
 
 @dataclass
@@ -2867,11 +3231,13 @@ class _Route:
 
 
 class _Termin:
-    """Je termín jazdy varianty známy? Varianta, ktorá čaká na koniec výluky do odvolania (_open_wait), alebo ktorej plán
-    by vošiel do okna výluky za koncom prehľadávaného obdobia ``end`` (_chain_wait), nemá skutočný čas odchodu ani
-    príchodu. Okná za koncom obdobia (_beyond_windows) sa načítajú len pre plán, ktorý tam siaha (aj s rezervou pred
-    výlukou), a na každej trase sa umiestnia raz. ``routes`` = {názov trasy: _Route alebo (trasa siete, km polohy
-    idúceho vlaku, výluky na trase z build_segments, tempo jazdy návrhu trasy)}."""
+    """Je termín jazdy varianty známy? Varianta, ktorej vzorky simulácie vojdú do úseku výluky do odvolania po jej
+    začiatku (Evaluation.p_open – čakali by na koniec výluky bez skutočného konca), alebo ktorej plán by vošiel do okna
+    výluky za koncom prehľadávaného obdobia ``end`` (_chain_wait), nemá skutočný čas odchodu ani príchodu (Unknown);
+    týka sa to len jazdy so zdržaním (príchod P90), odchod a predpokladaný príchod ostávajú (Unknown.partial). Okná za
+    koncom obdobia (_beyond_windows) sa načítajú len pre plán, ktorý tam siaha (aj s rezervou pred výlukou), a na každej
+    trase sa umiestnia raz. ``routes`` = {názov trasy: _Route alebo (trasa siete, km polohy idúceho vlaku, výluky na
+    trase z build_segments, tempo jazdy návrhu trasy)}."""
 
     def __init__(self, session: Session, net: Network, spec: TrainSpec, now: datetime, end: datetime, p: Params,
                  electric: bool, routes: dict):
@@ -2882,6 +3248,7 @@ class _Termin:
         self._windows: list = []
         self._beyond: dict = {}
         self._zones: dict = {}
+        self._runs: dict = {}
 
     def zones(self, name: str) -> Optional[dict]:
         """Úseky simulácie na trase ``name`` (_sim_zones) – kde čaká simulácia a návrh trasy."""
@@ -2889,6 +3256,32 @@ class _Termin:
             r = self.routes.get(name)
             self._zones[name] = _sim_zones(r.groute, r.start_km, r.spans) if r is not None else None
         return self._zones[name]
+
+    def seg_map(self, name: str) -> Optional[dict]:
+        """Úsek simulácie pre každý úsek medzi bodmi trasy ``name`` (_seg_map)."""
+        r = self.routes.get(name)
+        return _seg_map(r.spans, r.segs) if r is not None else None
+
+    def runs(self, name: str, depart: datetime) -> dict:
+        """Priebeh simulácie plánu s odchodom ``depart`` na trase ``name`` so stredným zdržaním a so zdržaním P90
+        v každom úseku (_sim_run): {"p50": …, "p90": …}; bez úsekov simulácie {}."""
+        r = self.routes.get(name)
+        if r is None or not r.segs:
+            return {}
+        d = _min(self.now, depart)
+        key = (name, round(d, 6))
+        if key not in self._runs:
+            self._runs[key] = {"p50": _sim_run(r.segs, d, self.p, self.electric, 0.0),
+                               "p90": _sim_run(r.segs, d, self.p, self.electric, Z90)}
+        return self._runs[key]
+
+    def sim(self, name: str, ev: Optional[Evaluation]) -> Optional[tuple]:
+        """(úseky simulácie, ich rozsah v bodoch, priebehy simulácie – runs) plánu ``ev`` na trase ``name`` pre poistky
+        návrhu trasy (_path_proposal); bez trasy či úsekov None."""
+        r = self.routes.get(name)
+        if r is None or ev is None or not r.segs:
+            return None
+        return r.segs, r.spans, self.runs(name, _dt(self.now, ev.depart))
 
     def reaches(self, times: Optional[tuple]) -> Optional[datetime]:
         """Do kedy treba okná za koncom obdobia (plán siaha za koniec obdobia − rezerva pred výlukou), inak None."""
@@ -2914,79 +3307,134 @@ class _Termin:
                                                 r.start_km)[2] if self._windows else []
         return self._beyond[name]
 
-    def times(self, times: Optional[tuple], name: str) -> Optional[Unknown]:
-        """Plán (odchod, príchod P50, P90) na trase ``name`` vošiel by do okna výluky za koncom obdobia? (_chain_wait)"""
+    def times(self, times: Optional[tuple], name: str, p50_only: bool = False) -> Optional[Unknown]:
+        """Plán (odchod, príchod P50, P90) na trase ``name`` vošiel by do okna výluky za koncom obdobia? (_chain_wait;
+        ``p50_only`` – príchod P90 už nie je známy, posudzuje sa len stredné zdržanie)"""
+        if times is None or name not in self.routes:
+            return None
+        if p50_only:
+            times = (times[0], times[1], times[1])
         until = self.reaches(times)
-        if until is None or name not in self.routes:
+        if until is None:
             return None
+        runs = self.runs(name, times[0])
+        if p50_only:
+            runs = {k: v for k, v in runs.items() if k == "p50"}
         r = self.routes[name]
-        return _chain_wait(self.session, r.groute, r.start_km, times, r.affecting, self.beyond(name, until),
-                           self.electric, self.p, r.pace, self.zones(name))
+        u = _chain_wait(self.session, r, times, self.beyond(name, until), self.electric, self.p, self.zones(name),
+                        runs=runs, now=self.now, p50_only=p50_only)
+        # okno za koncom prehľadávaného obdobia – simulácia ho nevidela (Unknown.unseen)
+        return replace(u, unseen=True) if u is not None else None
 
-    def entered(self, name: str, times: Optional[tuple]) -> Optional[set]:
-        """id() okien výluk do odvolania (bez skutočného konca) na trase ``name``, do ktorých úseku by plán ``times`` =
-        (odchod, príchod P50, P90) vošiel po ich začiatku (s rezervou pred výlukou) – a čakal by teda na ich vymyslený
-        koniec. Posudzuje sa priebeh jazdy ako v simulácii so zdržaním P90 v každom úseku (_sim_passes – neskôr ako
-        takmer každá vzorka) aj priebeh návrhu trasy (_timelines); výluka, ktorej úsek vlak podľa oboch prejde ešte pred
-        jej začiatkom, ho nezdrží, hoci príde neskôr (napr. po čakaní na koniec inej, dlhej výluky ďalej na trase).
-        Bez úsekov simulácie alebo časov None (všetky výluky do odvolania na trase)."""
-        r = self.routes.get(name)
-        if r is None or times is None or not r.segs or not r.spans or len(r.spans) != len(r.segs) or \
-                not r.groute.stations:
+    def _open(self, ev: Evaluation) -> Optional[Unknown]:
+        """Vzorky simulácie varianty ``ev`` vojdú do úseku výluky do odvolania po jej začiatku (Evaluation.p_open): od
+        nich závisí príchod P50 (termín nie je známy) alebo len P90 (Unknown.partial); inak None."""
+        if not getattr(ev, "p_open", 0) or not (ev.open_p50 or ev.open_p90):
             return None
-        opens = [(w, a, b) for w, a, b in r.affecting
-                 if w.open_end and w.kind in BLOCKING and not (w.electric_only and not self.electric)]
-        if not opens:
-            return set()
-        passes = _sim_passes(r.segs, _min(self.now, times[0]), self.p, self.electric)
-        m0, timelines = _timelines(r.groute, r.start_km, times, r.affecting, self.electric, self.p, r.pace,
-                                   self.zones(name))
-        wps = _route_waypoints(r.groute, r.start_km)
-        pairs: dict = {}
-        for i, (x, y) in enumerate(zip(wps, wps[1:])):
-            pairs.setdefault((x.name, y.name), []).append(i)
-        seg_of = {i: k for k, (i0, i1) in enumerate(r.spans) for i in range(i0, i1)}
-        blocks = {}
-        for blk in _route_blocks(r.groute, r.start_km, opens, self.electric, self.p):
-            blocks.setdefault(id(blk[4]), []).append((blk[0], blk[1], blk[2], FAR_FUTURE))
-        out = set()
-        for w, a, b in opens:
-            start = _min(self.now, w.start) - self.p.buffer_before_closure_min
-            ks = [seg_of[i] for i in pairs.get((a, b), []) if i in seg_of]
-            if not ks or any(passes[k][1] > start - 1e-6 for k in ks) or \
-                    any(_first_conflict(anchors, m0, blocks.get(id(w), [])) for anchors in timelines):
-                out.add(id(w))
-        return out
+        r = self.routes.get(ev.route)
+        w = _open_hit(ev, r.affecting if r is not None else [], self.electric)
+        if w is None:  # pragma: no cover - poistka (ref okna sa nenašiel): termín nie je známy
+            return Unknown("výluka do odvolania na trase", _OPEN_GENERIC, "vlak úsekom neprejde, kým ŽSR výluku "
+                           "neodvolá", None, partial=not ev.open_p50)
+        if ev.open_p50:
+            return _unknown_open(self.session, w)
+        return _unknown_open(self.session, w, partial=True, share=ev.p_open)
 
     def ev(self, ev: Optional[Evaluation]) -> Optional[Unknown]:
-        """Prečo termín jazdy varianty ``ev`` nie je známy (výluka do odvolania, nadväzujúce okná výluk), inak None."""
+        """Prečo termín jazdy varianty ``ev`` nie je známy (výluka do odvolania, nadväzujúce okná výluk) – celý, alebo
+        len pri zdržaní (Unknown.partial) –, inak None."""
         if ev is None:
             return None
         times = (_dt(self.now, ev.depart), _dt(self.now, ev.arrival_p50), _dt(self.now, ev.arrival_p90))
-        r = self.routes.get(ev.route)
-        ow = _open_wait(ev, r.affecting if r is not None else [], self.now, self.electric,
-                        self.entered(ev.route, times))
-        if ow is not None:
-            return _unknown_open(self.session, ow)
-        return self.times(times, ev.route)
+        inner = self._open(ev)
+        if inner is not None and not inner.partial:
+            return inner
+        outer = self.times(times, ev.route, p50_only=inner is not None)
+        if outer is not None and (inner is None or not outer.partial):
+            return outer
+        return inner
 
-    def variant(self, v: dict, affecting) -> None:
-        """Varianta v porovnaní (slovník _ev_dict) bez príchodu a nákladu, ak jej termín nie je známy (_open_variant)."""
-        name = v.get("route", "")
-        times = _times(v)
-        _open_variant(v, affecting, self.electric, chain=self.times(times, name), entered=self.entered(name, times))
+    def cost(self, ev: Optional[Evaluation]) -> Optional[str]:
+        """Dôvod, prečo očakávaný náklad varianty ``ev`` nie je známy, hoci jej príchod P90 áno: niektoré vzorky
+        simulácie (menej ako desatina) vojdú do úseku výluky do odvolania po jej začiatku – ich náklad je z vymysleného
+        konca výluky (technického konca či hranice výpočtu). Inak None."""
+        if ev is None or not getattr(ev, "p_open", 0) or ev.open_p50 or ev.open_p90:
+            return None
+        r = self.routes.get(ev.route)
+        w = _open_hit(ev, r.affecting if r is not None else [], self.electric)
+        where = f", kde {_open_text(w)}," if w is not None else " výluky do odvolania"
+        return (f"očakávaný náklad nie je známy – pri zdržaní by vlak vošiel do úseku{where} po začiatku výluky a "
+                f"čakal by, kým ju ŽSR neodvolá{_share_text(ev.p_open)}")
+
+    def variant(self, v: dict, ev: Optional[Evaluation]) -> None:
+        """Varianta v porovnaní (slovník _ev_dict varianty ``ev``) bez príchodu a nákladu, ak jej termín nie je známy,
+        bez príchodu P90 a nákladu, ak nie je známy len príchod pri zdržaní, a bez nákladu, ak by na koniec výluky do
+        odvolania čakali len niektoré jazdy (_open_variant)."""
+        if ev is None:
+            return
+        u = self.ev(ev)
+        _open_variant(v, u, None if u is not None else self.cost(ev))
+
+
+_OPEN_GENERIC = ("Na trase je výluka do odvolania, do ktorej úseku by vlak vošiel po jej začiatku – kým ju ŽSR neodvolá, "
+                 "vlak úsekom neprejde. Čas odchodu ani príchodu sa preto nedá určiť: agent neuvádza najmenej zlú "
+                 "možnosť s časmi, návrh trasy ani objednávku trasy v IS KIS. Dohodnite so ŽSR inú trasu alebo čas a "
+                 "zákazníkovi oznámte, že termín zatiaľ nie je známy.")
+
+
+PROPOSAL_TOLERANCE_MIN = 30.0  # príchod návrhu trasy (jazda so stredným zdržaním) vs. predpokladaný príchod P50
+
+
+def _proposal_mismatch(timeline: list, run: tuple, spans: list, zones: dict, segs, chosen: Evaluation,
+                       now: datetime, p: Params) -> Optional[str]:
+    """Nemôže návrh trasy (body priebehu ``timeline`` – _schedule_anchors) sledovať simuláciu? Priebeh simulácie so
+    stredným zdržaním v každom úseku (``run`` – _sim_run) čaká pred úsekom simulácie, ktorým by návrh prešiel skôr (bez
+    čakania alebo s kratším čakaním) – napr. pomalé jazdy či zdržanie posunú vlak do okna výluky, ktoré jazda podľa
+    jazdnej doby tesne minie –, alebo predpokladaný príchod (P50) nezodpovedá jeho príchodu (aj s vystriedaním
+    rušňovodiča) o viac ako PROPOSAL_TOLERANCE_MIN (a 10 % jazdy): zvyšok jazdy by sa natiahol na dni. Vráti dôvod (text
+    do vety), inak None."""
+    passes = run[0]
+    for k, (arrive, enter, _leave) in enumerate(passes):
+        if enter <= arrive + 0.5 or k >= len(spans):
+            continue
+        zone = zones.get(spans[k][0])
+        if zone is None:
+            continue
+        _arr, dep = _anchor_times(timeline, zone[0])
+        if dep < plus_minutes(now, enter - 1.0):
+            name = segs[k].name if k < len(segs) else ""
+            return (f"jazda so stredným zdržaním (simulácia) čaká pred úsekom {name} do {fmt(_dt(now, enter))}, návrh "
+                    f"podľa jazdnej doby by ním prešiel skôr – časy návrhu by nezodpovedali simulácii")
+    if not passes:
+        return None
+    end = passes[-1][2]
+    tol = max(PROPOSAL_TOLERANCE_MIN, 0.1 * max(0.0, end - chosen.depart))
+    diffs = [abs(chosen.arrival_p50 - end)]
+    if chosen.p_crew_relief > 0:
+        diffs.append(abs(chosen.arrival_p50 - (end + p.crew_relief_delay_min)))
+    if min(diffs) > tol:
+        return (f"predpokladaný príchod {fmt(_dt(now, chosen.arrival_p50))} nezodpovedá jazde so stredným zdržaním "
+                f"(simulácia: príchod {fmt(_dt(now, end))}) – časy návrhu by sa museli natiahnuť")
+    return None
 
 
 def _path_proposal(net: Network, groute: GRoute, chosen: Optional[Evaluation], now: datetime,
                    start_km: float, rec, affecting=(), electric: bool = True, params: Optional[Params] = None,
-                   pace: Optional[float] = None, beyond=(), zones: Optional[dict] = None) -> dict:
+                   pace: Optional[float] = None, beyond=(), zones: Optional[dict] = None, sim: Optional[tuple] = None,
+                   notes: Optional[list] = None) -> dict:
     """Návrh trasy (dopravne a časy) pre zvolenú variantu. Časy sú rovnomerne rozložené medzi odchod a predpokladaný
     príchod; ak by tak vlak išiel úsekom blokujúcej výluky (``affecting`` z build_segments) počas nej, návrh ukáže
     čakanie na dopravni pred výlukou do jej konca (_proposal_schedule) – tam, kde čaká simulácia (``zones`` – úseky
     simulácie, _sim_zones), nikdy nie časy vnútri výluky. Výluka do odvolania nemá známy koniec: návrh, ktorý by do jej
     úseku vošiel po jej začiatku (čakal by na koniec jej okna – technický koniec či koniec prehľadávaného obdobia), sa
     nepripraví; rovnako návrh, ktorý by vošiel do okna výluky za koncom prehľadávaného obdobia (``beyond`` – výluky za
-    ním na trase, _chain_wait): simulácia ho nevidela a časy by boli vymyslené."""
+    ním na trase, _chain_wait): simulácia ho nevidela a časy by boli vymyslené.
+
+    ``sim`` = (úseky simulácie, ich rozsah v bodoch, priebehy simulácie so stredným zdržaním a so zdržaním P90 –
+    _Termin.runs): návrh sa nepripraví ani vtedy, keď by do úseku výluky do odvolania po jej začiatku či do okna za
+    koncom obdobia vošla jazda so zdržaním, a keď nemôže sledovať simuláciu – jazda so stredným zdržaním čaká pred
+    úsekom, ktorým by návrh podľa jazdnej doby prešiel bez čakania, alebo predpokladaný príchod nezodpovedá jej príchodu
+    (časy návrhu by sa museli natiahnuť, napr. o dni). Prečo sa nepripravil, povie dôvod v ``notes``."""
     if chosen is None:
         return {}
     p = params or Params()
@@ -3023,9 +3471,40 @@ def _path_proposal(net: Network, groute: GRoute, chosen: Optional[Evaluation], n
         # návrh by vošiel do úseku výluky do odvolania po jej začiatku – čakal by na vymyslený koniec (technický koniec
         # či koniec prehľadávaného obdobia) a objednával trasu do platnej výluky
         return {}
-    if beyond and _first_conflict(timeline, m0, _route_blocks(groute, start_km, beyond, electric, p)) is not None:
+    later = _far_blocks(_route_blocks(groute, start_km, beyond, electric, p)) if beyond and groute.stations else []
+    if later and _first_conflict(timeline, m0, later) is not None:
         # návrh by vošiel do okna výluky za koncom prehľadávaného obdobia (simulácia ho nevidela) – trasa do výluky
         return {}
+    segs, spans, runs = sim if sim is not None else ((), None, {})
+    seg_of = _seg_map(spans, segs)
+    by_ref = {id(w): w for w in _open_blocks(affecting, electric)}
+    for level in ("p50", "p90"):
+        run = (runs or {}).get(level)
+        if run is None:
+            continue
+        if run[1] is not None:
+            # jazda so zdržaním by vošla do úseku výluky do odvolania po jej začiatku (a čakala, kým ju ŽSR neodvolá)
+            w = by_ref.get(run[1][1])
+            where = f", kde {_open_text(w)}," if w is not None else " výluky do odvolania"
+            if notes is not None:
+                notes.append(f"Návrh trasy ani koncepty správ agent nepripravil: pri zdržaní by vlak vošiel do "
+                             f"úseku{where} po začiatku výluky (s rezervou pred výlukou) a čakal by, kým ju ŽSR "
+                             f"neodvolá – dohodnite so ŽSR, či vlak úsek prejde včas, inak inú trasu alebo čas.")
+            return {}
+        if later and _run_conflict(run, seg_of, later, now) is not None:
+            if notes is not None:
+                notes.append("Návrh trasy ani koncepty správ agent nepripravil: pri zdržaní by vlak vošiel do okna "
+                             "výluky za koncom prehľadávaného obdobia, ktoré agent pri výpočte nevidel – čas prejazdu "
+                             "úseku dohodnite so ŽSR.")
+            return {}
+    run50 = (runs or {}).get("p50")
+    if run50 is not None and zones is not None and spans and len(spans) == len(run50[0]):
+        why = _proposal_mismatch(timeline, run50, spans, zones, segs, chosen, now, p)
+        if why:
+            if notes is not None:
+                notes.append(f"Návrh trasy ani koncepty správ agent nepripravil: {why}. Trasu dohodnite so ŽSR podľa "
+                             f"odchodu a predpokladaného príchodu vyššie.")
+            return {}
     stations[0]["arr"] = None
     stations[-1]["dep"] = None
     window = None
@@ -3482,18 +3961,27 @@ def _priority(session: Session, train: Train, decision: str, color: str, chosen,
     return "INFO"
 
 
+def _p90_part(arrival_p90: datetime, p90: Optional[Unknown] = None) -> str:
+    """Časť textu o príchode 90 % jázd: „90 % do 25.11. 10:30“; ak príchod pri zdržaní nie je známy (Unknown.partial):
+    „90 % jázd: príchod nie je známy – výluka … platí od … do odvolania“."""
+    if p90 is not None:
+        return f"90 % jázd: príchod nie je známy – {p90.text}"
+    return f"90 % do {fmt(arrival_p90)}"
+
+
 def _summary(train: Train, decision: str, chosen: Optional[Evaluation], now: datetime, crew: dict, rec,
              horizon_min: Optional[float] = None, has_path: Optional[bool] = None, ordered: bool = False,
              near_km: Optional[float] = None, near_estimated: bool = False, until_entry: bool = False,
-             unknown: Optional[Unknown] = None, least_kind: str = "") -> str:
+             unknown: Optional[Unknown] = None, least_kind: str = "", p90: Optional[Unknown] = None) -> str:
     """Súhrn odporúčania (prvý riadok e-mailu, súhrn, odovzdávka služby). has_path – vlak má pridelenú trasu;
     ordered – novú trasu už dispečer objednal (prijaté odporúčanie), nie „treba objednať“ ani „objednať trasu“;
     near_km – idúci vlak tesne pred cieľom (zostávajúce km): dokončiť jazdu, prípadne počkať pred vjazdom
     (near_estimated – len podľa odhadu z plánu, poloha nie je známa; until_entry – čaká, kým sa neuvoľní vjazd,
     dlhšie, ako siaha prehľadávané obdobie: bez času odchodu, ten je len hranicou výpočtu); unknown – prečo termín
-    zvolenej varianty nie je známy (Unknown: čakala by na koniec výluky do odvolania – _open_wait –, alebo by vošla do
-    okna výluky za koncom prehľadávaného obdobia – _chain_wait): bez času odchodu a príchodu; least_kind – druh
-    najmenej zlej možnosti pri eskalácii (zvolená varianta sa vtedy neukazuje)."""
+    zvolenej varianty nie je známy (Unknown: čakala by na koniec výluky do odvolania – _Termin._open –, alebo by vošla
+    do okna výluky za koncom prehľadávaného obdobia – _chain_wait): bez času odchodu a príchodu; least_kind – druh
+    najmenej zlej možnosti pri eskalácii (zvolená varianta sa vtedy neukazuje); p90 – nie je známy len príchod pri
+    zdržaní (Unknown.partial): odchod a predpokladaný príchod ostávajú, namiesto príchodu 90 % jázd „nie je známy“."""
     rel = f"{train.origin} → {train.destination}"
     if chosen is None or decision == ESKALOVAT:
         full = settings().horizon_hours * 60
@@ -3518,10 +4006,10 @@ def _summary(train: Train, decision: str, chosen: Optional[Evaluation], now: dat
             else:
                 what = f"{chosen.kind} s odchodom {fmt(_dt(now, chosen.depart))}"
             txt += (f" Najmenej zlá možnosť: {what}, príchod {fmt(_dt(now, chosen.arrival_p50))} "
-                    f"(90 % do {fmt(_dt(now, chosen.arrival_p90))}).")
+                    f"({_p90_part(_dt(now, chosen.arrival_p90), p90)}).")
         return txt
     dep = fmt(_dt(now, chosen.depart))
-    arr50, arr90 = fmt(_dt(now, chosen.arrival_p50)), fmt(_dt(now, chosen.arrival_p90))
+    arr50 = fmt(_dt(now, chosen.arrival_p50))
     # ODSTAVIŤ: pôvodnú trasu odrieknuť len vtedy, keď odchod naozaj potrebuje novú trasu – odchod na vlastnú
     # pridelenú trasu (v tolerancii) sa neodrieka (poplatok, novú trasu by ŽSR v lehote P5 aj tak nepridelila)
     stabled = "ODSTAVIŤ – vlak ostáva odstavený (najviac 18 h)" if train.status == "odstaveny" else \
@@ -3554,7 +4042,7 @@ def _summary(train: Train, decision: str, chosen: Optional[Evaluation], now: dat
                f"{unknown.text}.")
     else:
         txt = (f"Vlak {train.number} ({rel}): {head}. P(včas) {chosen.p_on_time:.0%}, príchod {arr50} "
-               f"(90 % do {arr90}).")
+               f"({_p90_part(_dt(now, chosen.arrival_p90), p90)}).")
     if chosen.needs_new_path and ordered:
         # čas v lehote P5 je len pre trasu objednanú podľa prijatého odporúčania – nie výzva objednať ju znova
         txt += " Nová trasa podľa prijatého odporúčania (objednaná v lehote P5) – overte jej pridelenie v IS KIS."
@@ -3630,7 +4118,7 @@ def _store(session: Session, train: Train, now: datetime, trigger: str, decision
            windows: Optional[dict] = None, path_proposal: Optional[dict] = None, crew: Optional[dict] = None,
            reasons: Optional[list] = None, data_age: Optional[dict] = None,
            failure: bool = False, fingerprint_color: Optional[str] = None,
-           started: Optional[datetime] = None, open_end: bool = False) -> Recommendation:
+           started: Optional[datetime] = None, open_end: bool = False, p90_open: bool = False) -> Recommendation:
     """Uloží odporúčanie len ak sa zmenilo (fingerprint); staré nové odporúčania označí za zastarané.
 
     Poradie súbežných prepočtov vlaku (web „nový vlak“ a prepočet po potvrdení avíza, agent a web): ukladá sa pod
@@ -3660,12 +4148,15 @@ def _store(session: Session, train: Train, now: datetime, trigger: str, decision
     podľa predpokladaného príchodu, ako idúci vlak.
     ``open_end`` – zvolená varianta čaká na koniec výluky do odvolania (príchod nie je známy, nedá sa porovnať): vlastný
     odtlačok (okrem eskalácie, kde je najmenej zlá možnosť len informácia) – keď ŽSR oznámi koniec výluky, odporúčanie
-    so skutočným príchodom je nové (a naopak).
+    so skutočným príchodom je nové (a naopak). ``p90_open`` – nie je známy príchod pri zdržaní (výluka do odvolania, do
+    ktorej by vošla jazda so zdržaním – Unknown.partial): tiež vlastný odtlačok (bez návrhu trasy a konceptov správ).
     """
     chosen = chosen or {}
     tag = "|chyba" if failure else ""
     if open_end and decision != ESKALOVAT:
         tag += "|do_odvolania"
+    elif p90_open and decision != ESKALOVAT:
+        tag += "|p90_do_odvolania"
     full_src = "|".join([decision, fingerprint_color or color, chosen.get("route", ""),
                          (crew or {}).get("status", ""), str(bool(chosen.get("needs_new_path")))]) + tag
     # pri eskalácii je najmenej zlá možnosť len informácia – jej trasa sa môže s časom striedať a to nie je

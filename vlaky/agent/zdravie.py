@@ -307,7 +307,7 @@ def params_status(session) -> tuple:
     namiesto minút). Plánovač s ňou počíta (vlaky drží pred úsekom zodpovedajúco dlhšie, vzdialenejšie okná výluk počíta
     súhrnne – prísnejšie), vedúci dispečer ju má opraviť v Nastaveniach."""
     from ..models import ParameterSet
-    from ..notifikacie.texty import number
+    from ..notifikacie.texty import exact_number
     from ..planovanie.planovac import _BUFFER_TEXT, _buffer_excess, current_params
 
     excess = _buffer_excess(current_params(session))
@@ -315,7 +315,7 @@ def params_status(session) -> tuple:
         return True, "ok", None
     ps = session.scalar(select(ParameterSet).where(ParameterSet.valid_from <= now_utc())
                         .order_by(ParameterSet.valid_from.desc(), ParameterSet.id.desc()))
-    vals = " a ".join(f"{_BUFFER_TEXT.get(k, k)} {number(v)} min" for k, v in excess.items())
+    vals = " a ".join(f"{_BUFFER_TEXT.get(k, k)} {exact_number(v)} min" for k, v in excess.items())
     many = len(excess) > 1
     text = (f"{'rezervy' if many else 'rezerva'} {vals} v platnej sade parametrov{f' #{ps.id}' if ps else ''} "
             f"{'sú' if many else 'je'} nad limitom 1 440 min (24 h) – zrejme preklep zo staršej verzie formulára; "
