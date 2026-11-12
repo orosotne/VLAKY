@@ -6176,6 +6176,12 @@ def _reapply_superseded(session: Session, x: ExtractedEvent, actor: str) -> list
             ExtractedEvent.status == "aplikovane", ExtractedEvent.id < x.id, sup == x.id).order_by(ExtractedEvent.id)))
     for y in rows:
         a = _applied_of(y)
+        if a.get("action") == "vytvorene" and a.get("superseded_by") == x.id and y.confirmed_at is not None and \
+                y.kind in CLOSURE_EVENT_KINDS:
+            msg = _reapply_separate(session, x, y, a, actor)
+            if msg:
+                msgs.append(msg)
+            continue
         if a.get("action") != "nahradene" or a.get("superseded_by") != x.id or \
                 y.kind not in CLOSURE_EVENT_KINDS + ("vyluka_zrusenie",):
             continue
@@ -6216,6 +6222,47 @@ def _reapply_superseded(session: Session, x: ExtractedEvent, actor: str) -> list
         msgs.append(_reapplied_text(y, res))
         session.flush()
     return msgs
+
+
+def _reapply_separate(session: Session, x: ExtractedEvent, y: ExtractedEvent, a: dict, actor: str) -> Optional[str]:
+    """Potvrdenú udalosť ``y`` zapísala len ako samostatnú výluku s časťou termínu, lebo výluku medzitým zapísala novšia
+    udalosť ``x`` (o zvyšku rozhodla ``x``). Dispečer ``x`` zamietol: ``y`` je znova najnovšou správou o celom svojom
+    termíne – jej samostatná výluka sa zruší a udalosť sa zapíše znova s novým plánom (ako prvý zápis). Ak to nejde,
+    samostatná výluka ostáva (prísnejší prípad). Výluku, ktorú dispečer po zápise upravil, zamietnutie nemení."""
+    own = session.get(Closure, a.get("id")) if isinstance(a.get("id"), int) else None
+    if own is None or own.status == "zrusene" or own.source_event_id != y.id or own.proposed_change_of is not None:
+        return None
+    if _edited_after_write(session, y, own, a):
+        return None
+    old_val = dict(y.validation or {})
+    try:
+        from ..db import prepare_savepoints
+
+        prepare_savepoints(session)  # SQLite: SAVEPOINT len vnútri otvorenej transakcie
+        with session.begin_nested():  # zlyhaný zápis vráti aj zrušenie samostatnej výluky
+            own.status = "zrusene"
+            own.version = (own.version or 1) + 1
+            own.note = "\n".join(filter(None, [own.note or "", (
+                f"Zrušená: dispečer zamietol udalosť #{x.id}, pre ktorú sa udalosť #{y.id} zapísala len ako "
+                "samostatná výluka – udalosť zapísaná znova celá.")]))
+            val = dict(old_val)
+            val.pop("applied", None)
+            y.validation = val
+            y.status = "potvrdene"
+            session.flush()
+            res = apply_event(session, y, actor)
+            if not res.get("ok"):
+                raise ApplyError(str(res.get("error") or "zápis zlyhal"), retry=False)
+    except Exception:  # noqa: BLE001 – samostatná výluka ostáva, zamietnutie sa dokončí
+        y.validation = old_val
+        y.status = "aplikovane"
+        session.flush()
+        return f"udalosť #{y.id} ostáva zapísaná ako samostatná výluka #{own.id} – skontrolujte ju"
+    val = dict(y.validation or {})
+    val["apply_result"] = {k: v for k, v in res.items() if k not in ("before", "train_before")}
+    y.validation = val
+    session.flush()
+    return _reapplied_text(y, res)
 
 
 def _reapplied_text(y: ExtractedEvent, res: dict) -> str:
