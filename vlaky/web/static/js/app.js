@@ -378,6 +378,7 @@
       syncClock(box2 && box2.getAttribute('data-teraz'), sentAt);
       updateAges();
       startCountdowns();
+      if (window.vlakyUI) { window.vlakyUI.refreshTable(main); }   // komponenty (filter, karty na mobile) v novom obsahu
       var after = summaryOf(box2);
       var changes = before && after ? summaryChanges(before, after) : null;
       var at = hhmm(serverNow());

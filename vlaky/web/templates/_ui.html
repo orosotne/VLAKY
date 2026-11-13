@@ -1,0 +1,214 @@
+{#- ============================================================================================================
+    Knižnica UI komponentov (Jinja makrá). Dokumentácia API: docs/UI_KOMPONENTY.md, živý katalóg: /komponenty.
+
+    Pravidlá:
+    * Každé makro vykreslí kompletný, prístupný HTML bez JavaScriptu; static/js/ui.js ho len vylepšuje
+      (data-ui-* atribúty) – stav načítania tlačidla, filter tabuľky, rozloženie tabuľky na mobile, zavretie hlásenia.
+    * Texty sú vždy escapované (autoescape); HTML do komponentu ide len cez {% call %} blok (caller()).
+    * Varianty sú vymenované hodnoty (tone, variant, size); neznáma hodnota padne na bezpečný predvolený vzhľad.
+    * `attrs` = ďalšie HTML atribúty {názov: hodnota}; hodnota None atribút vynechá, True vykreslí len názov.
+
+    Použitie:  {% import "_ui.html" as ui with context %}
+============================================================================================================ -#}
+
+{%- set _TONES = ("neutral", "info", "success", "warning", "danger") -%}
+{%- set _VARIANTS = ("primary", "secondary", "danger", "ghost") -%}
+{%- set _SIZES = ("sm", "md", "lg") -%}
+
+{%- macro _attrs(attrs) -%}
+{%- for k, v in (attrs or {}).items() if v is not none and v is not false %} {{ k }}{% if v is not true %}="{{ v }}"{% endif %}{% endfor -%}
+{%- endmacro -%}
+
+{%- macro _tone(tone, default="neutral") -%}{{ tone if tone in _TONES else default }}{%- endmacro -%}
+
+
+{#- ---------------------------------------------------------------------------------------------------- button
+    Tlačidlo alebo odkaz vo vzhľade tlačidla.
+    label       text (povinný; pri tlačidle len s ikonou ho použite ako aria-label cez icon_only=True)
+    variant     primary | secondary (predvolené) | danger | ghost
+    size        sm | md (predvolené) | lg
+    type        button (predvolené) | submit | reset   – pri href sa ignoruje
+    href        ak je zadaný, vykreslí sa <a>
+    busy_label  text počas odosielania formulára (napr. „Ukladá sa…“); tlačidlo sa zablokuje a dostane aria-busy
+    disabled    zablokované (odkaz dostane aria-disabled a nedá sa naň kliknúť)
+    icon_only   label sa nevykreslí, slúži ako aria-label (caller() potom obsahuje ikonu)
+    block       na celú šírku
+    attrs       ďalšie atribúty (name, value, form, data-*, …)
+---------------------------------------------------------------------------------------------------------------- -#}
+{%- macro button(label, variant="secondary", size="md", type="button", href=None, busy_label=None, disabled=False,
+                 icon_only=False, block=False, attrs={}) -%}
+{%- set v = variant if variant in _VARIANTS else "secondary" -%}
+{%- set s = size if size in _SIZES else "md" -%}
+{%- set cls = "btn btn-" ~ v ~ (" btn-" ~ s if s != "md" else "") ~ (" btn-block" if block else "") -%}
+{%- set inner -%}{% if caller %}{{ caller() }}{% endif %}{% if not icon_only %}<span class="btn-label">{{ label }}</span>{% endif %}{%- endset -%}
+{%- if href and not disabled -%}
+<a class="{{ cls }}" href="{{ href }}"{% if icon_only %} aria-label="{{ label }}"{% endif %}{{ _attrs(attrs) }}>{{ inner }}</a>
+{%- elif href -%}
+<a class="{{ cls }}" role="link" aria-disabled="true"{% if icon_only %} aria-label="{{ label }}"{% endif %}{{ _attrs(attrs) }}>{{ inner }}</a>
+{%- else -%}
+<button class="{{ cls }}" type="{{ type if type in ('submit', 'reset') else 'button' }}"{% if disabled %} disabled{% endif %}{% if busy_label %} data-ui-busy-label="{{ busy_label }}"{% endif %}{% if icon_only %} aria-label="{{ label }}"{% endif %}{{ _attrs(attrs) }}>{{ inner }}</button>
+{%- endif -%}
+{%- endmacro %}
+
+
+{#- ---------------------------------------------------------------------------------------------------- status
+    Krátky stavový štítok (nie semafor odporúčania – na ten je _makra.semafor).
+    text   text štítku;  tone  neutral | info | success | warning | danger;  dot  zobraziť svetelný bod
+---------------------------------------------------------------------------------------------------------------- -#}
+{%- macro status(text, tone="neutral", dot=False, title=None) -%}
+<span class="ui-status ui-status-{{ _tone(tone) }}"{% if title %} title="{{ title }}"{% endif %}>{% if dot %}<span class="ui-status-dot" aria-hidden="true"></span>{% endif %}{{ text }}</span>
+{%- endmacro %}
+
+
+{#- ---------------------------------------------------------------------------------------------------- alert
+    Hlásenie v obsahu stránky.
+    text         hlavný text (alebo caller() s HTML)
+    tone         info (predvolené) | success | warning | danger
+    title        nadpis hlásenia
+    live         True: oznámi sa čítačke obrazovky (danger → role=alert, inak role=status) – len pre hlásenia,
+                 ktoré vzniknú po akcii používateľa, nie pre statický obsah
+    dismissible  tlačidlo „Zavrieť“ (skryje hlásenie; po obnovení stránky sa zobrazí znova)
+---------------------------------------------------------------------------------------------------------------- -#}
+{%- macro alert(text="", tone="info", title=None, live=False, dismissible=False, attrs={}) -%}
+{%- set t = tone if tone in ("info", "success", "warning", "danger") else "info" -%}
+<div class="ui-alert ui-alert-{{ t }}"{% if live %} role="{{ 'alert' if t == 'danger' else 'status' }}"{% endif %}{% if dismissible %} data-ui-dismissible{% endif %}{{ _attrs(attrs) }}>
+  <div class="ui-alert-body">
+    {%- if title %}<p class="ui-alert-title">{{ title }}</p>{% endif -%}
+    {%- if caller %}{{ caller() }}{% elif text %}<p>{{ text }}</p>{% endif -%}
+  </div>
+  {%- if dismissible %}<button type="button" class="ui-alert-close" data-ui-dismiss aria-label="Zavrieť hlásenie">×</button>{% endif %}
+</div>
+{%- endmacro %}
+
+
+{#- ---------------------------------------------------------------------------------------------------- empty_state
+    Prázdny stav: čo tu chýba, prečo a čo s tým.
+    title         čo sa nenašlo („Žiadne odporúčania“)
+    text          vysvetlenie a ďalší krok
+    action_label / action_href   hlavná akcia (napr. „Zadať vlak“); action_variant primary | secondary
+    reset_href    odkaz „Zrušiť filter“ – použite, keď je zoznam prázdny kvôli filtru
+    tone          neutral | success (napr. „Fronta je prázdna – všetko spracované“)
+    compact       menší, do riadku tabuľky či panelu
+---------------------------------------------------------------------------------------------------------------- -#}
+{%- macro empty_state(title, text=None, action_label=None, action_href=None, action_variant="primary", reset_href=None,
+                      tone="neutral", compact=False) -%}
+<div class="ui-empty ui-empty-{{ 'success' if tone == 'success' else 'neutral' }}{% if compact %} ui-empty-compact{% endif %}">
+  <span class="ui-empty-mark" aria-hidden="true"></span>
+  <p class="ui-empty-title">{{ title }}</p>
+  {%- if text %}<p class="ui-empty-text">{{ text }}</p>{% endif -%}
+  {%- if caller %}{{ caller() }}{% endif -%}
+  {%- if action_href or reset_href %}
+  <p class="ui-empty-actions">
+    {%- if action_href and action_label %}{{ button(action_label, variant=action_variant, size="sm", href=action_href) }}{% endif -%}
+    {%- if reset_href %}{{ button("Zrušiť filter", variant="ghost", size="sm", href=reset_href) }}{% endif -%}
+  </p>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+
+{#- ---------------------------------------------------------------------------------------------------- skeleton
+    Zástupný obsah počas načítania (napr. panel, ktorý dopĺňa JavaScript). Kontajner má aria-busy="true"
+    a skrytý text pre čítačku; keď je obsah hotový, JS ho nahradí (alebo nastaví aria-busy="false").
+    lines  počet riadkov;  label  text pre čítačku obrazovky
+---------------------------------------------------------------------------------------------------------------- -#}
+{%- macro skeleton(lines=3, label="Načítava sa…", attrs={}) -%}
+<div class="ui-skeleton" aria-busy="true"{{ _attrs(attrs) }}>
+  <span class="visually-hidden" role="status">{{ label }}</span>
+  {%- for i in range([[lines|int, 1]|max, 12]|min) %}<span class="ui-skeleton-line" aria-hidden="true"></span>{% endfor -%}
+</div>
+{%- endmacro %}
+
+
+{#- ---------------------------------------------------------------------------------------------------- stat
+    Jedna kľúčová hodnota (KPI).
+    label  popis;  value  hodnota (None → „—“ a hint „bez údajov“);  unit  jednotka
+    tone   neutral | success | warning | danger (farba hodnoty);  hint  doplnok pod hodnotou;  href  celá dlaždica odkazom
+---------------------------------------------------------------------------------------------------------------- -#}
+{%- macro stat(label, value, unit=None, tone="neutral", hint=None, href=None) -%}
+{%- set missing = value is none or value == "" -%}
+{%- set tag = "a" if href else "div" -%}
+<{{ tag }} class="ui-stat ui-stat-{{ _tone(tone) }}"{% if href %} href="{{ href }}"{% endif %}>
+  <span class="ui-stat-label">{{ label }}</span>
+  <span class="ui-stat-value">{% if missing %}—{% else %}{{ value }}{% if unit %}<span class="ui-stat-unit">{{ unit }}</span>{% endif %}{% endif %}</span>
+  {%- if hint or missing %}<span class="ui-stat-hint">{{ hint if hint else "bez údajov" }}</span>{% endif %}
+</{{ tag }}>
+{%- endmacro %}
+
+
+{#- ---------------------------------------------------------------------------------------------------- card
+    Sekcia stránky s nadpisom a akciami.   {% call ui.card("Nadpis", subtitle="…") %}obsah{% endcall %}
+    title     nadpis (None = karta bez hlavičky);  level  úroveň nadpisu 2–4 (predvolené 2)
+    subtitle  doplnok k nadpisu;  id  id sekcie (nadpis dostane id-nadpis a sekcia aria-labelledby)
+    actions   HTML akcií v hlavičke – zostavte cez {% set akcie %}…{% endset %}
+    busy      True: obsah sa práve načítava (aria-busy)
+---------------------------------------------------------------------------------------------------------------- -#}
+{%- macro card(title=None, subtitle=None, level=2, id=None, actions=None, busy=False, attrs={}) -%}
+{%- set lv = level if level in (2, 3, 4) else 2 -%}
+{%- set hid = (id ~ "-nadpis") if id else None -%}
+<section class="card ui-card"{% if id %} id="{{ id }}"{% endif %}{% if hid and title %} aria-labelledby="{{ hid }}"{% endif %}{% if busy %} aria-busy="true"{% endif %}{{ _attrs(attrs) }}>
+  {%- if title or actions %}
+  <header class="ui-card-head">
+    <div class="ui-card-titles">
+      {%- if title %}<h{{ lv }} class="ui-card-title"{% if hid %} id="{{ hid }}"{% endif %}>{{ title }}</h{{ lv }}>{% endif -%}
+      {%- if subtitle %}<p class="ui-card-subtitle">{{ subtitle }}</p>{% endif -%}
+    </div>
+    {%- if actions %}<div class="ui-card-actions">{{ actions }}</div>{% endif %}
+  </header>
+  {%- endif %}
+  {{ caller() if caller else "" }}
+</section>
+{%- endmacro %}
+
+
+{#- ---------------------------------------------------------------------------------------------------- data_table
+    Tabuľka údajov s prázdnym stavom, voliteľným filtrom a rozložením do kariet na mobile.
+    {% call ui.data_table("Odporúčania", columns, count=recs|length, empty_title="Žiadne odporúčania") %}
+      {% for r in recs %}<tr>…</tr>{% endfor %}
+    {% endcall %}
+
+    caption       popis tabuľky (pre čítačku vždy; viditeľný, ak caption_visible)
+    columns       zoznam stĺpcov: reťazec, alebo dict {label, align: "end" (čísla vpravo), sr_only (popis len pre čítačku)}
+                  (bez inline štýlov – CSP style-src ich blokuje; šírky riešte triedou v CSS)
+    count         počet riadkov (0 → prázdny stav namiesto tela tabuľky)
+    empty_*       parametre empty_state (title, text, action_label, action_href, reset_href, tone)
+    filter        True: pole „Hľadať v tabuľke“ – filtruje riadky na tejto stránke (bez diakritiky, bez ohľadu na
+                  veľkosť písmen) a hlási počet zobrazených riadkov
+    stack         True (predvolené): na úzkej obrazovke sa riadky zobrazia ako karty s popisom stĺpca
+    compact       hustejšie riadky;  id  id tabuľky (inak sa odvodí z caption)
+---------------------------------------------------------------------------------------------------------------- -#}
+{%- macro data_table(caption, columns, count, empty_title="Žiadne záznamy", empty_text=None, empty_action_label=None,
+                     empty_action_href=None, empty_reset_href=None, empty_tone="neutral", filter=False, stack=True,
+                     compact=False, caption_visible=False, id=None) -%}
+{%- set tid = id or ("tabulka-" ~ (caption|lower|replace(" ", "-")|replace("–", "")|truncate(30, True, ""))) -%}
+<div class="ui-table"{% if stack %} data-ui-stack{% endif %}>
+  {%- if filter and count %}
+  <div class="ui-table-tools">
+    <label class="ui-table-filter" for="{{ tid }}-filter"><span>Hľadať v tabuľke</span>
+      <input id="{{ tid }}-filter" type="search" autocomplete="off" data-ui-filter="{{ tid }}" placeholder="text, číslo, stanica…">
+    </label>
+    <p class="ui-table-count" id="{{ tid }}-pocet" aria-live="polite" data-ui-filter-count="{{ tid }}">{{ count }} {{ "riadok" if count == 1 else ("riadky" if count < 5 else "riadkov") }}</p>
+  </div>
+  {%- endif %}
+  {%- if count %}
+  <div class="table-scroll" tabindex="0" role="region" aria-label="{{ caption }}">
+    <table class="table{% if compact %} table-compact{% endif %}" id="{{ tid }}">
+      <caption class="{{ 'ui-table-caption' if caption_visible else 'visually-hidden' }}">{{ caption }}</caption>
+      <thead><tr>
+        {%- for c in columns -%}
+        {%- set col = c if c is mapping else {"label": c} -%}
+        <th scope="col"{% if col.get("align") == "end" %} class="num"{% endif %}>{% if col.get("sr_only") %}<span class="visually-hidden">{{ col.label }}</span>{% else %}{{ col.label }}{% endif %}</th>
+        {%- endfor -%}
+      </tr></thead>
+      <tbody>{{ caller() }}</tbody>
+    </table>
+    {%- if filter %}
+    <div class="ui-table-nomatch" data-ui-filter-empty="{{ tid }}" hidden>{{ empty_state("Nič nezodpovedá hľadanému textu", "Skúste kratší alebo iný text.", compact=True) }}</div>
+    {%- endif %}
+  </div>
+  {%- else %}
+  {{ empty_state(empty_title, empty_text, action_label=empty_action_label, action_href=empty_action_href,
+                 reset_href=empty_reset_href, tone=empty_tone) }}
+  {%- endif %}
+</div>
+{%- endmacro %}

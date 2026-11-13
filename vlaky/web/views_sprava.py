@@ -335,3 +335,15 @@ def health_page(request: Request, user=Depends(view)):
     checks.append(("Fronta na potvrdenie", "warn" if queue else "ok", queue_text))
     checks.append(("E-maily v karanténe (24 h)", "warn" if quarantined else "ok", str(quarantined)))
     return render(request, "zdravie.html", {"rows": rows, "checks": checks, "agent": agent_status}, user=user)
+
+
+@router.get("/komponenty", response_class=HTMLResponse)
+def components_page(request: Request, user=Depends(view)):
+    """Živý katalóg UI komponentov (templates/_ui.html) so všetkými stavmi – pre vývoj a kontrolu vzhľadu."""
+    sample = [
+        {"number": "95001", "route": "Čadca → Košice", "status": ("ORANŽOVÁ", "warning"), "eta": "14.11. 02:46", "buffer": "3 h 26 min"},
+        {"number": "95002", "route": "Kúty → Štúrovo", "status": ("ČERVENÁ", "danger"), "eta": "13.11. 21:55", "buffer": "−7 min"},
+        {"number": "95006", "route": "Maťovce ŠRT → Haniska pri Košiciach", "status": ("ZELENÁ", "success"), "eta": "13.11. 19:15",
+         "buffer": "6 h 16 min"},
+    ]
+    return render(request, "komponenty.html", {"sample": sample}, user=user)

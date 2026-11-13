@@ -12,6 +12,7 @@
 <link rel="preload" href="/static/fonts/barlow-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/barlow-semi-condensed-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/css/ui.css?v={{ asset_version }}">
 <script src="/static/js/tema.js?v={{ asset_version }}"></script>
 {% block head %}{% endblock %}
 </head>
@@ -50,6 +51,7 @@
             {% if user.can("users") %}<li><a href="/pouzivatelia">Používatelia</a></li>{% endif %}
             {% if user.can("audit") %}<li><a href="/audit">Audit</a></li>{% endif %}
             <li><a href="/zdravie">Zdravie agenta</a></li>
+            <li><a href="/komponenty">Komponenty UI</a></li>
           </ul>
         </details>
       </li>
@@ -78,6 +80,7 @@
 </footer>
 {% endblock %}
 <script src="/static/js/app.js?v={{ asset_version }}"></script>
+<script src="/static/js/ui.js?v={{ asset_version }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

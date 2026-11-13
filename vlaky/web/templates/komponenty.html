@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% import "_makra.html" as m with context %}
+{% block title %}Komponenty UI{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="crumbs">Správa › Komponenty UI</p>
+  <h1>Komponenty UI</h1>
+  <p class="muted">Živý katalóg knižnice <code>templates/_ui.html</code> so všetkými stavmi. API a pravidlá: <code>docs/UI_KOMPONENTY.md</code>. Údaje na tejto stránke sú vymyslené.</p>
+  <nav class="ui-doc-toc" aria-label="Obsah katalógu">
+    <a href="#k-button">button</a><a href="#k-status">status</a><a href="#k-alert">alert</a><a href="#k-stat">stat</a>
+    <a href="#k-empty">empty_state</a><a href="#k-skeleton">skeleton</a><a href="#k-table">data_table</a><a href="#k-form">formuláre</a>
+  </nav>
+</div>
+
+<div class="ui-doc">
+
+{% call ui.card("button", subtitle="Varianty, veľkosti, stav odosielania a zablokovanie.", id="k-button") %}
+  <div class="ui-doc-row">
+    {{ ui.button("Primárne", variant="primary") }}
+    {{ ui.button("Sekundárne") }}
+    {{ ui.button("Zamietnuť", variant="danger") }}
+    {{ ui.button("Zrušiť", variant="ghost") }}
+    {{ ui.button("Malé", size="sm") }}
+    {{ ui.button("Veľké", size="lg", variant="primary") }}
+    {{ ui.button("Zablokované", disabled=True) }}
+    {{ ui.button("Odkaz na vlaky", href="/vlaky") }}
+  </div>
+  <form class="ui-doc-row" data-ui-demo>
+    {{ ui.button("Uložiť (ukáže stav odosielania)", variant="primary", type="submit", busy_label="Ukladá sa…", attrs={"id": "demo-busy"}) }}
+    <span class="small muted">Formulár sa tu neodošle; tlačidlo sa po 20 s samo povolí (ochrana pri výpadku siete).</span>
+  </form>
+  <pre class="ui-doc-code">{{ '{{ ui.button("Potvrdiť", variant="primary", type="submit", busy_label="Potvrdzuje sa…") }}' }}</pre>
+{% endcall %}
+
+{% call ui.card("status", subtitle="Krátky stavový štítok; semafor odporúčania má vlastné makro m.semafor.", id="k-status") %}
+  <div class="ui-doc-row">
+    {{ ui.status("očakávaný") }}
+    {{ ui.status("info", tone="info") }}
+    {{ ui.status("overené", tone="success", dot=True) }}
+    {{ ui.status("čaká na potvrdenie", tone="warning", dot=True) }}
+    {{ ui.status("zlyhalo", tone="danger", dot=True) }}
+    {{ m.semafor("ZELENÁ") }} {{ m.semafor("ORANŽOVÁ") }} {{ m.semafor("ČERVENÁ") }} {{ m.semafor(None) }}
+  </div>
+  <pre class="ui-doc-code">{{ '{{ ui.status("čaká na potvrdenie", tone="warning", dot=True) }}' }}</pre>
+{% endcall %}
+
+{% call ui.card("alert", subtitle="Hlásenia v obsahu. live=True len pre hlásenia po akcii používateľa.", id="k-alert") %}
+  {{ ui.alert("Agent iba odporúča – rozhoduje a koná dispečer.", tone="info", title="Informácia") }}
+  {{ ui.alert("Výluka uložená a overená.", tone="success") }}
+  {{ ui.alert("Údaje agenta nie sú čerstvé (posledný cyklus pred 31 min). Pred rozhodnutím overte stav.", tone="warning", title="Pozor", dismissible=True) }}
+  {% call ui.alert(tone="danger", title="Zápis zlyhal") %}<p>Výluka #12 sa od spracovania e-mailu zmenila. <a href="/vyluky">Skontrolujte register výluk</a> a potvrďte znova.</p>{% endcall %}
+  <pre class="ui-doc-code">{{ '{% call ui.alert(tone="danger", title="Zápis zlyhal") %}<p>…</p>{% endcall %}' }}</pre>
+{% endcall %}
+
+{% call ui.card("stat", subtitle="KPI dlaždice; chýbajúca hodnota sa zobrazí ako „—“ s poznámkou.", id="k-stat") %}
+  <div class="ui-stats">
+    {{ ui.stat("Aktívne vlaky", 6) }}
+    {{ ui.stat("Včas (P90)", 92, unit="%", tone="success", hint="za posledných 7 dní") }}
+    {{ ui.stat("Čaká vo fronte", 19, tone="warning", href="/fronta") }}
+    {{ ui.stat("Eskalácie", 1, tone="danger") }}
+    {{ ui.stat("Priemerná rezerva", None, unit="min") }}
+  </div>
+  <pre class="ui-doc-code">{{ '{{ ui.stat("Čaká vo fronte", counts.fronta, tone="warning", href="/fronta") }}' }}</pre>
+{% endcall %}
+
+{% call ui.card("empty_state", subtitle="Čo chýba, prečo a čo s tým – vždy s ďalším krokom.", id="k-empty") %}
+  <div class="ui-doc-grid">
+    {{ ui.empty_state("Žiadne aktívne vlaky", "Vlak zadáte ručne alebo príde z objednávky.", action_label="Zadať vlak", action_href="/vlaky/novy") }}
+    {{ ui.empty_state("Nič nezodpovedá filtru", "Skúste iný semafor alebo stav.", reset_href="/odporucania") }}
+    {{ ui.empty_state("Fronta je prázdna", "Všetky udalosti z e-mailov sú spracované.", tone="success") }}
+  </div>
+  <pre class="ui-doc-code">{{ '{{ ui.empty_state("Nič nezodpovedá filtru", "Skúste iný semafor.", reset_href="/odporucania") }}' }}</pre>
+{% endcall %}
+
+{% call ui.card("skeleton", subtitle="Zástupný obsah počas načítania (aria-busy a text pre čítačku).", id="k-skeleton", busy=True) %}
+  {{ ui.skeleton(lines=4, label="Načítava sa zoznam vlakov…") }}
+  <pre class="ui-doc-code">{{ '{{ ui.skeleton(lines=4, label="Načítava sa zoznam vlakov…") }}' }}</pre>
+{% endcall %}
+
+{% call ui.card("data_table", subtitle="Filter bez diakritiky, počet riadkov pre čítačku, prázdny stav, karty na mobile (zúžte okno).", id="k-table") %}
+  {% set cols = ["Vlak", "Relácia", "Semafor", {"label": "ETA P50", "align": "end"}, {"label": "Rezerva", "align": "end"}, {"label": "Akcie", "sr_only": True}] %}
+  {% call ui.data_table("Ukážkové vlaky", cols, count=sample|length, filter=True, id="demo-vlaky") %}
+    {% for t in sample %}
+    <tr>
+      <td><strong>{{ t.number }}</strong></td>
+      <td>{{ t.route }}</td>
+      <td>{{ ui.status(t.status[0], tone=t.status[1], dot=True) }}</td>
+      <td class="num mono">{{ t.eta }}</td>
+      <td class="num mono">{{ t.buffer }}</td>
+      <td>{{ ui.button("Detail", size="sm", variant="ghost", href="/vlaky") }}</td>
+    </tr>
+    {% endfor %}
+  {% endcall %}
+  <h3>Bez riadkov</h3>
+  {% call ui.data_table("Prázdna tabuľka", cols, count=0, empty_title="Žiadne vlaky v tomto výbere", empty_text="Zmeňte filter alebo zadajte nový vlak.", empty_reset_href="/komponenty#k-table", empty_action_label="Nový vlak", empty_action_href="/vlaky/novy") %}{% endcall %}
+  <pre class="ui-doc-code">{{ '{% call ui.data_table("Vlaky", cols, count=trains|length, filter=True, empty_title="Žiadne vlaky") %}\n  {% for t in trains %}<tr>…</tr>{% endfor %}\n{% endcall %}' }}</pre>
+{% endcall %}
+
+{% call ui.card("Formuláre", subtitle="Polia z _makra.html: popis, povinnosť, nápoveda a chyba (aria-invalid, aria-describedby).", id="k-form") %}
+  <form class="grid-2" data-ui-demo>
+    {{ m.field("demo_cislo", "Číslo vlaku", {"demo_cislo": "95001"}, {}, required=True, help="5 číslic podľa GVD.") }}
+    {{ m.field("demo_stanica", "Stanica", {"demo_stanica": "Kosice"}, {"demo_stanica": "Stanica nie je v sieti – vyberte z ponuky."}, required=True) }}
+    {{ m.select("demo_priechod", "Hraničný priechod", [("cierna", "Čierna nad Tisou"), ("kuty", "Kúty")], {}, {}, empty="— vyberte —") }}
+    {{ m.checkbox("demo_rid", "Nebezpečný tovar (RID)", {}) }}
+  </form>
+{% endcall %}
+
+</div>
+{% endblock %}

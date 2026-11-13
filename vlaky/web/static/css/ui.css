@@ -1,0 +1,134 @@
+/* Komponenty UI (templates/_ui.html). Používajú len tokeny z app.css (--bg, --panel, --text, --green …), takže
+   fungujú v tmavom aj svetlom režime. Rozloženie: flex/grid s gap; na úzkej obrazovke sa nič neroztiahne do strán. */
+
+/* ------------------------------------------------------------------ tlačidlo */
+.btn-secondary { background: transparent; }
+.btn-lg { min-height: 48px; padding: .65rem 1.2rem; font-size: .92rem; }
+.btn-block { width: 100%; }
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; pointer-events: none; }
+.btn[aria-busy="true"] { position: relative; color: transparent !important; pointer-events: none; }
+.btn[aria-busy="true"]::after {
+  content: attr(data-ui-busy-text); position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: .5rem;
+  color: var(--text); font: inherit; letter-spacing: inherit; white-space: nowrap;
+}
+.btn-primary[aria-busy="true"]::after { color: var(--accent-text); }
+.btn[aria-busy="true"]::before {
+  content: ""; position: absolute; left: .7rem; top: 50%; width: .8rem; height: .8rem; margin-top: -.4rem; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent; color: var(--muted); animation: ui-spin .8s linear infinite; z-index: 1;
+}
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+
+/* ------------------------------------------------------------------ stavový štítok */
+.ui-status { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid; border-radius: 2px; padding: .05rem .5rem;
+  font: 600 .7rem/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.ui-status-dot { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.ui-status-neutral { color: var(--muted); border-color: var(--border-strong); background: var(--grey-bg); }
+.ui-status-info { color: var(--signal); border-color: var(--signal); background: color-mix(in srgb, var(--signal) 12%, transparent); }
+.ui-status-success { color: var(--green); border-color: var(--green); background: var(--green-bg); }
+.ui-status-warning { color: var(--orange); border-color: var(--orange); background: var(--orange-bg); }
+.ui-status-danger { color: var(--red); border-color: var(--red); background: var(--red-bg); }
+
+/* ------------------------------------------------------------------ hlásenie */
+.ui-alert { display: flex; gap: .8rem; align-items: flex-start; border: 1px solid; border-left-width: 3px; border-radius: var(--radius);
+  padding: .7rem .9rem; margin: 0 0 1rem; background: var(--panel); }
+.ui-alert-body { flex: 1; min-width: 0; }
+.ui-alert-body > p { margin: 0; }
+.ui-alert-body > p + p { margin-top: .3rem; }
+.ui-alert-title { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: .82rem; }
+.ui-alert-info { border-color: var(--signal); background: color-mix(in srgb, var(--signal) 8%, var(--panel)); }
+.ui-alert-success { border-color: var(--green); background: var(--green-bg); }
+.ui-alert-warning { border-color: var(--orange); background: var(--orange-bg); }
+.ui-alert-danger { border-color: var(--red); background: var(--red-bg); }
+.ui-alert-info .ui-alert-title { color: var(--signal); }
+.ui-alert-success .ui-alert-title { color: var(--green); }
+.ui-alert-warning .ui-alert-title { color: var(--orange); }
+.ui-alert-danger .ui-alert-title { color: var(--red); }
+.ui-alert-close { flex: none; background: none; border: 1px solid transparent; color: var(--muted); font-size: 1.3rem; line-height: 1;
+  width: 2rem; height: 2rem; border-radius: var(--radius); cursor: pointer; }
+.ui-alert-close:hover { color: var(--text); border-color: var(--border-strong); }
+
+/* ------------------------------------------------------------------ prázdny stav */
+.ui-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .35rem; padding: 2.4rem 1rem;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius); background: var(--panel); }
+.ui-empty-compact { padding: 1.1rem .8rem; border-style: dashed; }
+.ui-empty > p { margin: 0; max-width: 46ch; }
+.ui-empty-mark { width: 2.2rem; height: 2.2rem; margin-bottom: .3rem; border: 1px solid var(--border-strong); border-radius: 50%;
+  background: radial-gradient(circle, var(--faint) 0 3px, transparent 4px); position: relative; }
+.ui-empty-mark::after { content: ""; position: absolute; inset: -6px; border: 1px dashed var(--border); border-radius: 50%; }
+.ui-empty-success .ui-empty-mark { border-color: var(--green); background: radial-gradient(circle, var(--green) 0 3px, transparent 4px); box-shadow: 0 0 14px var(--green-bg); }
+.ui-empty-compact .ui-empty-mark { display: none; }
+.ui-empty-title { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; font-size: .92rem; }
+.ui-empty-text { color: var(--muted); font-size: .9rem; }
+.ui-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem; margin-top: .5rem !important; }
+.card > .ui-empty:only-child, .ui-card > .ui-empty:last-child { border: 0; background: transparent; }
+
+/* ------------------------------------------------------------------ načítavanie */
+.ui-skeleton { display: grid; gap: .55rem; padding: .3rem 0; }
+.ui-skeleton-line { display: block; height: .8rem; width: var(--w, 80%); border-radius: 2px;
+  background: linear-gradient(90deg, var(--panel-2) 0%, var(--panel-3) 40%, var(--panel-2) 80%); background-size: 300% 100%;
+  animation: ui-shimmer 1.4s ease-in-out infinite; }
+.ui-skeleton-line:nth-child(6n+2) { --w: 92%; } .ui-skeleton-line:nth-child(6n+3) { --w: 74%; } .ui-skeleton-line:nth-child(6n+4) { --w: 86%; }
+.ui-skeleton-line:nth-child(6n+5) { --w: 62%; } .ui-skeleton-line:nth-child(6n) { --w: 80%; } .ui-skeleton-line:nth-child(6n+1) { --w: 68%; }
+@keyframes ui-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+[aria-busy="true"] > .ui-card-head .ui-card-title::after { content: " · načítava sa"; color: var(--muted); font-weight: 500; }
+
+/* ------------------------------------------------------------------ KPI */
+.ui-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: .7rem; margin-bottom: 1rem; }
+.ui-stat { display: flex; flex-direction: column; gap: .15rem; min-width: 0; padding: .75rem .9rem; background: var(--panel);
+  border: 1px solid var(--border); border-top: 2px solid var(--border-strong); border-radius: var(--radius); color: var(--text); text-decoration: none; }
+a.ui-stat:hover { border-color: var(--text); }
+.ui-stat-label { font-family: var(--display); text-transform: uppercase; letter-spacing: .12em; font-size: .7rem; color: var(--muted); }
+.ui-stat-value { font: 600 1.9rem/1.1 var(--mono); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.ui-stat-unit { font-size: .55em; color: var(--muted); margin-left: .25rem; letter-spacing: 0; }
+.ui-stat-hint { font-size: .8rem; color: var(--muted); }
+.ui-stat-success { border-top-color: var(--green); } .ui-stat-success .ui-stat-value { color: var(--green); }
+.ui-stat-warning { border-top-color: var(--orange); } .ui-stat-warning .ui-stat-value { color: var(--orange); }
+.ui-stat-danger { border-top-color: var(--red); } .ui-stat-danger .ui-stat-value { color: var(--red); }
+.ui-stat-info { border-top-color: var(--signal); }
+
+/* ------------------------------------------------------------------ karta */
+.ui-card-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .5rem 1rem;
+  border-bottom: 1px solid var(--border); margin: -1rem -1.1rem 1rem; padding: .7rem 1.1rem; }
+.ui-card-titles { min-width: 0; }
+.ui-card-title { margin: 0; font-size: .9rem; letter-spacing: .12em; }
+.ui-card-subtitle { margin: .2rem 0 0; color: var(--muted); font-size: .84rem; }
+.ui-card-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+
+/* ------------------------------------------------------------------ tabuľka údajov */
+.ui-table { display: grid; gap: .6rem; min-width: 0; }
+.ui-table-tools { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .5rem 1rem; }
+.ui-table-filter { display: flex; flex-direction: column; gap: .2rem; flex: 1 1 16rem; max-width: 26rem; }
+.ui-table-filter span { font-family: var(--display); font-weight: 600; text-transform: uppercase; letter-spacing: .1em; font-size: .72rem; color: var(--muted); }
+.ui-table-count { margin: 0; font: 500 .78rem/1 var(--mono); color: var(--muted); }
+.ui-table .table-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.ui-table-caption { caption-side: top; text-align: left; padding: 0 0 .4rem; font-weight: 700; }
+.table th.num, .table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.ui-table-nomatch { padding: .5rem 0; }
+
+/* úzka obrazovka: riadky ako karty, popis stĺpca z hlavičky (data-label doplní ui.js) */
+@media (max-width: 700px) {
+  .ui-table[data-ui-stack].is-stacked .table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .ui-table[data-ui-stack].is-stacked .table, .ui-table[data-ui-stack].is-stacked .table tbody,
+  .ui-table[data-ui-stack].is-stacked .table tr, .ui-table[data-ui-stack].is-stacked .table td { display: block; width: 100%; }
+  .ui-table[data-ui-stack].is-stacked .table tr { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: .6rem; padding: .3rem 0; background: var(--panel); }
+  .ui-table[data-ui-stack].is-stacked .table td { display: grid; grid-template-columns: minmax(6.5rem, 38%) minmax(0, 1fr); gap: .6rem; border: 0;
+    padding: .3rem .7rem; text-align: left; overflow-wrap: anywhere; }
+  .ui-table[data-ui-stack].is-stacked .table td::before { content: attr(data-label); font-family: var(--display); font-weight: 600; text-transform: uppercase;
+    letter-spacing: .08em; font-size: .68rem; color: var(--faint); padding-top: .15rem; }
+  .ui-table[data-ui-stack].is-stacked .table td[data-label=""]::before { content: none; }
+  .ui-table[data-ui-stack].is-stacked .table td[data-label=""] { grid-template-columns: 1fr; }
+  .ui-table[data-ui-stack].is-stacked .table-scroll { overflow: visible; }
+}
+
+/* ------------------------------------------------------------------ katalóg komponentov (/komponenty) */
+.ui-doc { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+.ui-doc > *, .ui-card, .ui-doc-grid > * { min-width: 0; }
+.ui-doc-row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.ui-doc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; }
+.ui-doc-code { margin: .8rem 0 0; padding: .6rem .8rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  font: .78rem/1.5 var(--mono); white-space: pre; overflow-x: auto; color: var(--muted); }
+.ui-doc-toc { display: flex; flex-wrap: wrap; gap: .3rem .8rem; font: 500 .78rem/1.4 var(--mono); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-skeleton-line, .btn[aria-busy="true"]::before, .mc-live { animation: none !important; }
+}

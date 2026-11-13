@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% import "_makra.html" as m with context %}
+{% import "_ui.html" as ui with context %}
 {% block title %}Vlaky{% endblock %}
 {% block content %}
 {# data-zivy-stav: zoznam sa pri zmene (výpadok agenta, nové odporúčanie) obnoví sám (static/js/app.js) #}
 <div class="page-head" data-zivy-stav="{{ page_state }}" data-zivy-hlavne="{{ page_summary }}" data-teraz="{{ now|iso }}" data-tz="{{ tz }}">
   <h1>Vlaky</h1>
   <div class="head-actions">
-    {% if user.can("operate") %}<a class="btn btn-primary" href="/vlaky/novy">Nový vlak</a>{% endif %}
+    {% if user.can("operate") %}{{ ui.button("Nový vlak", variant="primary", href="/vlaky/novy") }}{% endif %}
   </div>
   <form method="get" class="filters" role="search" aria-label="Filter vlakov">
     <label>Zobraziť
@@ -17,14 +18,18 @@
       </select>
     </label>
     <label>Hľadať <input name="q" value="{{ q }}" maxlength="60" placeholder="číslo, zákazník, stanica"></label>
-    <button type="submit" class="btn btn-sm">Filtrovať</button>
+    {{ ui.button("Filtrovať", size="sm", type="submit", busy_label="Filtruje sa…") }}
   </form>
 </div>
+{% set filtered = q or (filter and filter != "aktivne") %}
 <section class="card">
-<div class="table-scroll">
-<table class="table">
-  <thead><tr><th scope="col">Číslo</th><th scope="col">Dátum</th><th scope="col">Relácia</th><th scope="col">Zákazník</th><th scope="col">Vstup / výstup</th><th scope="col">Rušeň</th><th scope="col">Pripravený</th><th scope="col">Termín</th><th scope="col">Stav</th><th scope="col">Odporúčanie</th></tr></thead>
-  <tbody>
+{% set cols = ["Číslo", "Dátum", "Relácia", "Zákazník", "Vstup / výstup", "Rušeň", "Pripravený", "Termín", "Stav", "Odporúčanie"] %}
+{% call ui.data_table("Vlaky", cols, count=trains|length, filter=True, id="tabulka-zoznam-vlakov",
+                      empty_title=("Nič nezodpovedá hľadaniu" if q else ("Žiadne vlaky v tomto výbere" if filtered else "Žiadne aktívne vlaky")),
+                      empty_text=("Skúste číslo vlaku, zákazníka alebo stanicu." if q else "Vlak zadáte ručne alebo vznikne z objednávky."),
+                      empty_action_label=("Nový vlak" if user.can("operate") and not q else None),
+                      empty_action_href=("/vlaky/novy" if user.can("operate") and not q else None),
+                      empty_reset_href=("/vlaky" if filtered else None)) %}
   {% for t in trains %}
     {% set r = recs.get(t.id) %}
     <tr>
@@ -39,11 +44,7 @@
       <td>{{ TRAIN_STATUS.get(t.status, t.status) }}</td>
       <td>{% if r %}<a href="/odporucania/{{ r.id }}">{{ r.decision }}</a> {% if fresh and fresh.stale and r.color == "ZELENÁ" %}<span title="{{ fresh.text }} Posledné odporúčanie bolo ZELENÁ.">{{ m.semafor("ORANŽOVÁ") }} <span class="small muted">bez čerstvých údajov agenta</span></span>{% else %}{{ m.semafor(r.color) }}{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
     </tr>
-  {% else %}
-    <tr><td colspan="10" class="muted">Žiadne vlaky.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
+{% endfor %}
+{% endcall %}
 </section>
 {% endblock %}
