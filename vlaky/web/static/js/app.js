@@ -3,43 +3,65 @@
 (function () {
   'use strict';
 
-  // ------------------------------------------------------------ téma (auto / tmavá / svetlá)
+  // ------------------------------------------------------------ téma (tmavá – predvolená / svetlá / automaticky)
   var THEME_KEY = 'vlaky-tema';
-  var LABELS = { '': 'Režim: automaticky', dark: 'Režim: tmavý', light: 'Režim: svetlý' };
+  var LABELS = { dark: 'Režim: tmavý', light: 'Režim: svetlý', auto: 'Režim: automaticky' };
 
   function getTheme() {
-    try { return localStorage.getItem(THEME_KEY) || ''; } catch (e) { return ''; }
+    var t = '';
+    try { t = localStorage.getItem(THEME_KEY) || ''; } catch (e) { t = ''; }
+    return (t === 'light' || t === 'auto') ? t : 'dark';
   }
 
   function setTheme(t) {
-    try { if (t) { localStorage.setItem(THEME_KEY, t); } else { localStorage.removeItem(THEME_KEY); } } catch (e) { /* bez úložiska */ }
-    if (t) { document.documentElement.setAttribute('data-theme', t); } else { document.documentElement.removeAttribute('data-theme'); }
+    if (t !== 'light' && t !== 'auto') { t = 'dark'; }
+    try { if (t === 'dark') { localStorage.removeItem(THEME_KEY); } else { localStorage.setItem(THEME_KEY, t); } } catch (e) { /* bez úložiska */ }
+    document.documentElement.setAttribute('data-theme', t);
     var btn = document.getElementById('btn-tema');
-    if (btn) { btn.textContent = LABELS[t] || LABELS['']; }
+    if (btn) { btn.textContent = LABELS[t]; }
     document.dispatchEvent(new CustomEvent('vlaky-tema', { detail: { theme: t, dark: isDark() } }));
   }
 
   function isDark() {
     var t = document.documentElement.getAttribute('data-theme');
-    if (t === 'dark') { return true; }
     if (t === 'light') { return false; }
-    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (t === 'auto') { return !(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches); }
+    return true;
   }
   window.vlakyIsDark = isDark;
   window.vlakySetTheme = setTheme;
 
   var themeBtn = document.getElementById('btn-tema');
   if (themeBtn) {
-    themeBtn.textContent = LABELS[getTheme()] || LABELS[''];
+    themeBtn.textContent = LABELS[getTheme()];
     themeBtn.addEventListener('click', function () {
-      var order = ['', 'dark', 'light'];
+      var order = ['dark', 'light', 'auto'];
       setTheme(order[(order.indexOf(getTheme()) + 1) % order.length]);
     });
   }
   if (window.matchMedia) {
-    var mq = window.matchMedia('(prefers-color-scheme: dark)');
-    var onChange = function () { if (!getTheme()) { setTheme(''); } };
+    var mq = window.matchMedia('(prefers-color-scheme: light)');
+    var onChange = function () { if (getTheme() === 'auto') { setTheme('auto'); } };
     if (mq.addEventListener) { mq.addEventListener('change', onChange); }
+  }
+
+  // ------------------------------------------------------------ hodiny v hornej lište (miestny čas a UTC)
+  var clock = document.getElementById('mc-clock');
+  if (clock) {
+    var loc = clock.querySelector('[data-clock="loc"]');
+    var utc = clock.querySelector('[data-clock="utc"]');
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    var tick = function () {
+      var d = new Date();
+      if (loc) {
+        var txt = '';
+        try { txt = d.toLocaleTimeString('sk-SK', { timeZone: clock.getAttribute('data-tz') || undefined, hour12: false }); } catch (e) { txt = ''; }
+        loc.textContent = txt || (pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()));
+      }
+      if (utc) { utc.textContent = pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + 'Z'; }
+    };
+    tick();
+    setInterval(tick, 1000);
   }
 
   // ------------------------------------------------------------ mobilná navigácia

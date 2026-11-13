@@ -3,11 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#06080b">
 <meta name="csrf-token" content="{{ csrf_token }}">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>{% block title %}Agent dispečer{% endblock %} · Agent dispečer</title>
 <link rel="icon" href="/static/img/ikona.svg" type="image/svg+xml">
+<link rel="preload" href="/static/fonts/barlow-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/barlow-semi-condensed-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
 <script src="/static/js/tema.js?v={{ asset_version }}"></script>
 {% block head %}{% endblock %}
@@ -28,7 +31,7 @@
   ("/odovzdavka", "Odovzdávka", "view", ""),
 ] %}
 <header class="topbar">
-  <a class="brand" href="/"><img src="/static/img/ikona.svg" alt="" width="26" height="26"><span>Agent dispečer</span></a>
+  <a class="brand" href="/"><img src="/static/img/ikona.svg" alt="" width="26" height="26"><span class="brand-text"><span>Agent dispečer</span><span class="brand-sub">ŽSR · NÁKLADNÁ DOPRAVA</span></span></a>
   <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="hlavna-navigacia">Menu</button>
   <nav id="hlavna-navigacia" class="mainnav" aria-label="Hlavná navigácia">
     <ul>
@@ -53,7 +56,8 @@
     </ul>
   </nav>
   <div class="userbox">
-    <button type="button" class="btn btn-ghost btn-sm" id="btn-tema" aria-live="polite" title="Prepnúť tmavý / svetlý režim">Režim: automaticky</button>
+    <span class="mc-clock" id="mc-clock" data-tz="{{ tz }}" title="Čas v pásme {{ tz }} a UTC"><span class="mc-live" aria-hidden="true"></span><span data-clock="loc">--:--:--</span><small data-clock="utc">--:--Z</small></span>
+    <button type="button" class="btn btn-ghost btn-sm" id="btn-tema" aria-live="polite" title="Prepnúť tmavý / svetlý / automatický režim">Režim: tmavý</button>
     <span class="who" title="{{ ROLE_LABEL.get(user.role, user.role) }}">{{ user.display }} <small>({{ ROLE_LABEL.get(user.role, user.role) }})</small></span>
     <form method="post" action="/logout" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
