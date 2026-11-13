@@ -4,6 +4,7 @@
 {% block content %}
 <div class="page-head">
   <h1>Register výluk a obmedzení</h1>
+  <p class="page-intro">Všetky výluky, pomalé jazdy a obmedzenia, s ktorými plánovač počíta. Väčšinu zapíše agent z e-mailov ŽSR; „návrh“ čaká na vaše overenie.</p>
   <div class="head-actions">{% if user.can("operate") %}<a class="btn btn-primary" href="/vyluky/nova">Nová výluka</a>{% endif %}</div>
   <nav class="tabs" aria-label="Filter výluk">
     {% for key, text in (("platne", "Platné a plánované"), ("aktivne", "Platia teraz"), ("planovane", "Plánované"), ("zrusene", "Zrušené"), ("vsetky", "Všetky")) %}

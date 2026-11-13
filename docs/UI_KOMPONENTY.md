@@ -84,6 +84,17 @@ Sekcia s hlavičkou. Pri zadanom `id` dostane nadpis `id-nadpis` a sekcia `aria-
 správnu osnovu nadpisov stránky. `actions` je HTML zostavené cez `{% set %}`. `busy=True` označí sekciu
 počas načítania.
 
+### `steps(items, variant, label)`
+Očíslované kroky: čo urobiť a v akom poradí. Každý krok je dict s `title`, voliteľne `text`, `state`
+(`todo`, `attention` = treba vybaviť, `done` = hotové so značkou ✓, `current` = `aria-current="step"`), `count`
+(nula sa nezobrazí), `note`, `href` a `action` (text tlačidla).
+
+- `variant="list"` (predvolené): zvislý zoznam úloh s počtom a tlačidlom. Používa ho stránka **Prehľad** (`/dnes`).
+- `variant="bar"`: vodorovný pásik krokov na stránke, kde sa krok vykonáva. Názov kroku je odkaz na časť stránky.
+  Používa ho detail odporúčania a fronta.
+
+Stav kroku je vždy aj v texte pre čítačku („treba vybaviť“, „hotové“), nielen vo farbe.
+
 ### `data_table(caption, columns, count, empty_*, filter, stack, compact, caption_visible, id)`
 Tabuľka s prázdnym stavom, voliteľným filtrom a kartami na mobile.
 

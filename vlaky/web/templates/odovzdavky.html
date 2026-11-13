@@ -4,6 +4,7 @@
 {% block content %}
 <div class="page-head">
   <h1>Odovzdávka služby</h1>
+  <p class="page-intro">Správa pre nasledujúcu zmenu: stav vlakov, nové výluky a čo ostalo otvorené. Agent ju pripraví, odstupujúci dispečer potvrdí.</p>
   <p class="muted">Prehľad pre ďalšieho dispečera: vlaky v jazde, ČERVENÉ a ORANŽOVÉ vlaky, rušňovodiči blízko limitu, výluky, nepotvrdené e-maily. Agent ho vytvára pri zmene služby; dispečer ho doplní a potvrdí.</p>
   {% if user.can("operate") %}
   <form method="post" action="/odovzdavka/nova" class="inline">{{ m.csrf() }}<button type="submit" class="btn btn-primary">Vytvoriť teraz</button></form>

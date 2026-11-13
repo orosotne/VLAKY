@@ -4,6 +4,7 @@
 {% block content %}
 <div class="page-head">
   <h1>Rušňovodiči a pracovný čas</h1>
+  <p class="page-intro">Kto vedie ktorý vlak a koľko mu ostáva do limitu 13 hodín. Červený riadok treba riešiť hneď – vystriedať alebo vlak zastaviť.</p>
   <p class="muted">Limit pracovného času {{ params.crew_max_duty_min|minutes }} od nástupu (vrátane prípravy {{ params.crew_prep_min|minutes }} a ukončenia {{ params.crew_post_min|minutes }}).
     Zelená = viac ako {{ params.crew_buffer_min|minutes }} do limitu, oranžová = menej, červená = menej ako {{ (params.crew_buffer_min / 2)|minutes }} alebo hrozí prekročenie.</p>
 </div>

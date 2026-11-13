@@ -173,3 +173,84 @@ def test_vlaky_prazdny_stav_bez_akcie_pre_obchod(client):
     if r.status_code != 200:
         pytest.skip("rola obchod zoznam vlakov nevidí")
     assert 'href="/vlaky/novy"' not in r.text
+
+
+# ---------------------------------------------------------------------------------------------------- steps
+def test_steps_zoznam_stavy_a_tlacidla(ui):
+    html = _norm(ui('{{ ui.steps(items, label="Čo treba urobiť") }}', items=[
+        {"title": "Potvrďte e-maily", "text": "Vysvetlenie.", "state": "attention", "count": 3, "href": "/fronta",
+         "action": "Otvoriť frontu", "note": "3 udalosti čakajú"},
+        {"title": "Hotový krok", "state": "done", "count": 0, "href": "/odporucania"},
+        {"title": "<b>zlý</b>", "state": "neexistuje"},
+    ]))
+    assert '<ol class="ui-steps ui-steps-list" aria-label="Čo treba urobiť">' in html
+    assert "ui-step-attention" in html and "(treba vybaviť)" in html and '<span class="ui-step-count">3</span>' in html
+    assert 'class="btn btn-primary btn-sm" href="/fronta"' in html and "Otvoriť frontu" in html
+    assert "ui-step-done" in html and "✓" in html and "(hotové)" in html
+    assert html.count("ui-step-count") == 1                      # nula sa ako počet neukazuje
+    assert "ui-step-todo" in html and "<b>" not in html and "&lt;b&gt;" in html
+
+
+def test_steps_pasik_s_odkazmi_a_aktualnym_krokom(ui):
+    html = _norm(ui('{{ ui.steps(items, variant="bar") }}', items=[
+        {"title": "Návrh agenta", "href": "#rozhodnutie", "state": "current"}, {"title": "Vaše rozhodnutie"}]))
+    assert "ui-steps-bar" in html and 'aria-current="step"' in html
+    assert '<a href="#rozhodnutie">Návrh agenta</a>' in html and "ui-step-side" not in html
+
+
+# ---------------------------------------------------------------------------------------------------- prehľad a navigácia
+def test_prehlad_bez_uloh_je_vybaveny(client):
+    assert client.get("/dnes", follow_redirects=False).status_code in (302, 303, 401)
+    login_as(client, "dispecer")
+    r = client.get("/dnes")
+    assert r.status_code == 200
+    t = _norm(r.text)
+    assert "Všetko je vybavené" in t and "Fronta je prázdna" in t and "Všetky odporúčania sú rozhodnuté." in t
+    assert "Ako čítať odporúčania" in t and "P50 / P90" in t
+    assert 'style="' not in r.text
+    ids = re.findall(r'\sid="([^"]+)"', r.text)
+    assert len(ids) == len(set(ids))
+
+
+def test_prehlad_pocita_odporucania_a_cervene_ma_prve(client):
+    login_as(client, "dispecer")
+    a = make_train(number="95021")
+    b = make_train(number="95022")
+    make_recommendation(a)
+    make_recommendation(b, color="ČERVENÁ", decision="ESKALOVAŤ", priority="KRITICKÉ")
+    t = _norm(client.get("/dnes").text)
+    assert "Treba vybaviť" in t and "2 odporúčania čakajú na rozhodnutie, z toho 1 ČERVENÉ" in t
+    assert 'href="/odporucania?farba=ČERVENÁ"' in t            # červené ako prvé
+    m = _norm(client.get("/").text)
+    assert 'class="task-strip"' in m and "Na rozhodnutie" in m and 'href="/dnes"' in m
+
+
+def test_navigacia_denne_kroky_v_rade_ostatne_v_ponuke(client):
+    login_as(client, "dispecer")
+    html = client.get("/vlaky").text
+    nav = html[html.index('id="hlavna-navigacia"'):html.index('class="userbox"')]
+    first = nav[:nav.index('class="nav-more"')]
+    assert [h for h in re.findall(r'href="([^"]+)"', first)] == ["/dnes", "/", "/fronta", "/odporucania", "/vlaky", "/vyluky"]
+    for href in ("/objednavky", "/rusnovodici", "/rusne", "/hranice", "/odovzdavka", "/zdravie", "/komponenty"):
+        assert f'href="{href}"' in nav, href
+    assert re.search(r'href="/vlaky" aria-current="page"', nav)
+    more = client.get("/hranice").text
+    assert '<summary class="is-here">Ďalšie' in more and re.search(r'href="/hranice" aria-current="page"', more)
+
+
+def test_detail_odporucania_ma_kroky_a_rozhodnutie_pred_podrobnostami(client):
+    login_as(client, "dispecer")
+    tid = make_train(number="95023")
+    rid = make_recommendation(tid)
+    html = client.get(f"/odporucania/{rid}").text
+    for anchor in ("rozhodnutie", "h-preco", "h-rozhodnutie"):
+        assert f'href="#{anchor}"' in html and f'id="{anchor}"' in html, anchor
+    assert html.index('id="h-rozhodnutie"') < html.index("Podrobnosti výpočtu") < html.index("Porovnanie variantov")
+
+
+def test_stranky_maju_uvodnu_vetu(client):
+    login_as(client, "dispecer")
+    for path in ("/odporucania", "/vlaky", "/vyluky", "/hranice", "/rusnovodici", "/rusne", "/objednavky", "/odovzdavka"):
+        r = client.get(path)
+        assert r.status_code == 200 and 'class="page-intro"' in r.text, path
+    assert "ui-steps-bar" not in client.get("/fronta").text      # prázdna fronta: kroky netreba

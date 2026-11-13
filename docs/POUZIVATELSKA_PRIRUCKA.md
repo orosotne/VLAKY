@@ -27,6 +27,24 @@ Server overuje najviac 3 heslá naraz. Pri návale prihlásení môže ukázať 
 | obchod | Len čítanie |
 | admin | Používatelia, audit |
 
+### Stránka Prehľad – kde začať
+
+Stránka **Prehľad** (prvá položka ponuky, otvorí ju aj kliknutie na názov „Agent dispečer“) ukazuje, čo treba
+urobiť, v poradí zhora nadol:
+
+1. **Potvrďte e-maily vo fronte.** Udalosti, pri ktorých si agent nie je istý. Kým ich nevybavíte, vlaky na
+   dotknutých úsekoch nedostanú ZELENÚ.
+2. **Rozhodnite o odporúčaniach.** Začnite ČERVENÝMI.
+3. **Skontrolujte rušňovodičov.** Koho treba vystriedať pred limitom 13 h.
+4. **Vybavte nové objednávky.**
+5. **Pred koncom služby: odovzdávka.**
+
+Pri každom kroku je počet položiek a tlačidlo, ktoré vás zavedie na správnu stránku. Vybavený krok má značku ✓.
+Vpravo je stav vlakov podľa farieb a vysvetlenie pojmov (semafor, P50/P90, rezerva, 13 h).
+
+Horná ponuka má denné stránky v rade (Prehľad, Mapa, Fronta, Odporúčania, Vlaky, Výluky). Objednávky, rušňovodiči,
+rušne, hraničné priechody a odovzdávka služby sú v ponuke **Ďalšie**, nastavenia v ponuke **Správa**.
+
 ## 3. Nástenka – živá mapa Slovenska
 
 - **Mapa:** všetky trate ŽSR (farba podľa elektrifikácie), 23 hraničných priechodov s preberacou stanicou (PPS), výluky (červené) a pomalé jazdy (oranžové) s časovým posuvníkom (teraz, +6, +24, +48 h).

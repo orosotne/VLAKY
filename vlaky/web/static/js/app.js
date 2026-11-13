@@ -78,6 +78,16 @@
       if (!d.contains(ev.target)) { d.removeAttribute('open'); }
     });
   });
+  // otvorená môže byť len jedna rozbaľovacia ponuka; Esc ju zavrie a vráti fokus na jej názov
+  document.querySelectorAll('.nav-more details').forEach(function (d) {
+    d.addEventListener('toggle', function () {
+      if (!d.open) { return; }
+      document.querySelectorAll('.nav-more details[open]').forEach(function (o) { if (o !== d) { o.removeAttribute('open'); } });
+    });
+    d.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && d.open) { d.removeAttribute('open'); var sm = d.querySelector('summary'); if (sm) { sm.focus(); } }
+    });
+  });
 
   // ------------------------------------------------------------ potvrdenie pred odoslaním
   document.addEventListener('submit', function (ev) {

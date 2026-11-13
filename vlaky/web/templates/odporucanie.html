@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_makra.html" as m with context %}
+{% import "_ui.html" as ui with context %}
 {% block title %}Odporúčanie – vlak {{ train.number if train else "" }}{% endblock %}
 {% set st_types = {"station": "stanica", "yard": "zriaďovacia stanica", "border": "hraničný bod", "junction": "odbočka", "spur_junction": "odbočenie vlečky", "halt": "zastávka"} %}
 {% block content %}
@@ -17,6 +18,13 @@
   <p class="crumbs"><a href="/odporucania">Odporúčania</a> › {% if train %}<a href="/vlaky/{{ train.id }}">vlak {{ train.number }}</a>{% endif %}</p>
   <h1>Vlak {{ train.number if train else "?" }}{% if train %} <span class="muted">{{ train.origin }} → {{ train.destination }}</span>{% endif %}</h1>
 </div>
+
+{{ ui.steps([
+  {"title": "Návrh agenta", "href": "#rozhodnutie", "text": "čo navrhuje a s akou farbou"},
+  {"title": "Dôvody", "href": "#h-preco", "text": "prečo a ako čerstvé sú údaje"},
+  {"title": "Rušňovodič", "href": "#h-crew", "text": "či stihne do 13 h"},
+  {"title": "Vaše rozhodnutie", "href": "#h-rozhodnutie", "text": "prijať, upraviť alebo zamietnuť"},
+], variant="bar", label="Ako prejsť odporúčanie") }}
 
 {% if latest_id and latest_id != rec.id %}
 <p class="flash flash-varovanie" role="status">Toto odporúčanie nie je posledné. <a href="/odporucania/{{ latest_id }}">Zobraziť aktuálne odporúčanie</a>.</p>
@@ -36,7 +44,7 @@
 
 <div class="grid-2 gap">
   <section class="card">
-    <h2>Prečo</h2>
+    <h2 id="h-preco">Prečo</h2>
     {% if rec.reasons %}<ul class="reasons">{% for r in rec.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% else %}<p class="muted">Bez uvedených dôvodov.</p>{% endif %}
     {% if steps %}
     <h3>Čo má urobiť dispečer</h3>
@@ -110,6 +118,44 @@
   {% endif %}
 </section>
 {% endif %}
+
+<section class="card" aria-labelledby="h-rozhodnutie">
+  <h2 id="h-rozhodnutie">Rozhodnutie dispečera</h2>
+  {% if rec.decided_by %}
+  <p>{{ REC_STATE.get(rec.state, rec.state)|capitalize }} – {{ rec.decided_by }}, {{ rec.decided_at|tfull }}{% if rec.dispatcher_note %}: „{{ rec.dispatcher_note }}“{% endif %}</p>
+  {% endif %}
+  {% if user.can("operate") and rec.state != "zastarane" %}
+  {% if downgraded %}<p class="small stale-note">Agent nemá čerstvé dáta – odporúčanie sa ukazuje ako {{ color }} (pri prepočte {{ rec.color }}). Prijať alebo upraviť ho možno len s výslovným potvrdením; v audite sa zaznamená ako {{ color }}.</p>{% endif %}
+  {# farba: semafor, ktorý dispečer pri rozhodnutí videl – server rozhodnutie odmietne, ak sa medzitým zhoršil #}
+  <div class="decide-forms">
+    <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
+      {{ m.csrf() }}<input type="hidden" name="akcia" value="prijat"><input type="hidden" name="farba" value="{{ color }}">
+      <label for="pozn-prijat">Poznámka (nepovinná)</label>
+      <input id="pozn-prijat" name="poznamka" maxlength="2000">
+      {% if downgraded %}{{ stale_confirm() }}{% endif %}
+      <button type="submit" class="btn btn-primary">Prijať</button>
+    </form>
+    <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
+      {{ m.csrf() }}<input type="hidden" name="akcia" value="upravit"><input type="hidden" name="farba" value="{{ color }}">
+      <label for="pozn-upravit">Úprava (čo meníte)</label>
+      <input id="pozn-upravit" name="poznamka" required maxlength="2000" placeholder="napr. odchod o 30 min neskôr">
+      {% if downgraded %}{{ stale_confirm() }}{% endif %}
+      <button type="submit" class="btn">Upraviť</button>
+    </form>
+    <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
+      {{ m.csrf() }}<input type="hidden" name="akcia" value="zamietnut">
+      <label for="pozn-zamietnut">Dôvod zamietnutia</label>
+      <input id="pozn-zamietnut" name="poznamka" required maxlength="2000">
+      <button type="submit" class="btn btn-danger">Zamietnuť</button>
+    </form>
+  </div>
+  {% elif rec.state == "zastarane" %}
+  <p class="muted">Zastarané odporúčanie – rozhoduje sa o aktuálnom.</p>
+  {% endif %}
+</section>
+
+<h2 class="section-divider" id="h-podrobnosti">Podrobnosti výpočtu</h2>
+<p class="page-intro section-intro">Podklady k rozhodnutiu – porovnanie možností, okná odchodu, návrh trasy a koncepty správ.</p>
 
 <section class="card">
   <h2>Porovnanie variantov</h2>
@@ -210,41 +256,6 @@
   {% endfor %}
 </section>
 {% endif %}
-
-<section class="card" aria-labelledby="h-rozhodnutie">
-  <h2 id="h-rozhodnutie">Rozhodnutie dispečera</h2>
-  {% if rec.decided_by %}
-  <p>{{ REC_STATE.get(rec.state, rec.state)|capitalize }} – {{ rec.decided_by }}, {{ rec.decided_at|tfull }}{% if rec.dispatcher_note %}: „{{ rec.dispatcher_note }}“{% endif %}</p>
-  {% endif %}
-  {% if user.can("operate") and rec.state != "zastarane" %}
-  {% if downgraded %}<p class="small stale-note">Agent nemá čerstvé dáta – odporúčanie sa ukazuje ako {{ color }} (pri prepočte {{ rec.color }}). Prijať alebo upraviť ho možno len s výslovným potvrdením; v audite sa zaznamená ako {{ color }}.</p>{% endif %}
-  {# farba: semafor, ktorý dispečer pri rozhodnutí videl – server rozhodnutie odmietne, ak sa medzitým zhoršil #}
-  <div class="decide-forms">
-    <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
-      {{ m.csrf() }}<input type="hidden" name="akcia" value="prijat"><input type="hidden" name="farba" value="{{ color }}">
-      <label for="pozn-prijat">Poznámka (nepovinná)</label>
-      <input id="pozn-prijat" name="poznamka" maxlength="2000">
-      {% if downgraded %}{{ stale_confirm() }}{% endif %}
-      <button type="submit" class="btn btn-primary">Prijať</button>
-    </form>
-    <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
-      {{ m.csrf() }}<input type="hidden" name="akcia" value="upravit"><input type="hidden" name="farba" value="{{ color }}">
-      <label for="pozn-upravit">Úprava (čo meníte)</label>
-      <input id="pozn-upravit" name="poznamka" required maxlength="2000" placeholder="napr. odchod o 30 min neskôr">
-      {% if downgraded %}{{ stale_confirm() }}{% endif %}
-      <button type="submit" class="btn">Upraviť</button>
-    </form>
-    <form method="post" action="/odporucania/{{ rec.id }}/rozhodnutie" class="decide">
-      {{ m.csrf() }}<input type="hidden" name="akcia" value="zamietnut">
-      <label for="pozn-zamietnut">Dôvod zamietnutia</label>
-      <input id="pozn-zamietnut" name="poznamka" required maxlength="2000">
-      <button type="submit" class="btn btn-danger">Zamietnuť</button>
-    </form>
-  </div>
-  {% elif rec.state == "zastarane" %}
-  <p class="muted">Zastarané odporúčanie – rozhoduje sa o aktuálnom.</p>
-  {% endif %}
-</section>
 
 {% if history|length > 1 %}
 <section class="card">

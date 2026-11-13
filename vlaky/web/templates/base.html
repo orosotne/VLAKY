@@ -19,39 +19,57 @@
 <body class="{% block body_class %}{% endblock %}">
 <a class="skip-link" href="#obsah">Preskočiť na obsah</a>
 {% if user %}
+{# Navigácia v poradí práce: denné kroky v rade, zriedkavejšie stránky v „Ďalšie“, nastavenia v „Správa“. #}
 {% set nav = [
+  ("/dnes", "Prehľad", "view", ""),
   ("/", "Mapa", "view", ""),
   ("/fronta", "Fronta", "view", counts.get("fronta")),
   ("/odporucania", "Odporúčania", "view", counts.get("kriticke")),
-  ("/objednavky", "Objednávky", "view", counts.get("objednavky")),
   ("/vlaky", "Vlaky", "view", ""),
   ("/vyluky", "Výluky", "view", ""),
-  ("/hranice", "Hranice", "view", ""),
+] %}
+{% set nav_more = [
+  ("/objednavky", "Objednávky", "view", counts.get("objednavky")),
   ("/rusnovodici", "Rušňovodiči", "view", ""),
   ("/rusne", "Rušne", "view", ""),
-  ("/odovzdavka", "Odovzdávka", "view", ""),
+  ("/hranice", "Hraničné priechody", "view", ""),
+  ("/odovzdavka", "Odovzdávka služby", "view", ""),
 ] %}
+{% set nav_admin = ["/reporty", "/dopravne", "/nastavenia", "/pouzivatelia", "/audit", "/zdravie", "/komponenty"] %}
+{% macro is_here(href) %}{% if (href == "/" and path == "/") or (href != "/" and path.startswith(href)) %}1{% endif %}{% endmacro %}
+{% set more_here = namespace(v=false) %}{% for href, l, p, b in nav_more %}{% if is_here(href) %}{% set more_here.v = true %}{% endif %}{% endfor %}
+{% set admin_here = namespace(v=false) %}{% for href in nav_admin %}{% if is_here(href) %}{% set admin_here.v = true %}{% endif %}{% endfor %}
 <header class="topbar">
-  <a class="brand" href="/"><img src="/static/img/ikona.svg" alt="" width="26" height="26"><span class="brand-text"><span>Agent dispečer</span><span class="brand-sub">ŽSR · NÁKLADNÁ DOPRAVA</span></span></a>
+  <a class="brand" href="/dnes"><img src="/static/img/ikona.svg" alt="" width="26" height="26"><span class="brand-text"><span>Agent dispečer</span><span class="brand-sub">ŽSR · NÁKLADNÁ DOPRAVA</span></span></a>
   <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="hlavna-navigacia">Menu</button>
   <nav id="hlavna-navigacia" class="mainnav" aria-label="Hlavná navigácia">
     <ul>
     {% for href, label_text, perm, badge in nav %}
       {% if user.can(perm) %}
-      <li><a href="{{ href }}"{% if (href == "/" and path == "/") or (href != "/" and path.startswith(href)) %} aria-current="page"{% endif %}>{{ label_text }}{% if badge %} <span class="nav-badge" aria-label="{{ badge }} položiek">{{ badge }}</span>{% endif %}</a></li>
+      <li><a href="{{ href }}"{% if is_here(href) %} aria-current="page"{% endif %}>{{ label_text }}{% if badge %} <span class="nav-badge" aria-label="{{ badge }} položiek">{{ badge }}</span>{% endif %}</a></li>
       {% endif %}
     {% endfor %}
       <li class="nav-more">
         <details>
-          <summary>Správa</summary>
+          <summary{% if more_here.v %} class="is-here"{% endif %}>Ďalšie{% if counts.get("objednavky") %} <span class="nav-badge" aria-label="{{ counts.get('objednavky') }} nových objednávok">{{ counts.get("objednavky") }}</span>{% endif %}</summary>
           <ul>
-            {% if user.can("reports") %}<li><a href="/reporty">Reporty</a></li>{% endif %}
-            <li><a href="/dopravne">Dopravne</a></li>
-            {% if user.can("params") %}<li><a href="/nastavenia">Nastavenia</a></li>{% endif %}
-            {% if user.can("users") %}<li><a href="/pouzivatelia">Používatelia</a></li>{% endif %}
-            {% if user.can("audit") %}<li><a href="/audit">Audit</a></li>{% endif %}
-            <li><a href="/zdravie">Zdravie agenta</a></li>
-            <li><a href="/komponenty">Komponenty UI</a></li>
+            {% for href, label_text, perm, badge in nav_more %}
+            {% if user.can(perm) %}<li><a href="{{ href }}"{% if is_here(href) %} aria-current="page"{% endif %}>{{ label_text }}{% if badge %} <span class="nav-badge" aria-label="{{ badge }} položiek">{{ badge }}</span>{% endif %}</a></li>{% endif %}
+            {% endfor %}
+          </ul>
+        </details>
+      </li>
+      <li class="nav-more">
+        <details>
+          <summary{% if admin_here.v %} class="is-here"{% endif %}>Správa</summary>
+          <ul>
+            {% if user.can("reports") %}<li><a href="/reporty"{% if is_here("/reporty") %} aria-current="page"{% endif %}>Reporty</a></li>{% endif %}
+            <li><a href="/dopravne"{% if is_here("/dopravne") %} aria-current="page"{% endif %}>Dopravne</a></li>
+            {% if user.can("params") %}<li><a href="/nastavenia"{% if is_here("/nastavenia") %} aria-current="page"{% endif %}>Nastavenia</a></li>{% endif %}
+            {% if user.can("users") %}<li><a href="/pouzivatelia"{% if is_here("/pouzivatelia") %} aria-current="page"{% endif %}>Používatelia</a></li>{% endif %}
+            {% if user.can("audit") %}<li><a href="/audit"{% if is_here("/audit") %} aria-current="page"{% endif %}>Audit</a></li>{% endif %}
+            <li><a href="/zdravie"{% if is_here("/zdravie") %} aria-current="page"{% endif %}>Zdravie agenta</a></li>
+            <li><a href="/komponenty"{% if is_here("/komponenty") %} aria-current="page"{% endif %}>Komponenty UI</a></li>
           </ul>
         </details>
       </li>

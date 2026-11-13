@@ -84,6 +84,14 @@
   </section>
 
   <aside class="dash-side" aria-label="Prehľad">
+    {% if tasks %}
+    <nav class="task-strip" aria-label="Čo treba urobiť">
+      <a href="/fronta" class="{{ 'ts-attention' if tasks.queue else 'ts-ok' }}"><span class="ts-n">{{ tasks.queue }}</span><span class="ts-l">Fronta e-mailov</span></a>
+      <a href="/odporucania" class="{{ 'ts-danger' if tasks.red_open else ('ts-attention' if tasks.undecided else 'ts-ok') }}"><span class="ts-n">{{ tasks.undecided }}</span><span class="ts-l">Na rozhodnutie</span></a>
+      <a href="/rusnovodici" class="{{ 'ts-attention' if tasks.crew else 'ts-ok' }}"><span class="ts-n">{{ tasks.crew }}</span><span class="ts-l">Rušňovodiči</span></a>
+      <a href="/dnes"><span class="ts-n">→</span><span class="ts-l">Všetky kroky</span></a>
+    </nav>
+    {% endif %}
     <section class="panel" aria-labelledby="h-vlaky">
       <div class="panel-head">
         <h2 id="h-vlaky">Vlaky <span class="muted small" id="vlaky-pocet">({{ trains|length }})</span></h2>

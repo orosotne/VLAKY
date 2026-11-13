@@ -39,12 +39,92 @@ def dashboard(request: Request, user=Depends(view)):
         trains = train_rows(s)
         borders = borders_list(s)
         alert_list = alerts(s)
+        tasks = overview(s, user, rows=trains)
     config = {"tz": cfg.timezone, "staleMinutes": cfg.position_stale_minutes, "role": user.role,
               "canOperate": user.can("operate"), "borders": borders, "tileUrl": (cfg.map_tile_url or "").strip(),
               "tileAttribution": cfg.map_tile_attribution or "", "statusLabels": TRAIN_STATUS}
     return render(request, "dashboard.html", {"trains": trains, "borders": borders, "alerts": alert_list,
-                                              "config": config, "wall": request.query_params.get("nastenka") == "1",
+                                              "config": config, "tasks": tasks, "wall": request.query_params.get("nastenka") == "1",
                                               "page_class": "page-dashboard"}, user=user)
+
+
+# ---------------------------------------------------------------- prehľad dňa (kroky pre dispečera)
+def overview(s, user, now: Optional[datetime] = None, orders: int = 0, rows: Optional[list] = None) -> dict:
+    """Čo má dispečer urobiť teraz: kroky v poradí práce (fronta → odporúčania → rušňovodiči → objednávky →
+    odovzdávka) s počtami a stavom, súhrn semaforov a čerstvosť údajov agenta. Používa stránka /dnes a pásik úloh
+    na mape."""
+    from ..notifikacie.texty import count as pocet
+    from .data import pending_queue_count
+
+    now = now or now_utc()
+    rows = train_rows(s, now) if rows is None else rows
+    fresh = data_freshness(s, now)
+    queue = pending_queue_count(s)
+    undecided = [r for r in rows if (r.get("recommendation") or {}).get("state") == "nove"]
+    colors = {"ČERVENÁ": 0, "ORANŽOVÁ": 0, "ZELENÁ": 0}
+    for r in rows:      # „color“ je semafor odporúčania po znížení pri nečerstvých údajoch (nie farba značky na mape)
+        if r.get("color") in colors:
+            colors[r["color"]] += 1
+    red_open = sum(1 for r in undecided if r.get("color") == "ČERVENÁ")
+    crew = [r for r in rows if r.get("driver") and (r["driver"].get("color") in ("oranzova", "cervena")
+                                                    or r["driver"].get("unknown_start"))]
+    crew_red = sum(1 for r in crew if r["driver"].get("color") == "cervena")
+    no_driver = sum(1 for r in rows if not (r.get("driver") or {}).get("name"))
+
+    steps = [{
+        "key": "fronta", "title": "Potvrďte e-maily vo fronte", "href": "/fronta", "action": "Otvoriť frontu",
+        "count": queue, "state": "attention" if queue else "done",
+        "text": ("Agent si pri týchto udalostiach z e-mailov (výluky, zmeny, zrušenia) nie je istý. Kým ich "
+                 "nepotvrdíte alebo nezamietnete, vlaky na dotknutých úsekoch nedostanú ZELENÚ."),
+        "note": (pocet(queue, "udalosť čaká", "udalosti čakajú", "udalostí čaká") + " na vaše potvrdenie") if queue
+        else "Fronta je prázdna – všetko je spracované.",
+    }, {
+        "key": "odporucania", "title": "Rozhodnite o odporúčaniach", "action": "Otvoriť odporúčania",
+        "href": "/odporucania?farba=ČERVENÁ" if red_open else "/odporucania",
+        "count": len(undecided), "state": "attention" if undecided else "done",
+        "text": ("Ku každému vlaku agent navrhuje VYPRAVIŤ, POČKAŤ, PRESMEROVAŤ alebo ODSTAVIŤ. Otvorte odporúčanie, "
+                 "pozrite dôvody a prijmite ho alebo zamietnite. Začnite ČERVENÝMI."),
+        "note": ((pocet(len(undecided), "odporúčanie čaká", "odporúčania čakajú", "odporúčaní čaká") + " na rozhodnutie"
+                  + (f", z toho {red_open} ČERVENÉ" if red_open else "")) if undecided
+                 else "Všetky odporúčania sú rozhodnuté."),
+    }, {
+        "key": "rusnovodici", "title": "Skontrolujte rušňovodičov", "href": "/rusnovodici", "action": "Otvoriť rušňovodičov",
+        "count": len(crew), "state": "attention" if crew else "done",
+        "text": "Rušňovodič smie pracovať najviac 13 hodín od nástupu. Tu vidno, koho treba vystriedať a dokedy.",
+        "note": ((pocet(len(crew), "rušňovodič sa blíži", "rušňovodiči sa blížia", "rušňovodičov sa blíži")
+                  + " k limitu alebo nemá zadaný nástup" + (f", z toho {crew_red} bez rezervy" if crew_red else ""))
+                 if crew else ("Pracovný čas je v poriadku." + (f" Bez rušňovodiča: {no_driver}." if no_driver else ""))),
+    }]
+    if user.can("view"):
+        steps.append({
+            "key": "objednavky", "title": "Vybavte nové objednávky", "href": "/objednavky", "action": "Otvoriť objednávky",
+            "count": orders, "state": "attention" if orders else "done",
+            "text": "Objednávky zákazníkov z e-mailov: agent navrhne termín a trasu, vy ich potvrdíte zákazníkovi.",
+            "note": (pocet(orders, "nová objednávka", "nové objednávky", "nových objednávok") if orders
+                     else "Žiadna nová objednávka."),
+        })
+    steps.append({
+        "key": "odovzdavka", "title": "Pred koncom služby: odovzdávka", "href": "/odovzdavka", "action": "Otvoriť odovzdávku",
+        "state": "todo",
+        "text": "Agent pripraví správu pre nasledujúcu zmenu: vlaky, výluky, čo ostalo otvorené. Skontrolujte ju a potvrďte.",
+    })
+    todo = sum(1 for st in steps if st["state"] == "attention")
+    return {"steps": steps, "todo": todo, "fresh": fresh, "colors": colors, "trains": len(rows), "no_rec": len(rows) - sum(colors.values()),
+            "queue": queue, "undecided": len(undecided), "red_open": red_open, "crew": len(crew)}
+
+
+@router.get("/dnes", response_class=HTMLResponse)
+def today_page(request: Request, user=Depends(view)):
+    """Úvodná stránka: čo treba urobiť teraz, krok za krokom."""
+    from sqlalchemy import func as _f
+
+    from ..models import Order
+
+    with session_scope() as s:
+        orders = s.scalar(select(_f.count(Order.id)).where(Order.status.in_(("nova", "navrhnuta")))) or 0
+        data = overview(s, user, orders=orders)
+        alert_list = [a for a in alerts(s, limit=12) if a.get("priority") == "KRITICKÉ"]
+    return render(request, "dnes.html", {"o": data, "critical": alert_list}, user=user)
 
 
 # ---------------------------------------------------------------- fronta na potvrdenie (M5)

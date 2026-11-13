@@ -212,3 +212,41 @@
   {%- endif %}
 </div>
 {%- endmacro %}
+
+
+{#- ---------------------------------------------------------------------------------------------------- steps
+    Očíslované kroky: čo urobiť a v akom poradí.
+    items    zoznam krokov (dict):
+               title   názov kroku (povinný)
+               text    vysvetlenie jednou-dvoma vetami
+               state   todo (predvolené) | attention (treba vybaviť) | done (hotové) | current (práve tu)
+               count   počet položiek na vybavenie (zobrazí sa ako číslo vpravo; 0 sa nezobrazí)
+               note    krátka poznámka k stavu („1 kritické“, „všetko vybavené“)
+               href / action   odkaz a text tlačidla („Otvoriť frontu“); v pásiku je odkazom názov kroku
+    variant  list (predvolené) – zvislý zoznam úloh s tlačidlami
+             bar – vodorovný pásik krokov na stránke, kde sa krok vykonáva (napr. 1 Prečítať → 2 Skontrolovať → 3 Rozhodnúť)
+    label    popis zoznamu pre čítačku obrazovky
+---------------------------------------------------------------------------------------------------------------- -#}
+{%- macro steps(items, variant="list", label="Postup") -%}
+{%- set v = "bar" if variant == "bar" else "list" -%}
+<ol class="ui-steps ui-steps-{{ v }}" aria-label="{{ label }}">
+  {%- for it in items %}
+  {%- set st = it.get("state") if it.get("state") in ("todo", "attention", "done", "current") else "todo" %}
+  <li class="ui-step ui-step-{{ st }}"{% if st == "current" %} aria-current="step"{% endif %}>
+    <span class="ui-step-num" aria-hidden="true">{% if st == "done" %}✓{% else %}{{ loop.index }}{% endif %}</span>
+    <div class="ui-step-body">
+      <p class="ui-step-title">{% if v == "bar" and it.get("href") %}<a href="{{ it.href }}">{{ it.title }}</a>{% else %}{{ it.title }}{% endif %}
+        {%- if st == "done" %} <span class="visually-hidden">(hotové)</span>{% elif st == "attention" %} <span class="visually-hidden">(treba vybaviť)</span>{% endif %}</p>
+      {%- if it.get("text") %}<p class="ui-step-text">{{ it.text }}</p>{% endif -%}
+      {%- if it.get("note") %}<p class="ui-step-note">{{ it.note }}</p>{% endif -%}
+    </div>
+    {%- if v == "list" %}
+    <div class="ui-step-side">
+      {%- if it.get("count") %}<span class="ui-step-count">{{ it.count }}</span>{% endif -%}
+      {%- if it.get("href") %}{{ button(it.get("action") or "Otvoriť", variant=("primary" if st == "attention" else "secondary"), size="sm", href=it.href) }}{% endif -%}
+    </div>
+    {%- endif %}
+  </li>
+  {%- endfor %}
+</ol>
+{%- endmacro %}

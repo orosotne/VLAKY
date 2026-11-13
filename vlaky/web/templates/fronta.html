@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_makra.html" as m with context %}
+{% import "_ui.html" as ui with context %}
 {% block title %}Fronta na potvrdenie{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -16,6 +17,13 @@
 </nav>
 {% endif %}
 {% endmacro %}
+{% if items %}
+{{ ui.steps([
+  {"title": "Prečítajte e-mail", "text": "vľavo je pôvodná správa"},
+  {"title": "Skontrolujte údaje", "text": "vpravo je, čo z nej agent vyčítal – opravte, čo nesedí"},
+  {"title": "Potvrďte alebo zamietnite", "text": "potvrdené sa zapíše do registra a prepočítajú sa vlaky"},
+], variant="bar", label="Ako vybaviť udalosť vo fronte") }}
+{% endif %}
 {{ queue_pager() }}
 {% for item in items %}
 {% set ev = item.event %}{% set mail = item.email %}

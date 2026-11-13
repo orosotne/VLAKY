@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% import "_makra.html" as m with context %}
+{% block title %}Prehľad{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Prehľad</h1>
+  <p class="page-intro">{% if o.todo %}Treba vybaviť {{ o.todo }} {{ "krok" if o.todo == 1 else ("kroky" if o.todo < 5 else "krokov") }}. Postupujte zhora nadol – poradie zodpovedá tomu, čo najviac ovplyvní vlaky.{% else %}Všetko je vybavené. Systém sleduje vlaky ďalej a ozve sa, keď bude treba rozhodnúť.{% endif %}
+    Agent iba odporúča – rozhodujete a konáte vy.</p>
+</div>
+
+{% if critical %}
+{% call ui.alert(tone="danger", title="Kritické – riešte ako prvé (" ~ critical|length ~ ")") %}
+  <ul class="ui-alert-list">
+    {% for a in critical[:3] %}<li>{% if a.href %}<a href="{{ a.href }}">{{ a.text|truncate(150, False, "…") }}</a>{% else %}{{ a.text|truncate(150, False, "…") }}{% endif %}</li>{% endfor %}
+  </ul>
+  {% if critical|length > 3 %}<p class="small">a ďalšie {{ critical|length - 3 }} – všetky sú v časti Upozornenia na <a href="/">mape</a>.</p>{% endif %}
+{% endcall %}
+{% endif %}
+
+<div class="dnes-layout">
+  <section aria-labelledby="h-kroky">
+    <h2 id="h-kroky">Čo treba urobiť</h2>
+    {{ ui.steps(o.steps, label="Čo treba urobiť, v poradí") }}
+  </section>
+
+  <div>
+    {% if o.fresh.stale %}
+    {% call ui.alert(tone="warning", title="Agent nemá čerstvé údaje") %}
+      <p>{{ o.fresh.text }} Semafory preto nemôžu byť ZELENÉ. <a href="/zdravie">Pozrieť stav agenta</a></p>
+    {% endcall %}
+    {% endif %}
+    <section aria-labelledby="h-stav">
+      <h2 id="h-stav">Stav vlakov</h2>
+      <div class="ui-stats">
+        {{ ui.stat("Aktívne vlaky", o.trains, href="/vlaky") }}
+        {{ ui.stat("Červená", o.colors["ČERVENÁ"], tone=("danger" if o.colors["ČERVENÁ"] else "neutral"), hint="treba zasiahnuť", href="/odporucania?farba=ČERVENÁ") }}
+        {{ ui.stat("Oranžová", o.colors["ORANŽOVÁ"], tone=("warning" if o.colors["ORANŽOVÁ"] else "neutral"), hint="overiť pred odchodom", href="/odporucania?farba=ORANŽOVÁ") }}
+        {{ ui.stat("Zelená", o.colors["ZELENÁ"], tone=("success" if o.colors["ZELENÁ"] else "neutral"), hint="bez prekážok", href="/odporucania?farba=ZELENÁ") }}
+      </div>
+      <p>{{ ui.button("Otvoriť mapu", href="/", size="sm") }}</p>
+    </section>
+
+    <section class="card" aria-labelledby="h-pomoc">
+      <details class="ui-help" open>
+        <summary id="h-pomoc">Ako čítať odporúčania</summary>
+        <dl class="ui-legend">
+          <div><dt>{{ m.semafor("ZELENÁ") }}</dt><dd>Vlak môže ísť. Trasa je voľná, rušňovodič má rezervu a údaje sú čerstvé.</dd></div>
+          <div><dt>{{ m.semafor("ORANŽOVÁ") }}</dt><dd>Pred odchodom niečo overte – dôvod je vždy napísaný pri odporúčaní (napr. nepotvrdená výluka, stará poloha, malá rezerva).</dd></div>
+          <div><dt>{{ m.semafor("ČERVENÁ") }}</dt><dd>Takto to nejde: vlak by narazil na výluku, nestihol termín alebo by rušňovodič prekročil 13 h. Treba iný čas, trasu alebo zásah.</dd></div>
+          <div><dt><strong>P50 / P90</strong></dt><dd>Predpokladaný príchod: P50 je typický čas, do P90 vlak príde s 90 % istotou. Plánujte podľa P90.</dd></div>
+          <div><dt><strong>Rezerva</strong></dt><dd>Koľko času ostáva do termínu doručenia. Záporná rezerva je meškanie.</dd></div>
+          <div><dt><strong>13 h</strong></dt><dd>Najdlhší pracovný čas rušňovodiča od nástupu. Systém ukáže, dokedy ho treba vystriedať.</dd></div>
+        </dl>
+      </details>
+    </section>
+  </div>
+</div>
+{% endblock %}

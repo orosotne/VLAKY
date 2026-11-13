@@ -665,3 +665,9 @@ body.wall .wall-clock { font-family: var(--mono); font-weight: 600; }
 @media (max-width: 1500px) { .brand-sub { display: none; } .userbox .who { display: none; } }
 @media (max-width: 1280px) { .mainnav > ul { flex-wrap: wrap; } .mc-clock small { display: none; } }
 @media (max-width: 900px) { .mainnav > ul { flex-wrap: nowrap; } }
+.mainnav summary.is-here { color: var(--text); }
+.mainnav summary.is-here::before { content: ""; position: absolute; left: .5rem; right: .5rem; bottom: -1px; height: 2px; background: var(--signal); box-shadow: 0 0 10px var(--signal); }
+.nav-more ul a[aria-current="page"] { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--signal); }
+.nav-more ul a[aria-current="page"]::after { content: none; }
+.nav-more ul a { display: flex; justify-content: space-between; align-items: center; gap: .6rem; }
+@media (max-width: 900px) { .mainnav summary.is-here::before { left: 0; right: auto; top: .4rem; bottom: .4rem; width: 2px; height: auto; } }
